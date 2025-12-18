@@ -1,10 +1,8 @@
 from __future__ import annotations
-from typing import Any, Dict, List
-from collections import Counter
-import time
+from typing import Any, Dict
 
 from openra_api.game_api import GameAPI
-from openra_api.models import Actor, TargetsQueryParam
+from openra_api.game_midlayer import RTSMiddleLayer
 from the_seed.utils import LogManager
 
 logger = LogManager.get_logger()
@@ -17,6 +15,8 @@ class OpenRAEnv:
 
     def __init__(self, api: GameAPI) -> None:
         self.api = api
+        # 复用同一个中间层实例以启用缓存
+        self.mid = RTSMiddleLayer(api)
 
     def observe(self) -> str:
         """返回当前游戏状态的文本概要。"""
@@ -30,82 +30,36 @@ class OpenRAEnv:
 
     # ---------------- Internal helpers ---------------- #
     def _collect_snapshot(self) -> Dict[str, Any]:
-        base = self._safe_base_info()
-        friendly_units = self._summarize_units(self._query_units("自己"))
-        enemy_units = self._summarize_units(self._query_units("敌方"))
-        report = self._build_report(base, friendly_units, enemy_units)
+        # 使用新版 intel（brief），避免重复采集 economy/单位统计等信息
+        report = self.mid.intel(mode="brief")
         return {
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "economy": base,
-            "friendly_units": friendly_units,
-            "enemy_units": enemy_units,
             "report": report,
         }
 
-    def _safe_base_info(self) -> Dict[str, Any]:
-        try:
-            base = self.api.player_base_info_query()
-        except Exception as exc:  # noqa: BLE001
-            logger.error("player_base_info_query failed: %s", exc)
-            return {"error": str(exc)}
-
-        power_provided = getattr(base, "PowerProvided", getattr(base, "Power", 0))
-        power_drained = getattr(base, "PowerDrained", 0)
-        power_surplus = power_provided - power_drained
-        return {
-            "cash": getattr(base, "Cash", 0),
-            "resources": getattr(base, "Resources", 0),
-            "power": getattr(base, "Power", 0),
-            "power_surplus": power_surplus,
-            "power_status": "stable" if power_surplus >= 0 else "low_power",
-        }
-
-    def _query_units(self, faction: str) -> List[Actor]:
-        if not hasattr(self.api, "query_actor"):
-            return []
-        try:
-            return self.api.query_actor(TargetsQueryParam(faction=faction)) or []
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("query_actor failed for faction=%s: %s", faction, exc)
-            return []
-
-    def _summarize_units(self, units: List[Actor]) -> Dict[str, Any]:
-        counts: Counter[str] = Counter()
-        for unit in units:
-            counts[(unit.type or "unknown")] += 1
-        total = sum(counts.values())
-        return {"total": total, "by_type": dict(counts)}
-
-    def _build_report(self, economy: Dict[str, Any], friendly: Dict[str, Any], enemy: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "economy": economy,
-            "friendly": friendly,
-            "enemy": enemy,
-        }
-
     def _format_snapshot(self, snapshot: Dict[str, Any]) -> str:
-        report = snapshot.get("report", {})
-        econ = report.get("economy", {})
-        friendly = report.get("friendly", {})
-        enemy = report.get("enemy", {})
+        report = snapshot.get("report") or {}
+        econ = report.get("economy") or {}
+        tech = report.get("tech") or {}
+        combat = report.get("combat") or {}
+        opp = report.get("opportunity") or {}
+        map_info = report.get("map") or {}
+        alerts = report.get("alerts") or []
+
+        best_target = opp.get("best_target")
+        best_target_str = (
+            f"{best_target.get('type')}@{best_target.get('pos')}" if isinstance(best_target, dict) else "None"
+        )
 
         lines = [
-            f"[Timestamp] {snapshot.get('timestamp')}",
-            "[Economy]",
-            f"  cash={econ.get('cash')} resources={econ.get('resources')} power={econ.get('power')} "
-            f"surplus={econ.get('power_surplus')} status={econ.get('power_status')}",
-            "[Friendly Units]",
-            self._format_unit_line(friendly),
-            "[Enemy Units]",
-            self._format_unit_line(enemy),
+            f"[Intel] t={report.get('t')} stage={report.get('stage')}",
+            f"[Economy] cash={econ.get('cash')} power_ok={econ.get('power_ok')} miners={econ.get('miners')} "
+            f"refineries={econ.get('refineries')} queue_blocked={econ.get('queue_blocked')}",
+            f"[Tech] tier={tech.get('tier')} next_missing={tech.get('next_missing')}",
+            f"[Combat] my_value={combat.get('my_value')} enemy_value={combat.get('enemy_value')} "
+            f"threat_near_base={combat.get('threat_near_base')} engaged={combat.get('engaged')}",
+            f"[Opportunity] best_target={best_target_str} best_score={opp.get('best_score')}",
+            f"[Map] explored={map_info.get('explored')} scout_need={map_info.get('scout_need')} "
+            f"nearest_resource={map_info.get('nearest_resource')}",
+            f"[Alerts] {', '.join(alerts) if alerts else 'none'}",
         ]
         return "\n".join(lines)
-
-    @staticmethod
-    def _format_unit_line(summary: Dict[str, Any]) -> str:
-        by_type = summary.get("by_type") or {}
-        if not by_type:
-            detail = "none"
-        else:
-            detail = ", ".join(f"{k}:{v}" for k, v in by_type.items())
-        return f"  total={summary.get('total', 0)} ({detail})"

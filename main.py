@@ -33,7 +33,7 @@ def main() -> None:
     bb = fsm.ctx.blackboard
     bb.gameapi = api
     bb.gameapi_rules = build_def_style_prompt(api, ["produce", "wait", "deploy_units"])
-    bb.runtime_globals = {"gameapi": api,"Location": Location,"TargetsQueryParam": TargetsQueryParam,"Actor": Actor,"MapQueryResult": MapQueryResult,"FrozenActor": FrozenActor,"ControlPoint": ControlPoint,"ControlPointQueryResult": ControlPointQueryResult,"MatchInfoQueryResult": MatchInfoQueryResult,"PlayerBaseInfo": PlayerBaseInfo,"ScreenInfoResult": ScreenInfoResult}
+    bb.runtime_globals = {"gameapi": api,"api": api,"Location": Location,"TargetsQueryParam": TargetsQueryParam,"Actor": Actor,"MapQueryResult": MapQueryResult,"FrozenActor": FrozenActor,"ControlPoint": ControlPoint,"ControlPointQueryResult": ControlPointQueryResult,"MatchInfoQueryResult": MatchInfoQueryResult,"PlayerBaseInfo": PlayerBaseInfo,"ScreenInfoResult": ScreenInfoResult}
 
     logger.info("FSM start state=%s", fsm.state)
 
