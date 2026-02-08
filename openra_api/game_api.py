@@ -163,44 +163,47 @@ class GameAPI:
                             )
 
                         # 处理 actors 列表 (包括 frozenActors)
+                        # 部分成功响应会返回 data=null，此时不应在客户端报错。
                         actors_list = []
-                        
-                        # 1. 正常单位
-                        if "actors" in response["data"]:
-                            for actor_data in response["data"]["actors"]:
-                                actor = Actor(actor_data["id"])
-                                actor.update_details(
-                                    type=actor_data.get("type"),
-                                    faction=actor_data.get("faction"),
-                                    position=Location(**actor_data["position"]) if "position" in actor_data else None,
-                                    hppercent=actor_data.get("hp") * 100 // actor_data.get("maxHp") if actor_data.get("maxHp") and actor_data.get("maxHp") > 0 else 0,
-                                    is_frozen=actor_data.get("isFrozen", False),
-                                    activity=actor_data.get("activity"),
-                                    order=actor_data.get("order")
-                                )
-                                actors_list.append(actor)
-                        
-                        # 2. 冻结单位 (Frozen Actors) - 必须显式处理
-                        if "frozenActors" in response["data"]:
-                            for actor_data in response["data"]["frozenActors"]:
-                                # Frozen actors might have ID -1 or a real ID. If -1, we might need a way to track them uniquely if needed.
-                                # For now, we trust the ID provided.
-                                actor_id = actor_data.get("id", -1)
-                                actor = Actor(actor_id)
-                                actor.update_details(
-                                    type=actor_data.get("type"),
-                                    faction=actor_data.get("faction"),
-                                    position=Location(**actor_data["position"]) if "position" in actor_data else None,
-                                    hppercent=actor_data.get("hp") * 100 // actor_data.get("maxHp") if actor_data.get("maxHp") and actor_data.get("maxHp") > 0 else 0,
-                                    is_frozen=True, # 强制标记为 Frozen
-                                    activity=actor_data.get("activity"),
-                                    order=actor_data.get("order")
-                                )
-                                actors_list.append(actor)
+                        data_payload = response.get("data")
 
-                        # 将合并后的列表放回 data['actors'] 以供上层统一使用
-                        if actors_list:
-                            response["data"]["actors"] = actors_list
+                        if isinstance(data_payload, dict):
+                            # 1. 正常单位
+                            if "actors" in data_payload:
+                                for actor_data in data_payload["actors"]:
+                                    actor = Actor(actor_data["id"])
+                                    actor.update_details(
+                                        type=actor_data.get("type"),
+                                        faction=actor_data.get("faction"),
+                                        position=Location(**actor_data["position"]) if "position" in actor_data else None,
+                                        hppercent=actor_data.get("hp") * 100 // actor_data.get("maxHp") if actor_data.get("maxHp") and actor_data.get("maxHp") > 0 else 0,
+                                        is_frozen=actor_data.get("isFrozen", False),
+                                        activity=actor_data.get("activity"),
+                                        order=actor_data.get("order")
+                                    )
+                                    actors_list.append(actor)
+
+                            # 2. 冻结单位 (Frozen Actors) - 必须显式处理
+                            if "frozenActors" in data_payload:
+                                for actor_data in data_payload["frozenActors"]:
+                                    # Frozen actors might have ID -1 or a real ID. If -1, we might need a way to track them uniquely if needed.
+                                    # For now, we trust the ID provided.
+                                    actor_id = actor_data.get("id", -1)
+                                    actor = Actor(actor_id)
+                                    actor.update_details(
+                                        type=actor_data.get("type"),
+                                        faction=actor_data.get("faction"),
+                                        position=Location(**actor_data["position"]) if "position" in actor_data else None,
+                                        hppercent=actor_data.get("hp") * 100 // actor_data.get("maxHp") if actor_data.get("maxHp") and actor_data.get("maxHp") > 0 else 0,
+                                        is_frozen=True, # 强制标记为 Frozen
+                                        activity=actor_data.get("activity"),
+                                        order=actor_data.get("order")
+                                    )
+                                    actors_list.append(actor)
+
+                            # 将合并后的列表放回 data['actors'] 以供上层统一使用
+                            if actors_list:
+                                data_payload["actors"] = actors_list
                             
                         return response
 
