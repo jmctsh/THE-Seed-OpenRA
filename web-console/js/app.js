@@ -759,17 +759,20 @@ function enemySetInterval() {
 function updateEnemyAgentState(state) {
     const startBtn = document.getElementById('enemy-start-btn');
     const stopBtn = document.getElementById('enemy-stop-btn');
+    const topStartBtn = document.getElementById('enemy-top-start-btn');
+    const topStopBtn = document.getElementById('enemy-top-stop-btn');
     const dot = document.getElementById('enemy-agent-dot');
     const stateText = document.getElementById('enemy-agent-state');
     const tickCounter = document.getElementById('enemy-tick-counter');
     const topDot = document.getElementById('enemy-status-dot');
     const topLabel = document.getElementById('enemy-status-label');
-    const quickToggleBtn = document.getElementById('quick-enemy-toggle-btn');
 
     enemyAgentRunning = Boolean(state.running);
 
     startBtn.disabled = enemyAgentRunning;
     stopBtn.disabled = !enemyAgentRunning;
+    if (topStartBtn) topStartBtn.disabled = enemyAgentRunning;
+    if (topStopBtn) topStopBtn.disabled = !enemyAgentRunning;
     dot.classList.toggle('connected', enemyAgentRunning);
     stateText.textContent = enemyAgentRunning ? '运行中' : '已停止';
 
@@ -778,9 +781,6 @@ function updateEnemyAgentState(state) {
     }
     if (topLabel) {
         topLabel.textContent = enemyAgentRunning ? 'Enemy Agent: ON' : 'Enemy Agent: OFF';
-    }
-    if (quickToggleBtn) {
-        quickToggleBtn.textContent = enemyAgentRunning ? '👹 停止敌方' : '👹 启动敌方';
     }
 
     tickCounter.textContent = `Tick: ${state.tick_count || 0}`;

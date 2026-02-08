@@ -35,6 +35,12 @@
             <button class="btn btn-warning" onclick="resetAndStartGame()" title="清空所有上下文，重启敌方AI">
                 <span class="icon">🔄</span> 新对局
             </button>
+            <button class="btn btn-success" id="enemy-top-start-btn" onclick="enemyControl('start')" title="启动敌方Agent">
+                <span class="icon">👹</span> 启动敌方
+            </button>
+            <button class="btn btn-danger" id="enemy-top-stop-btn" onclick="enemyControl('stop')" title="关闭敌方Agent" disabled>
+                <span class="icon">🛑</span> 关闭敌方
+            </button>
         </div>
         <div class="status">
             <span class="status-item">
@@ -80,17 +86,16 @@
                 </div>
                 <div class="chat-input-area">
                     <input type="text" id="copilot-input" 
-                           placeholder="输入指令... (如: 展开基地车 / 电厂 / 建造3步兵 / 探索地图)"
+                           placeholder="输入指令... (如: 展开 / 电厂 / 建造3步兵 / 探索地图)"
                            onkeypress="if(event.key==='Enter')sendCopilotCommand()">
                     <button class="btn btn-primary" onclick="sendCopilotCommand()">发送</button>
                 </div>
                 <div class="quick-commands">
                     <button onclick="quickCmd('查询状态')">📊 状态</button>
-                    <button onclick="quickCmd('展开基地车')">🚛 展开基地车</button>
+                    <button onclick="quickCmd('展开')">🚛 展开</button>
                     <button onclick="quickCmd('电厂')">⚡ 电厂</button>
                     <button onclick="quickCmd('建造3步兵')">🎖️ 3步兵</button>
                     <button onclick="quickCmd('探索地图')">🗺️ 探索</button>
-                    <button id="quick-enemy-toggle-btn" onclick="quickToggleEnemyAgent()">👹 启动敌方</button>
                 </div>
             </div>
 
