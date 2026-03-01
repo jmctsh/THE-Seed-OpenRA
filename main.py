@@ -11,7 +11,6 @@ import sys
 import threading
 import time
 import os
-from contextlib import nullcontext
 from pathlib import Path
 
 import yaml
@@ -41,10 +40,7 @@ from the_seed.model import ModelFactory
 from the_seed.config import load_config
 from the_seed.utils import LogManager, build_def_style_prompt, DashboardBridge
 
-try:
-    from agents.strategy.strategic_agent import StrategicAgent
-except Exception:
-    StrategicAgent = None
+from event_feed import append_event
 
 logger = LogManager.get_logger()
 
@@ -73,6 +69,26 @@ def resolve_model_config():
     if model_cfg is None:
         raise RuntimeError("model_templates is empty in the-seed config")
     return model_cfg
+
+
+def _sync_default_runtime() -> None:
+    """Copy files from default_runtime/ to runtime/ if they don't exist."""
+    src = Path(__file__).resolve().parent / "default_runtime"
+    dst = Path(__file__).resolve().parent / "runtime"
+    if not src.exists():
+        return
+    for root, _dirs, files in os.walk(src):
+        rel = Path(root).relative_to(src)
+        target_dir = dst / rel
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for fname in files:
+            if fname == ".gitkeep":
+                continue
+            target_file = target_dir / fname
+            if not target_file.exists():
+                import shutil
+                shutil.copy2(Path(root) / fname, target_file)
+                logger.info("Synced default_runtime/%s → runtime/%s", rel / fname, rel / fname)
 
 
 def setup_jobs(api: GameAPI, mid: RTSMiddleLayer) -> JobManager:
@@ -187,11 +203,23 @@ def handle_command(
 
 def main() -> None:
     """主函数"""
+    _sync_default_runtime()
+
     # ========== 人类玩家 (Multi0) ==========
     api = GameAPI(host="localhost", port=7445, language="zh", player_id=HUMAN_PLAYER_ID)
     mid = RTSMiddleLayer(api)
     human_jobs = setup_jobs(api, mid)
     executor = create_executor(api, mid)
+
+    # Disable DeepSeek LLM for human side — NLU misses get forwarded to copilot agent
+    def _human_run_stub(command: str, **kw) -> ExecutionResult:
+        return ExecutionResult(
+            success=False,
+            message="NLU未匹配，已转发给copilot agent",
+            error="nlu_miss_forwarded",
+        )
+    executor.run = _human_run_stub
+
     human_nlu_gateway = Phase2NLUGateway(name="human")
     logger.info("Human NLU status: %s", human_nlu_gateway.status())
     logger.info(f"Human player initialized: {HUMAN_PLAYER_ID}")
@@ -319,393 +347,11 @@ def main() -> None:
     )
     logger.info(f"Enemy AI initialized: {ENEMY_PLAYER_ID}, interval={ENEMY_TICK_INTERVAL}s")
 
-    # ========== Strategy Stack (Debug Preview) ==========
-    strategy_agent = None
-    strategy_thread = None
-    strategy_last_error = ""
-    strategy_last_command = ""
-    strategy_lock = threading.RLock()
-    strategy_map_cache: dict | None = None
-    strategy_map_cache_ts = 0.0
-    # AttackJob -> Strategic/Combat LLM 自动桥接（高消耗）。默认关闭，需显式开启。
-    strategy_job_bridge_enabled = _env_flag("STRATEGY_AUTO_BRIDGE_ENABLED", False)
-    strategy_bridge_last_sync_key = ""
-    strategy_bridge_last_auto_start_ts = 0.0
-    strategy_bridge_zero_attack_since_ts = 0.0
-    strategy_bridge_auto_stop_grace_sec = 5.0
+    # ========== Game Runtime State ==========
     game_runtime_lock = threading.RLock()
     game_runtime_online = False
     game_runtime_last_reason = "init"
     game_runtime_last_change_ms = int(time.time() * 1000)
-
-    def _to_int_point(raw) -> dict | None:
-        if not isinstance(raw, dict):
-            return None
-        try:
-            x = int(raw.get("x"))
-            y = int(raw.get("y"))
-        except Exception:
-            return None
-        return {"x": x, "y": y}
-
-    def _strategy_map_snapshot() -> dict:
-        nonlocal strategy_map_cache, strategy_map_cache_ts
-        now = time.time()
-        if strategy_map_cache is not None and (now - strategy_map_cache_ts) < 0.9:
-            return strategy_map_cache
-
-        try:
-            map_info = api.map_query()
-            width = int(getattr(map_info, "MapWidth", 0) or 0)
-            height = int(getattr(map_info, "MapHeight", 0) or 0)
-            visible_grid = getattr(map_info, "IsVisible", []) or []
-            explored_grid = getattr(map_info, "IsExplored", []) or []
-
-            fog_rows: list[str] = []
-            explored_count = 0
-            visible_count = 0
-            total_cells = max(1, width * height)
-
-            for y in range(height):
-                chars = []
-                for x in range(width):
-                    is_explored = False
-                    is_visible = False
-                    try:
-                        is_explored = bool(explored_grid[x][y])
-                    except Exception:
-                        is_explored = False
-                    try:
-                        is_visible = bool(visible_grid[x][y])
-                    except Exception:
-                        is_visible = False
-
-                    if is_visible:
-                        chars.append("2")  # visible
-                        visible_count += 1
-                        explored_count += 1
-                    elif is_explored:
-                        chars.append("1")  # explored but fogged
-                        explored_count += 1
-                    else:
-                        chars.append("0")  # shrouded
-                fog_rows.append("".join(chars))
-
-            resources = []
-            for node in (getattr(map_info, "resourceActors", []) or [])[:512]:
-                try:
-                    resources.append(
-                        {
-                            "x": int(node.get("x")),
-                            "y": int(node.get("y")),
-                            "resource_type": str(node.get("resourceType", "")),
-                        }
-                    )
-                except Exception:
-                    continue
-
-            oil_wells = []
-            for well in (getattr(map_info, "oilWells", []) or [])[:128]:
-                try:
-                    oil_wells.append(
-                        {
-                            "x": int(well.get("x")),
-                            "y": int(well.get("y")),
-                            "owner": str(well.get("owner", "")),
-                        }
-                    )
-                except Exception:
-                    continue
-
-            snapshot = {
-                "ok": True,
-                "width": width,
-                "height": height,
-                "fog_rows": fog_rows,
-                "visible_ratio": round(visible_count / total_cells, 4),
-                "explored_ratio": round(explored_count / total_cells, 4),
-                "resources": resources,
-                "oil_wells": oil_wells,
-                "updated_ms": int(now * 1000),
-            }
-        except Exception as e:
-            snapshot = {
-                "ok": False,
-                "error": str(e),
-                "updated_ms": int(now * 1000),
-            }
-
-        strategy_map_cache = snapshot
-        strategy_map_cache_ts = now
-        return snapshot
-
-    def _strategy_state() -> dict:
-        try:
-            attack_job_actor_ids = human_jobs.get_actor_ids_for_job("attack", alive_only=True)
-        except Exception:
-            attack_job_actor_ids = []
-        with strategy_lock:
-            running = bool(
-                strategy_agent is not None
-                and getattr(strategy_agent, "running", False)
-                and strategy_thread is not None
-                and strategy_thread.is_alive()
-            )
-            controlled_actor_ids: list[int] | None = None
-            companies: list[dict] = []
-            unassigned_count = 0
-            player_count = 0
-            company_runtime: dict[str, dict] = {}
-            pending_orders: dict[str, dict] = {}
-
-            if running and strategy_agent is not None:
-                try:
-                    combat_agent = getattr(strategy_agent, "combat_agent", None)
-                    if combat_agent is not None:
-                        getter = getattr(strategy_agent, "get_controlled_actor_ids", None)
-                        if callable(getter):
-                            try:
-                                controlled_actor_ids = getter()
-                            except Exception:
-                                controlled_actor_ids = None
-                        for cid, state in (getattr(combat_agent, "company_states", {}) or {}).items():
-                            if not isinstance(state, dict):
-                                continue
-                            params = state.get("params", {}) if isinstance(state.get("params"), dict) else {}
-                            target = _to_int_point(state.get("strategic_target_pos")) or _to_int_point(params.get("target_pos"))
-                            company_runtime[str(cid)] = {
-                                "status": str(state.get("status", "") or ""),
-                                "target": target,
-                            }
-
-                        orders_lock = getattr(combat_agent, "orders_lock", None)
-                        if orders_lock is not None:
-                            with orders_lock:
-                                pending_raw = dict(getattr(combat_agent, "pending_orders", {}) or {})
-                        else:
-                            pending_raw = dict(getattr(combat_agent, "pending_orders", {}) or {})
-
-                        for cid, pending in pending_raw.items():
-                            order_type = ""
-                            target = None
-                            if isinstance(pending, tuple) and len(pending) >= 2:
-                                order_type = str(pending[0] or "")
-                                params = pending[1] if isinstance(pending[1], dict) else {}
-                                target = _to_int_point(params.get("target_pos"))
-                            pending_orders[str(cid)] = {
-                                "type": order_type,
-                                "target": target,
-                            }
-
-                    squad_manager = getattr(strategy_agent, "squad_manager", None)
-                    if squad_manager is not None:
-                        squad_lock = getattr(squad_manager, "lock", None)
-                        lock_ctx = squad_lock if squad_lock is not None else nullcontext()
-                        with lock_ctx:
-                            company_items = sorted(
-                                getattr(squad_manager, "companies", {}).items(),
-                                key=lambda item: str(item[0]),
-                            )
-                            for cid, squad in company_items:
-                                center = None
-                                try:
-                                    center = squad.get_center_coordinates()
-                                except Exception:
-                                    center = None
-                                members = []
-                                unit_items = sorted(getattr(squad, "units", {}).items(), key=lambda item: int(item[0]))
-                                for _, unit in unit_items:
-                                    pos = getattr(unit, "position", {}) or {}
-                                    hp_ratio_raw = getattr(unit, "hp_ratio", 0.0)
-                                    try:
-                                        hp_ratio = float(hp_ratio_raw)
-                                    except Exception:
-                                        hp_ratio = 0.0
-                                    hp_percent = max(0, min(100, int(round(hp_ratio * 100))))
-                                    members.append(
-                                        {
-                                            "id": int(getattr(unit, "id", -1)),
-                                            "type": str(getattr(unit, "type", "")),
-                                            "category": str(getattr(unit, "category", "")),
-                                            "hp_percent": hp_percent,
-                                            "score": float(getattr(unit, "score", 0.0)),
-                                            "position": {
-                                                "x": pos.get("x"),
-                                                "y": pos.get("y"),
-                                            },
-                                        }
-                                    )
-                                cid_key = str(getattr(squad, "id", cid))
-                                runtime = company_runtime.get(cid_key, {})
-                                pending = pending_orders.get(cid_key, {})
-                                target = runtime.get("target") or pending.get("target")
-                                companies.append(
-                                    {
-                                        "id": cid_key,
-                                        "name": str(getattr(squad, "name", f"Company {cid}")),
-                                        "count": int(getattr(squad, "unit_count", len(members))),
-                                        "power": float(round(getattr(squad, "total_score", 0.0), 2)),
-                                        "weight": float(getattr(squad, "target_weight", 1.0)),
-                                        "center": center,
-                                        "order_status": str(runtime.get("status", "")),
-                                        "target": target,
-                                        "pending_order": pending if pending else None,
-                                        "members": members,
-                                    }
-                                )
-                            unassigned = getattr(squad_manager, "unassigned", None)
-                            if unassigned is not None:
-                                unassigned_count = int(getattr(unassigned, "unit_count", 0))
-                            player_squad = getattr(squad_manager, "player_squad", None)
-                            if player_squad is not None:
-                                player_count = int(getattr(player_squad, "unit_count", 0))
-                except Exception as e:
-                    logger.warning("Build strategy roster state failed: %s", e)
-
-            map_snapshot = _strategy_map_snapshot()
-            return {
-                "available": StrategicAgent is not None,
-                "game_online": _is_game_online(),
-                "running": running,
-                "last_error": strategy_last_error,
-                "last_command": strategy_last_command,
-                "companies": companies,
-                "unassigned_count": unassigned_count,
-                "player_count": player_count,
-                "map": map_snapshot,
-                "job_bridge": {
-                    "enabled": bool(strategy_job_bridge_enabled),
-                    "attack_job_count": len(attack_job_actor_ids),
-                    "attack_job_actor_ids": attack_job_actor_ids[:256],
-                    "controlled_count": None if controlled_actor_ids is None else len(controlled_actor_ids),
-                    "controlled_actor_ids": None if controlled_actor_ids is None else controlled_actor_ids[:256],
-                },
-            }
-
-    def _broadcast_strategy_state() -> None:
-        DashboardBridge().broadcast("strategy_state", _strategy_state())
-
-    def _strategy_log(level: str, message: str) -> None:
-        DashboardBridge().broadcast(
-            "strategy_log",
-            {
-                "level": level,
-                "message": message,
-                "timestamp": int(time.time() * 1000),
-            },
-        )
-
-    def _strategy_trace(event: str, payload: dict | None = None) -> None:
-        DashboardBridge().broadcast(
-            "strategy_trace",
-            {
-                "event": str(event or ""),
-                "payload": payload or {},
-                "timestamp": int(time.time() * 1000),
-            },
-        )
-
-    _last_jobs_state_key = ""
-
-    def _serialize_job_manager_state(mgr: JobManager, side: str) -> dict:
-        jobs_payload: list[dict] = []
-        for job in mgr.jobs:
-            actor_ids = mgr.get_actor_ids_for_job(job.job_id, alive_only=True)
-            jobs_payload.append(
-                {
-                    "job_id": str(job.job_id),
-                    "name": str(getattr(job, "NAME", job.job_id)),
-                    "status": str(getattr(job, "status", "")),
-                    "actor_count": len(actor_ids),
-                    "actor_ids": actor_ids[:256],
-                    "last_summary": str(getattr(job, "last_summary", "") or ""),
-                    "last_error": str(getattr(job, "last_error", "") or ""),
-                }
-            )
-        return {
-            "side": side,
-            "jobs": jobs_payload,
-            "actor_job": {str(k): v for k, v in sorted(mgr.actor_job.items())},
-        }
-
-    def broadcast_jobs_state(*, force: bool = False) -> None:
-        nonlocal _last_jobs_state_key
-        payload = {
-            "timestamp": int(time.time() * 1000),
-            "human": _serialize_job_manager_state(human_jobs, "human"),
-            "enemy": _serialize_job_manager_state(enemy_jobs, "enemy"),
-        }
-        state_key = str(payload.get("human")) + "|" + str(payload.get("enemy"))
-        if not force and state_key == _last_jobs_state_key:
-            return
-        _last_jobs_state_key = state_key
-        DashboardBridge().broadcast("jobs_state", payload)
-
-    def _strategy_set_command(command: str) -> None:
-        nonlocal strategy_last_command
-        command = (command or "").strip()
-        if not command:
-            return
-        Path("user_command.txt").write_text(command, encoding="utf-8")
-        strategy_last_command = command
-
-    def _strategy_start(command: str = "") -> None:
-        nonlocal strategy_agent, strategy_thread, strategy_last_error
-        if not _is_game_online():
-            strategy_last_error = "OpenRA 未运行，战略栈禁止启动"
-            _strategy_log("warning", strategy_last_error)
-            _broadcast_strategy_state()
-            return
-        if StrategicAgent is None:
-            strategy_last_error = "StrategicAgent import failed"
-            _strategy_log("error", strategy_last_error)
-            _broadcast_strategy_state()
-            return
-        with strategy_lock:
-            if strategy_thread is not None and strategy_thread.is_alive():
-                _strategy_log("info", "战略栈已在运行")
-                _broadcast_strategy_state()
-                return
-            try:
-                if command:
-                    _strategy_set_command(command)
-                strategy_agent = StrategicAgent(trace_callback=_strategy_trace)
-                try:
-                    strategy_agent.set_controlled_actor_ids(human_jobs.get_actor_ids_for_job("attack", alive_only=True))
-                except Exception:
-                    pass
-                strategy_thread = threading.Thread(target=strategy_agent.start, daemon=True, name="StrategyAgent")
-                strategy_thread.start()
-                strategy_last_error = ""
-                _strategy_log("info", "战略栈已启动（实验模式）")
-            except Exception as e:
-                strategy_last_error = str(e)
-                _strategy_log("error", f"战略栈启动失败: {e}")
-            finally:
-                _broadcast_strategy_state()
-
-    def _strategy_stop() -> None:
-        nonlocal strategy_agent, strategy_thread
-        with strategy_lock:
-            if strategy_agent is not None:
-                try:
-                    strategy_agent.stop()
-                except Exception:
-                    pass
-            if strategy_thread is not None and strategy_thread.is_alive():
-                strategy_thread.join(timeout=2.0)
-            strategy_agent = None
-            strategy_thread = None
-            _strategy_log("info", "战略栈已停止")
-            _broadcast_strategy_state()
-
-    def _set_attack_job_external_control(enabled: bool) -> None:
-        try:
-            job = human_jobs.get_job("attack")
-            if isinstance(job, AttackJob):
-                job.set_externally_controlled(enabled)
-        except Exception:
-            pass
 
     def _probe_game_online() -> bool:
         try:
@@ -745,16 +391,6 @@ def main() -> None:
                 logger.info("OpenRA 连接已恢复，系统解除离线闸门")
             else:
                 logger.warning("OpenRA 未运行/不可达，系统进入离线闸门（停止后台代理与任务）")
-                _set_attack_job_external_control(False)
-                with strategy_lock:
-                    strategy_running = bool(
-                        strategy_agent is not None
-                        and getattr(strategy_agent, "running", False)
-                        and strategy_thread is not None
-                        and strategy_thread.is_alive()
-                    )
-                if strategy_running:
-                    _strategy_stop()
                 if bool(getattr(enemy_agent, "running", False)):
                     enemy_agent.stop()
 
@@ -763,95 +399,71 @@ def main() -> None:
 
         return online
 
-    def _sync_attack_job_to_strategy() -> None:
-        nonlocal strategy_bridge_last_sync_key
-        nonlocal strategy_bridge_last_auto_start_ts
-        nonlocal strategy_bridge_zero_attack_since_ts
-        nonlocal strategy_last_error
-        if not _is_game_online():
-            with strategy_lock:
-                running = bool(
-                    strategy_agent is not None
-                    and getattr(strategy_agent, "running", False)
-                    and strategy_thread is not None
-                    and strategy_thread.is_alive()
-                )
-            _set_attack_job_external_control(False)
-            strategy_bridge_zero_attack_since_ts = 0.0
-            if running:
-                _strategy_log("info", "OpenRA 离线，停止战略栈")
-                _strategy_stop()
-            return
+    # ========== Jobs State ==========
+    _last_jobs_state_key = ""
 
-        if not strategy_job_bridge_enabled:
-            with strategy_lock:
-                running = bool(
-                    strategy_agent is not None
-                    and getattr(strategy_agent, "running", False)
-                    and strategy_thread is not None
-                    and strategy_thread.is_alive()
-                )
-            _set_attack_job_external_control(False)
-            strategy_bridge_zero_attack_since_ts = 0.0
-            if running:
-                _strategy_log("info", "战略自动桥接已关闭，停止战略栈")
-                _strategy_stop()
-            return
-
-        try:
-            attack_job_actor_ids = human_jobs.get_actor_ids_for_job("attack", alive_only=True)
-        except Exception:
-            attack_job_actor_ids = []
-        attack_count = len(attack_job_actor_ids)
-
-        with strategy_lock:
-            running = bool(
-                strategy_agent is not None
-                and getattr(strategy_agent, "running", False)
-                and strategy_thread is not None
-                and strategy_thread.is_alive()
+    def _serialize_job_manager_state(mgr: JobManager, side: str) -> dict:
+        jobs_payload: list[dict] = []
+        for job in mgr.jobs:
+            actor_ids = mgr.get_actor_ids_for_job(job.job_id, alive_only=True)
+            jobs_payload.append(
+                {
+                    "job_id": str(job.job_id),
+                    "name": str(getattr(job, "NAME", job.job_id)),
+                    "status": str(getattr(job, "status", "")),
+                    "actor_count": len(actor_ids),
+                    "actor_ids": actor_ids[:256],
+                    "last_summary": str(getattr(job, "last_summary", "") or ""),
+                    "last_error": str(getattr(job, "last_error", "") or ""),
+                }
             )
-            local_agent = strategy_agent if running else None
+        return {
+            "side": side,
+            "jobs": jobs_payload,
+            "actor_job": {str(k): v for k, v in sorted(mgr.actor_job.items())},
+        }
 
-        controlled_count = 0
-        if local_agent is not None:
-            try:
-                local_agent.set_controlled_actor_ids(attack_job_actor_ids)
-                controlled = local_agent.get_controlled_actor_ids()
-                controlled_count = len(controlled or [])
-                if attack_count > 0:
-                    strategy_bridge_zero_attack_since_ts = 0.0
-                    _set_attack_job_external_control(True)
-                else:
-                    _set_attack_job_external_control(False)
-                    now = time.time()
-                    if strategy_bridge_zero_attack_since_ts <= 0:
-                        strategy_bridge_zero_attack_since_ts = now
-                    elif (now - strategy_bridge_zero_attack_since_ts) >= strategy_bridge_auto_stop_grace_sec:
-                        _strategy_log("info", "AttackJob 已清空，战略栈自动停止")
-                        _strategy_stop()
-                        strategy_bridge_zero_attack_since_ts = 0.0
-                        return
-            except Exception as e:
-                strategy_last_error = str(e)
-                _strategy_log("error", f"AttackJob->Strategy 同步失败: {e}")
-        else:
-            _set_attack_job_external_control(False)
-            strategy_bridge_zero_attack_since_ts = 0.0
-            now = time.time()
-            if (
-                attack_count > 0
-                and StrategicAgent is not None
-                and (now - strategy_bridge_last_auto_start_ts) >= 3.0
-            ):
-                strategy_bridge_last_auto_start_ts = now
-                _strategy_log("info", f"检测到 AttackJob 单位({attack_count})，自动启动战略栈并接管")
-                _strategy_start("执行 AttackJob：集中兵力清剿敌军并摧毁建筑")
+    def broadcast_jobs_state(*, force: bool = False) -> None:
+        nonlocal _last_jobs_state_key
+        payload = {
+            "timestamp": int(time.time() * 1000),
+            "human": _serialize_job_manager_state(human_jobs, "human"),
+            "enemy": _serialize_job_manager_state(enemy_jobs, "enemy"),
+        }
+        state_key = str(payload.get("human")) + "|" + str(payload.get("enemy"))
+        if not force and state_key == _last_jobs_state_key:
+            return
+        _last_jobs_state_key = state_key
+        DashboardBridge().broadcast("jobs_state", payload)
 
-        sync_key = f"run={int(running)}:attack={attack_count}:controlled={controlled_count}"
-        if sync_key != strategy_bridge_last_sync_key:
-            strategy_bridge_last_sync_key = sync_key
-            _broadcast_strategy_state()
+    # ========== Agent 转发 ==========
+    COPILOT_AGENT_TMUX = "openra-copilot"
+
+    def _forward_to_agent(command: str) -> None:
+        """Forward a web player command to the copilot agent tmux session."""
+        try:
+            # Check if the agent session exists
+            check = subprocess.run(
+                ["tmux", "has-session", "-t", COPILOT_AGENT_TMUX],
+                capture_output=True, timeout=2,
+            )
+            if check.returncode != 0:
+                logger.debug("Agent session '%s' not found, skip forward", COPILOT_AGENT_TMUX)
+                return
+
+            # Send with [WEB_PLAYER] header so the agent knows the source
+            text = f"[WEB_PLAYER] {command}"
+            subprocess.run(
+                ["tmux", "send-keys", "-t", COPILOT_AGENT_TMUX, "-l", text],
+                capture_output=True, timeout=2,
+            )
+            subprocess.run(
+                ["tmux", "send-keys", "-t", COPILOT_AGENT_TMUX, "Enter"],
+                capture_output=True, timeout=2,
+            )
+            logger.info("Forwarded to agent: %s", text)
+        except Exception as e:
+            logger.warning("Agent forward failed: %s", e)
 
     # ========== Console 命令处理器 ==========
     def copilot_command_handler(command: str, meta: dict | None = None) -> None:
@@ -862,7 +474,6 @@ def main() -> None:
         command_id = str(payload_meta.get("command_id") or f"cmd_{start_ts}_{thread_id}")
 
         def status_callback(stage: str, detail: str):
-            """发送阶段状态到前端"""
             bridge.broadcast("status", {
                 "stage": stage,
                 "detail": detail,
@@ -873,23 +484,15 @@ def main() -> None:
         with human_status_callback_lock:
             human_status_callback_by_thread[thread_id] = status_callback
 
-        # 发送接收状态
+        # Record player command in event feed
+        append_event("player_command", {"command": command}, cid=command_id)
+
         status_callback("received", f"收到指令: {command[:50]}...")
 
         try:
             if not _refresh_game_runtime_state(reason="human_command_precheck"):
                 blocked_msg = "OpenRA 未运行，指令已拦截（未执行、未调用LLM）"
                 status_callback("error", blocked_msg)
-                result = {
-                    "success": False,
-                    "message": blocked_msg,
-                    "code": "",
-                    "observations": "",
-                    "nlu": {
-                        "source": "game_gate",
-                        "reason": "openra_offline",
-                    },
-                }
                 append_interaction_event(
                     "dashboard_command_blocked",
                     {
@@ -899,7 +502,6 @@ def main() -> None:
                         "utterance": command,
                         "response_message": blocked_msg,
                         "success": False,
-                        "nlu": result["nlu"],
                     },
                     timestamp_ms=start_ts,
                 )
@@ -910,7 +512,7 @@ def main() -> None:
                         "message": blocked_msg,
                         "code": "",
                         "observations": "",
-                        "nlu": result["nlu"],
+                        "nlu": {"source": "game_gate", "reason": "openra_offline"},
                         "command_id": command_id,
                     },
                 )
@@ -923,6 +525,10 @@ def main() -> None:
                 nlu_gateway=human_nlu_gateway,
                 actor="human",
             )
+
+            nlu_meta = result.get("nlu", {}) or {}
+            nlu_source = nlu_meta.get("source", "")
+
             append_interaction_event(
                 "dashboard_command",
                 {
@@ -933,22 +539,40 @@ def main() -> None:
                     "response_message": result.get("message", ""),
                     "success": bool(result.get("success", False)),
                     "observations": result.get("observations", ""),
-                    "nlu": result.get("nlu", {}) or {},
+                    "nlu": nlu_meta,
                 },
                 timestamp_ms=start_ts,
             )
 
-            # 发送最终结果到 Console
+            if nlu_source == "nlu_route":
+                # NLU handled it — record in feed, do NOT forward to agent
+                append_event("nlu_route", {
+                    "command": command,
+                    "intent": nlu_meta.get("intent", ""),
+                    "confidence": nlu_meta.get("confidence", 0),
+                    "message": result.get("message", ""),
+                    "success": bool(result.get("success", False)),
+                }, cid=command_id)
+            else:
+                # NLU missed — record in feed and forward to copilot agent
+                append_event("nlu_miss", {
+                    "command": command,
+                    "reason": nlu_meta.get("reason", ""),
+                }, cid=command_id)
+                append_event("agent_forward", {"command": command}, cid=command_id)
+                threading.Thread(
+                    target=_forward_to_agent, args=(command,), daemon=True
+                ).start()
+
             bridge.broadcast("result", {
                 "success": result.get("success"),
                 "message": result.get("message", ""),
                 "code": result.get("code", ""),
                 "observations": result.get("observations", ""),
-                "nlu": result.get("nlu", {}),
+                "nlu": nlu_meta,
                 "command_id": command_id,
             })
 
-            # 同时发送 log 保持兼容
             bridge.send_log(
                 "info" if result.get("success") else "error",
                 result.get("message", "")
@@ -985,7 +609,6 @@ def main() -> None:
 
     # ========== 敌方控制处理器 ==========
     def enemy_control_handler(action: str, params: dict) -> None:
-        nonlocal strategy_job_bridge_enabled
         if action == "start":
             if not _refresh_game_runtime_state(reason="enemy_start_precheck"):
                 msg = "OpenRA 未运行，已阻止启动敌方AI"
@@ -1009,21 +632,12 @@ def main() -> None:
                 logger.warning(f"Invalid interval value: {interval}")
         elif action == "reset_all":
             logger.info("Reset all: clearing context and restarting enemy agent")
-            _strategy_stop()
-            # 停止敌方
             enemy_agent.stop()
-            # 重置敌方上下文
             enemy_agent.reset()
-            # 重置人类玩家 executor 的对话历史
-            executor.ctx.history.clear()
-            # 重置敌方 executor 的对话历史
             enemy_executor.ctx.history.clear()
-            # 清空共享聊天历史
             bridge = DashboardBridge()
             bridge.clear_chat_history()
-            # 通知前端重置完成
             bridge.broadcast("reset_done", {"message": "上下文已清空"})
-            # 仅在游戏在线时重新启动敌方
             if _refresh_game_runtime_state(reason="reset_all_postcheck"):
                 enemy_agent.start()
             else:
@@ -1138,42 +752,6 @@ def main() -> None:
                 script="nlu_pipeline/scripts/run_smoke.py",
                 report_path="nlu_pipeline/reports/smoke_report.json",
             )
-        elif action == "strategy_start":
-            if not _refresh_game_runtime_state(reason="strategy_start_precheck"):
-                _strategy_log("warning", "OpenRA 未运行，无法启用战略自动桥接")
-                _broadcast_strategy_state()
-                return
-            strategy_job_bridge_enabled = True
-            _strategy_log("info", "战略自动桥接已启用（AttackJob 可触发战略/战斗 LLM）")
-            _sync_attack_job_to_strategy()
-            _broadcast_strategy_state()
-        elif action == "strategy_stop":
-            strategy_job_bridge_enabled = False
-            _set_attack_job_external_control(False)
-            _strategy_stop()
-            _strategy_log("info", "战略自动桥接已停用（后台战略/战斗 LLM 已停止）")
-            _broadcast_strategy_state()
-        elif action == "strategy_cmd":
-            cmd = str(params.get("command", "") or "").strip()
-            if not cmd:
-                _strategy_log("warning", "空战略指令，已忽略")
-                _broadcast_strategy_state()
-                return
-            _strategy_set_command(cmd)
-            with strategy_lock:
-                running = bool(
-                    strategy_agent is not None
-                    and getattr(strategy_agent, "running", False)
-                    and strategy_thread is not None
-                    and strategy_thread.is_alive()
-                )
-            if running:
-                _strategy_log("info", f"战略指令已更新: {cmd}")
-            else:
-                _strategy_log("info", f"战略指令已保存，等待 AttackJob 激活后自动生效: {cmd}")
-            _broadcast_strategy_state()
-        elif action == "strategy_status":
-            _broadcast_strategy_state()
         elif action == "jobs_status":
             broadcast_jobs_state(force=True)
 
@@ -1195,8 +773,6 @@ def main() -> None:
     )
     # 敌方代理不自动启动，通过 Web 控制台手动启动
     _refresh_game_runtime_state(reason="startup_probe", force_broadcast=True)
-    _broadcast_strategy_state()
-    _sync_attack_job_to_strategy()
     broadcast_jobs_state(force=True)
 
     # ========== Job tick 后台线程 ==========
@@ -1208,7 +784,6 @@ def main() -> None:
         while _jobs_running:
             if not _refresh_game_runtime_state(reason="job_tick_probe"):
                 try:
-                    _broadcast_strategy_state()
                     broadcast_jobs_state(force=True)
                 except Exception:
                     pass
@@ -1224,10 +799,6 @@ def main() -> None:
                         _last_human_explore_summary = summary
             except Exception as e:
                 logger.warning("human_jobs.tick_jobs failed: %s", e, exc_info=True)
-            try:
-                _sync_attack_job_to_strategy()
-            except Exception as e:
-                logger.warning("_sync_attack_job_to_strategy failed: %s", e, exc_info=True)
             try:
                 enemy_jobs.tick_jobs()
             except Exception as e:
@@ -1247,14 +818,12 @@ def main() -> None:
     logger.info("  Model: %s", runtime_model_cfg.model)
     logger.info(f"  Human: {HUMAN_PLAYER_ID}")
     logger.info(f"  Enemy: {ENEMY_PLAYER_ID} (interval={ENEMY_TICK_INTERVAL}s)")
-    logger.info("  Strategy Auto Bridge: %s", "ON" if strategy_job_bridge_enabled else "OFF")
     logger.info("  Press Ctrl+C to stop")
     logger.info("=" * 50)
 
     # 保持运行
     def signal_handler(sig, frame):
         logger.info("Shutting down...")
-        _strategy_stop()
         enemy_agent.stop()
         raise SystemExit(0)
 
@@ -1264,7 +833,6 @@ def main() -> None:
         while True:
             time.sleep(1)
     except (KeyboardInterrupt, SystemExit):
-        _strategy_stop()
         enemy_agent.stop()
         logger.info("Backend stopped.")
 

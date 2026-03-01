@@ -39,3 +39,6 @@ web-console/node_modules/
 # OpenRA build artifacts
 OpenCodeAlert/bin/
 OpenCodeAlert/obj/
+
+# Agent runtime workspace
+runtime/
