@@ -157,147 +157,58 @@ Expert 在以下情况升级给 Brain：
 | EconomyExpert | 5.0s | 生产决策慢 |
 | DeployExpert | 即时 | instant task |
 
-启动顺序：GameAPI → UnitRegistry → WorldModel → Resolver → Decomposer → Kernel(含Expert注册) → Interpreter → ActionExecutor → Dashboard → GameLoop
+启动顺序：GameAPI → UnitRegistry → WorldModel → Kernel(含Expert注册) → CommandProcessor → Dashboard → GameLoop
 
 ## 3. 数据模型
 
-### Directive（Interpreter 输出）
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| directive_id | str | 唯一ID |
-| kind | str | explore, attack, produce, defend, cancel... |
-| target | str | **未解析自然文本**: "敌人基地", "左边那群坦克" |
-| goal | str? | find, destroy, harass |
-| modifiers | dict | {urgent: true, quantity: 5} |
-| raw_text | str | 原始输入 |
-| ambiguity | float | 0-1, >0.7 反问玩家 |
-| timestamp | float | |
+引入 LLM agent 后，大量中间对象不再需要（LLM 自己理解意图、解析目标、判断成败）。
+~~Directive~~、~~ResolvedTarget~~、~~SuccessCondition/FailureCondition~~、~~CancelSelector~~、~~Action/ActionResult~~ 全部删除。
 
-### ResolvedTarget（Resolver 输出）
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| owner | str | self / enemy / neutral |
-| entity_type | str | base, army, unit, area, resource, map |
-| actor_ids | list[int] | 匹配到的actor（可空=搜索目标）|
-| position | tuple? | 已知位置 |
-| known | bool | True=确认存在, False=搜索目标 |
-| confidence | float | 匹配置信度 |
-| candidates | list[dict] | 所有候选 |
-| raw_text | str | |
-| resolve_method | str | keyword / spatial / context / default |
-
-### TaskSpec（Decomposer 输出）
+### Task（Kernel 管理的任务单元）
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | task_id | str | |
-| kind | str | instant / managed / background / constraint |
-| intent | str | recon_find, attack_target, produce_unit... |
-| target | ResolvedTarget? | |
-| success_condition | SuccessCondition? | 可执行的成功判定 |
-| failure_condition | FailureCondition? | 可执行的失败判定 |
-| priority | int | 0-100, 用户命令=50, 紧急=80 |
-| blocked_by | list[str] | 前置 task_id |
-| directive_id | str | 溯源 |
-| timeout_s | float? | |
+| raw_text | str | 玩家原始输入 |
+| priority | int | 0-100 |
+| status | str | pending/running/waiting/succeeded/partial/failed/aborted |
+| autonomy_mode | str | fire_and_forget / supervised |
+| created_at | float | |
 
-### SuccessCondition / FailureCondition
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| type | str | target_found, target_destroyed, all_units_dead, timeout... |
-| params | dict | 判定参数 |
-| evaluator | str | world_query / expert_report |
+Kernel 管理 Task 生命周期。Task Agent (LLM) 是 Task 的执行大脑。
 
-带 `check(world, job) -> bool` 方法，Expert 每 tick 调用。
-
-### ExecutionJob（Kernel 运行单元）
+### Job（Expert 的运行时实例）
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | job_id | str | |
-| task_id | str | |
-| directive_id | str | 溯源 |
-| status | JobStatus | pending/binding/running/waiting/succeeded/partial/failed/aborted/superseded |
-| owner_expert_id | str | expert 实例 ID |
-| expert_type | str | ReconExpert |
-| intent | str | 从 TaskSpec 复制 |
-| resources | list[str] | "actor:57", "queue:Infantry" |
-| pending_requests | list[ResourceRequest] | |
-| priority | int | |
-| task_kind | str | |
-| cancel_requested | bool | |
-| failure_reason | str? | |
-| created_at | float | |
-| updated_at | float | |
+| task_id | str | 所属 Task |
+| expert_type | str | ReconExpert, CombatExpert... |
+| config | dict | 自由格式配置（目标、参数、约束）由 Task Agent 设定 |
+| resources | list[str] | 当前持有的资源 |
+| status | str | running/waiting/completed/aborted |
 
-### Constraint（活跃修饰器）
+一个 Task 可以有多个 Job。config 是自由格式 dict——LLM 设什么 Expert 就收什么，不需要严格 schema。
+
+### ResourceNeed（声明式资源需求）
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| job_id | str | |
+| kind | str | actor / production_queue |
+| count | int | |
+| predicates | dict | {category: vehicle, mobility: fast} |
+
+Kernel 持续满足：死了补、新造的自动分配、不足则降级运行。
+只有 Task Agent (LLM) 有权判断"没希望了"取消任务。
+
+### Constraint（活跃约束）
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | constraint_id | str | |
 | kind | str | do_not_chase, economy_first, defend_base |
-| scope | str | global / 特定job_id |
+| scope | str | global / 特定 task_id |
 | params | dict | {max_chase_distance: 20} |
-| enforcement | str | hard（违反=abort）/ soft（建议）|
-| source_directive_id | str | |
-| priority | int | 约束间优先级 |
-| expires_at | float? | |
 | active | bool | |
-| created_at | float | |
 
-### Outcome（任务终态）
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| job_id | str | |
-| task_id | str | |
-| directive_id | str | |
-| result | str | succeeded/partial/failed/aborted/superseded（与JobStatus终态一致）|
-| reason | str | enemy_base_found, scout_killed, user_cancel |
-| data | dict | 结果数据 |
-| resources_released | list[str] | |
-| recoverable | bool | |
-| followup_suggestions | list[str] | |
-| timestamp | float | |
-
-### Action（Expert → ActionExecutor）
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| action_id | str | |
-| job_id | str | |
-| resource_key | str | "actor:57" / "queue:Infantry" / "global" |
-| command | str | move, attack_move, attack_target, produce, deploy, stop |
-| target_pos | tuple? | |
-| target_actor_id | int? | |
-| params | dict | |
-| priority | int | 同resource_key多action取最高 |
-| expires_at | float? | |
-
-### ActionResult
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| action_id | str | |
-| success | bool | |
-| error | str? | actor_dead, target_unreachable, api_timeout |
-| resource_key | str | |
-| command | str | |
-
-### ResourceRequest（Expert → Kernel）
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| request_id | str | |
-| job_id | str | |
-| kind | str | actor / production_queue |
-| count | int | |
-| predicates | dict | {mobility: fast, category: vehicle} |
-| mandatory | bool | 必须满足才能运行 |
-| allow_wait | bool | 可排队等待 |
-| allow_substitute | bool | 允许替代品 |
-| allow_preempt | bool | 允许抢占低优先级 |
-| wait_timeout_s | float | 等待超时 |
-
-### CancelSelector
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| directive_id | str? | 按原始指令取消 |
-| intent_match | str? | 正则匹配intent: "recon\|explore" |
-| job_id | str? | 按具体Job取消 |
+由 Task Agent 创建，Kernel 管理生命周期。Expert 每 tick 查询活跃约束并据此调整行为。
 
 ### Event（WorldModel 事件检测）
 | 字段 | 类型 | 说明 |
