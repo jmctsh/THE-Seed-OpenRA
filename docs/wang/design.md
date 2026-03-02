@@ -20,8 +20,19 @@ LLM 赋能传统游戏 AI 的副官系统。不做对手 AI（如需控敌，启
 ```
 
 - **Kernel（系统级，无 LLM）**：管理若干并行 Task，处理资源占用和任务调度。两个 Task 同时要 actor:57 不能等 LLM 想 2 秒——必须规则驱动、确定性、毫秒级。
-- **Task Agent（任务级，LLM 大脑）**：每个 Task 是一个小型 LLM agent 实例。理解意图、选择专家、设参数、监控事件、处理异常。
-- **Expert（执行级，传统 AI 小脑）**：被 Task Agent 委托后自主运行。实时反应，不等 LLM。
+- **Task Agent（任务级，LLM 大脑）**：每个 Task 是一个小型 LLM agent 实例。理解意图、选择专家、设参数、协调多个 Job、监控事件、处理异常。一个 Task 可以使用**多种 Expert**，每种可以有**多个 Job 实例**并行。
+- **Expert（能力定义）**：一种领域能力的类型定义（ReconExpert、CombatExpert……）。
+- **Job（运行时实例，传统 AI 小脑）**：Expert 的运行时实例，绑定具体资源，自主 tick 执行。被 Task Agent 委托后自主运行，不等 LLM。
+
+```
+Task Agent "包围敌人基地"
+  ├── ReconExpert → Job: 侦察目标区域周边地形
+  ├── CombatExpert → Job: 侧翼A编队进攻
+  ├── CombatExpert → Job: 侧翼B编队进攻
+  └── EconomyExpert → Job: 补充坦克生产
+```
+
+Task Agent 的核心价值 = **协调多个 Job 之间的时序和依赖**（A到位再让B出发，侦察发现敌人跑了就取消包围改追击）。
 
 **Expert 不是 LLM 的 tool，而是被 LLM 委托后自主运行的控制器。**
 
@@ -275,15 +286,31 @@ Kernel 是确定性机械调度器，不含任何 LLM 调用。职责：
 - **取消**：cancel(CancelSelector) → 通知 Task Agent 终止
 - **等待队列**：资源不足时排队，资源释放时自动分配
 
-### Expert（每Job一个实例，由Kernel实例化并销毁）
-- handled_intents() → 声明能处理的intent
-- bind(task, world) → ResourceRequest[] 声明需要的资源
-- start(task, world, assigned, resource_requester) → 开始执行
-- tick(world) → Action[] 或 Outcome
-- on_resource_lost(actor_id, world) → 资源被夺/死亡
-- on_resource_granted(request_id, actor_ids) → 等待的资源到了
+### Expert（能力类型） + Job（运行时实例）
+
+**Expert** 是领域能力的类型定义（类）。**Job** 是 Expert 的运行时实例（对象），绑定具体资源，自主 tick。
+
+一个 Task Agent 可以创建多个 Job（跨多种 Expert），Kernel 管理所有 Job 的资源分配。
+
+Expert 类级别接口：
+- capabilities() → 声明能力（侦察、战斗、生产...）
+- create_job(params, world) → Job 实例
+
+Job 实例接口：
+- bind(world) → ResourceRequest[] 声明需要的资源
+- start(assigned_resources, resource_requester) → 开始执行
+- tick(world) → Action[] 或 Signal 或 Outcome
+- set_params(params) → Task Agent 中途调整参数（如改变目标、方向）
+- on_resource_lost(resource_id, world) → 资源被夺/死亡
+- on_resource_granted(request_id, resources) → 等待的资源到了
 - on_resource_wait_expired(request_id) → 等待超时
 - abort(reason) → Outcome（幂等）
+
+Signal = Job 向 Task Agent 汇报的中间事件（不是终态），如：
+- "发现敌方矿车"
+- "受到攻击，HP < 50%"
+- "到达目标区域"
+- Task Agent 收到 Signal 后决定是否介入（调整参数、启动新 Job、取消当前 Job）
 
 ### ActionExecutor
 - Expert 永远不直接调 GameAPI
