@@ -4,11 +4,24 @@
 
 LLM 赋能传统游戏 AI 的副官系统。不做对手 AI（如需控敌，启动另一个副官实例）。
 
-**核心架构隐喻：大脑 + 小脑**
-- **大脑（LLM agent）**：理解用户意图、选择专家、设定参数、监控执行、处理异常
-- **小脑（Expert 自主控制器）**：接管后自主执行（侦察、战斗、生产），实时反应，不等 LLM
+**三级架构：**
 
-LLM 不做逐帧操控。LLM 说"侦察右上找基地"然后**交权**给 ReconExpert，Expert 自主跑。LLM 只在 Expert 报告事件（侦察兵死了、发现目标、遇到困难）时介入决策。
+```
+┌─────────────────────────────────────────────┐
+│  Kernel（无 LLM，机械调度）                    │
+│  资源分配 / 优先级抢占 / 并发控制 / 任务调度    │
+│  必须确定性、毫秒级                            │
+├─────────┬───────────┬───────────┬───────────┤
+│ Task 1  │  Task 2   │  Task 3   │  ...      │
+│ LLM大脑  │ LLM大脑   │ LLM大脑   │           │
+│ +Expert │ +Expert   │ +Expert   │           │
+│  小脑   │   小脑    │   小脑    │           │
+└─────────┴───────────┴───────────┴───────────┘
+```
+
+- **Kernel（系统级，无 LLM）**：管理若干并行 Task，处理资源占用和任务调度。两个 Task 同时要 actor:57 不能等 LLM 想 2 秒——必须规则驱动、确定性、毫秒级。
+- **Task Agent（任务级，LLM 大脑）**：每个 Task 是一个小型 LLM agent 实例。理解意图、选择专家、设参数、监控事件、处理异常。
+- **Expert（执行级，传统 AI 小脑）**：被 Task Agent 委托后自主运行。实时反应，不等 LLM。
 
 **Expert 不是 LLM 的 tool，而是被 LLM 委托后自主运行的控制器。**
 
@@ -252,13 +265,15 @@ LLM 不做逐帧操控。LLM 说"侦察右上找基地"然后**交权**给 Recon
 
 ## 4. 核心组件职责
 
-### Kernel（被动仲裁器，无循环）
-- submit_directive → Resolver → Decomposer → 创建 Job
-- on_event → 事件路由（单位死亡通知Expert，基地被攻击触发防御Task）
-- on_outcome → 释放资源、更新状态、通知看板、解除阻塞的后续Task
-- on_resource_request → 分配/抢占/排队
-- cancel(CancelSelector) → 匹配Job → expert.abort() → on_outcome（标准路径）
-- check_wait_queue → 满足等待请求 或 超时通知Expert
+### Kernel（系统级调度器，无 LLM）
+Kernel 是确定性机械调度器，不含任何 LLM 调用。职责：
+- **Task 生命周期**：创建/销毁 Task Agent 实例
+- **资源分配**：actor/queue 的占用和释放，规则驱动
+- **冲突仲裁**：多个 Task 竞争同一资源时按优先级决定
+- **抢占**：高优先级 Task 可夺取低优先级 Task 的资源
+- **事件路由**：WorldModel 事件分发给相关 Task Agent
+- **取消**：cancel(CancelSelector) → 通知 Task Agent 终止
+- **等待队列**：资源不足时排队，资源释放时自动分配
 
 ### Expert（每Job一个实例，由Kernel实例化并销毁）
 - handled_intents() → 声明能处理的intent
