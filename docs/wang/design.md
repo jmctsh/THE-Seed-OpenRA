@@ -177,16 +177,48 @@ Expert 在以下情况升级给 Brain：
 Kernel 管理 Task 生命周期。Task Agent (LLM) 是 Task 的执行大脑。
 
 ### Job（Expert 的运行时实例）
+
+通用字段：
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | job_id | str | |
 | task_id | str | 所属 Task |
 | expert_type | str | ReconExpert, CombatExpert... |
-| config | dict | 自由格式配置（目标、参数、约束）由 Task Agent 设定 |
+| config | ExpertConfig | **强格式，每种 Expert 定义自己的 schema**（见下）|
 | resources | list[str] | 当前持有的资源 |
 | status | str | running/waiting/completed/aborted |
 
-一个 Task 可以有多个 Job。config 是自由格式 dict——LLM 设什么 Expert 就收什么，不需要严格 schema。
+一个 Task 可以有多个 Job。config 是**强格式**的——每种 Expert 定义自己的 config schema，Task Agent (LLM) 必须按 schema 提供。
+
+#### 各 Expert 的 Job Config Schema（示例）
+
+**ReconJobConfig:**
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| search_region | str | "northeast", "enemy_half", "full_map" |
+| target_type | str | "base", "army", "expansion" |
+| target_owner | str | "enemy" |
+| retreat_hp_pct | float | 低于此血量撤退 |
+| avoid_combat | bool | 遇敌绕行还是硬闯 |
+
+**CombatJobConfig:**
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| target_position | tuple | 攻击目标位置 |
+| engagement_mode | str | "assault", "harass", "hold", "surround" |
+| max_chase_distance | int | 最大追击距离 |
+| retreat_threshold | float | 兵力比低于此值撤退 |
+| formation | str | "spread", "tight", "line" |
+
+**EconomyJobConfig:**
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| unit_type | str | "2tnk", "e1" |
+| count | int | 生产数量 |
+| queue_type | str | "Vehicle", "Infantry" |
+| repeat | bool | 完成后是否继续循环生产 |
+
+每种 Expert 注册时声明自己的 config schema。LLM Task Agent 通过 tool_use 创建 Job 时，框架校验 config 是否符合 schema。
 
 ### ResourceNeed（声明式资源需求）
 | 字段 | 类型 | 说明 |
