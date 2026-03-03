@@ -1,226 +1,102 @@
 # System Design — Directive-Driven RTS Agent
 
-## 0. 定位
+## 0. 定位与架构
 
 LLM 赋能传统游戏 AI 的副官系统。不做对手 AI（如需控敌，启动另一个副官实例）。
 
 **三级架构：**
-
 ```
-┌─────────────────────────────────────────────┐
-│  Kernel（无 LLM，机械调度）                    │
-│  资源分配 / 优先级抢占 / 并发控制 / 任务调度    │
-│  必须确定性、毫秒级                            │
-├─────────┬───────────┬───────────┬───────────┤
-│ Task 1  │  Task 2   │  Task 3   │  ...      │
-│ LLM大脑  │ LLM大脑   │ LLM大脑   │           │
-│ +Expert │ +Expert   │ +Expert   │           │
-│  小脑   │   小脑    │   小脑    │           │
-└─────────┴───────────┴───────────┴───────────┘
+Kernel（无 LLM，确定性调度）
+  ├── Task 1 ─ LLM 大脑 ─┬─ Job A (Expert 小脑, 自主执行)
+  │                       ├─ Job B (Expert 小脑, 自主执行)
+  │                       └─ Job C (Expert 小脑, 自主执行)
+  ├── Task 2 ─ LLM 大脑 ─── Job D
+  └── Task 3 ─ LLM 大脑 ─── Job E
 ```
 
-- **Kernel（系统级，无 LLM）**：管理若干并行 Task，处理资源占用和任务调度。两个 Task 同时要 actor:57 不能等 LLM 想 2 秒——必须规则驱动、确定性、毫秒级。
-- **Task Agent（任务级，LLM 大脑）**：每个 Task 是一个小型 LLM agent 实例。理解意图、选择专家、设参数、协调多个 Job、监控事件、处理异常。一个 Task 可以使用**多种 Expert**，每种可以有**多个 Job 实例**并行。
-- **Expert（能力定义）**：一种领域能力的类型定义（ReconExpert、CombatExpert……）。
-- **Job（运行时实例，传统 AI 小脑）**：Expert 的运行时实例，绑定具体资源，自主 tick 执行。被 Task Agent 委托后自主运行，不等 LLM。
+| 层 | 实现 | 速度 | 职责 |
+|---|---|---|---|
+| **Kernel** | 规则 | 毫秒 | 任务调度、资源分配、冲突仲裁、事件路由 |
+| **Task Agent** | LLM | 秒级 | 理解意图、选 Expert、设参数、协调 Job、监控事件 |
+| **Job** | 传统 AI | tick级 | 自主执行（侦察/战斗/生产），直接调 GameAPI |
+
+## 1. 流程
 
 ```
-Task Agent "包围敌人基地"
-  ├── ReconExpert → Job: 侦察目标区域周边地形
-  ├── CombatExpert → Job: 侧翼A编队进攻
-  ├── CombatExpert → Job: 侧翼B编队进攻
-  └── EconomyExpert → Job: 补充坦克生产
+玩家: "探索地图，找到敌人基地"
+  → Kernel 创建 Task，spawn Task Agent (LLM)
+  → Task Agent 理解意图，创建 Job: ReconExpert(search_region="enemy_half", target_type="base")
+  → Kernel 为 Job 分配资源（快速单位）
+  → Job 自主 tick：查 WorldModel → 选路线 → 调 GameAPI 移动单位
+  → Job 发 Signal 给 Task Agent：发现敌方矿车 / 侦察兵受伤 / 找到基地
+  → Task Agent 根据 Signal 决策：调整方向 / 继续 / 放弃
+  → Job 完成 → Task Agent 判断成功 → Kernel 回收资源
 ```
-
-Task Agent 的核心价值 = **协调多个 Job 之间的时序和依赖**（A到位再让B出发，侦察发现敌人跑了就取消包围改追击）。
-
-**Expert 不是 LLM 的 tool，而是被 LLM 委托后自主运行的控制器。**
-
-## 1. 命令流水线
-
-```
-玩家自然语言
-  → [CommandProcessor] NLU/LLM + WorldModel → TaskSpec[]
-  → [Kernel] spawn Task Agent（LLM 实例）→ 资源分配
-  → [Task Agent] 大脑：选择 Expert、设参数、委托执行、监控事件
-  → [Expert] 小脑：自主 tick 执行 → Action[] / Signal / Outcome
-  → [ActionExecutor] 统一调 GameAPI
-```
-
-### CommandProcessor
-合并了之前的 Interpreter/Resolver/Decomposer。内部自由组合 NLU 模板 + LLM + WorldModel 查询。
-对外只有一个接口：`process(text, world) → TaskSpec[]`。
-简单命令走模板，复杂命令走 LLM（LLM 有游戏状态上下文）。
-
-### Task Agent（大脑）
-每个 Task 对应一个小型 LLM agent 实例。职责：
-- 快速下发第一步（尽快开始执行）
-- 选择并配置 Expert（设参数、目标、约束）
-- 注册关心的事件（unit_died, target_found, ...）
-- 收到事件时介入决策（调整参数、切换策略、取消/重启 Expert）
-- Expert 完成后判断是否成功、是否需要后续动作
-- Token 开销不是问题：小型 code agent 极便宜，并行 5-10 个可接受
-
-**Task Agent 不做的事：**
-- 不逐帧操控单位（那是 Expert 的事）
-- 不做实时微操（LLM 响应太慢）
-- 不替代专家的领域能力（LLM 不会玩游戏）
-
-### Expert（小脑）
-被 Task Agent 委托后**自主运行**的领域控制器。
-- 接收参数后自己 tick，不等 LLM
-- 向 Task Agent 发信号/事件（发现敌人、受攻击、任务完成、资源耗尽）
-- Task Agent 可以中途修改参数（如改变侦察方向、调整进攻目标）
-- 内部用传统 AI：FSM/评分/势场/寻路/影响力图
-
-## 大脑-小脑协作机制
-
-> 基于机器人(3T/Subsumption/Nav2)、LLM框架(AutoGen/CrewAI/LangGraph)、游戏AI(F.E.A.R. GOAP/AHTN)的调研结论。详见 brain_cerebellum_research.md。
-
-### 核心原则
-1. **Brain 是事件驱动的监督者**，不是逐帧控制器。Brain 配置 Expert → 订阅信号 → 仅在语义决策边界介入。
-2. **Expert 保持自主反射**，即使 Brain 慢/不响应也继续运行。Expert 有 `default_if_timeout` 策略。
-3. **上下文由框架推送给 Brain**，不依赖 LLM 主动查询。Runtime 构建 context packet 注入。
-4. **信号是稀疏的、面向决策的**，不是逐 tick 遥测。只在有意义的变化时发。
-
-### Task Agent → Expert：窄控制面
-```
-start(config)     # 启动，传入目标/参数/约束
-patch(params)     # 中途调整参数（改方向、改风险容忍度）
-pause(reason)     # 暂停执行
-resume()          # 恢复
-abort(reason)     # 终止
-```
-Task Agent 不发出逐帧命令。它设定**目标+信封（envelope）**，Expert 在信封内自主决策。
-
-### Expert → Task Agent：ExpertSignal
-```
-ExpertSignal:
-  task_id, job_id, expert_type
-  kind: progress | risk_alert | blocked | decision_request |
-        resource_lost | target_found | task_complete
-  summary: str          # 人类可读描述
-  world_delta: dict     # 发生了什么变化
-  expert_state: dict    # phase, progress_pct, local_confidence
-  decision: dict | None # 如果需要 Brain 决策：options + default_if_timeout
-```
-
-**decision_request 示例**（侦察兵死了，没有替补）：
-```
-decision:
-  needed: true
-  type: strategy_choice
-  deadline_s: 3.0
-  options:
-    - wait_for_new_scout（等新兵造出来）
-    - switch_to_infantry_recon（改用步兵侦察）
-    - abort_task（放弃）
-  default_if_timeout: wait_for_new_scout
-```
-Brain 3 秒内不响应 → Expert 执行 default。
-
-### Context Packet（框架 → Brain 注入）
-```
-task: {task_id, intent, goal, priority}
-expert: {type, phase, resources, config}
-world_summary: {economy, military, map, known_enemy}
-recent_events: [...]
-open_decisions: [...]
-```
-注入时机：task 启动时全量 / 事件触发时 delta / 长时间无事件时压缩摘要。
-
-### 自治模式（per-task）
-| 模式 | 适用 | Brain 介入频率 |
-|---|---|---|
-| **fire_and_forget** | 常规/可逆/低协调 | 仅里程碑+异常 |
-| **supervised** | 不可逆/高代价/多 Job 协调 | 丰富更新+检查点审批 |
-
-### 升级阈值（per-Expert）
-Expert 在以下情况升级给 Brain：
-1. 目标语义变化（发现情况和预期不同）
-2. 多条路线有本质不同的机会成本
-3. 本地置信度长时间低于阈值
-4. 资源损失超过重要性阈值
-5. 需要和其他 Job 协调
-6. 动作会违反用户约束或不可逆
 
 ## 2. 运行时
 
-**单线程 GameLoop，默认 10Hz。** Expert 不拥有线程，由 GameLoop 按各自 tick_interval 调度。
+**单线程 GameLoop，默认 10Hz。**
 
-每 tick：刷新 WorldModel → 检测事件 → tick 到期的 Expert → 收集 Action → 批量执行 → 推送看板。
+每 tick：
+1. WorldModel.refresh()（分层：actor 位置每 tick，经济 500ms，地图 1s）
+2. WorldModel.detect_events() → 分发给 Kernel
+3. Kernel 路由事件给相关 Task Agent 和 Job
+4. GameLoop tick 到期的 Job（每个 Job 有自己的 tick_interval）
+5. 推送看板
 
-| Expert 类型 | tick_interval | 理由 |
-|---|---|---|
-| CombatExpert | 0.2s | 微操快速响应 |
-| ReconExpert | 1.0s | 侦察不需高频 |
-| EconomyExpert | 5.0s | 生产决策慢 |
-| DeployExpert | 即时 | instant task |
+| Job 类型 | tick_interval |
+|---|---|
+| CombatJob | 0.2s |
+| ReconJob | 1.0s |
+| EconomyJob | 5.0s |
 
-启动顺序：GameAPI → UnitRegistry → WorldModel → Kernel(含Expert注册) → CommandProcessor → Dashboard → GameLoop
+启动顺序：GameAPI → UnitRegistry → WorldModel → Kernel → Dashboard → GameLoop
 
 ## 3. 数据模型
 
-引入 LLM agent 后，大量中间对象不再需要（LLM 自己理解意图、解析目标、判断成败）。
-~~Directive~~、~~ResolvedTarget~~、~~SuccessCondition/FailureCondition~~、~~CancelSelector~~、~~Action/ActionResult~~ 全部删除。
-
-### Task（Kernel 管理的任务单元）
+### Task
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | task_id | str | |
 | raw_text | str | 玩家原始输入 |
+| kind | str | instant / managed / background / constraint |
 | priority | int | 0-100 |
-| status | str | pending/running/waiting/succeeded/partial/failed/aborted |
+| status | str | pending / running / waiting / succeeded / partial / failed / aborted |
 | autonomy_mode | str | fire_and_forget / supervised |
 | created_at | float | |
 
-Kernel 管理 Task 生命周期。Task Agent (LLM) 是 Task 的执行大脑。
-
-### Job（Expert 的运行时实例）
-
-通用字段：
+### Job
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | job_id | str | |
 | task_id | str | 所属 Task |
 | expert_type | str | ReconExpert, CombatExpert... |
-| config | ExpertConfig | **强格式，每种 Expert 定义自己的 schema**（见下）|
+| config | ExpertConfig | 强格式，schema 由 Expert 类型定义 |
 | resources | list[str] | 当前持有的资源 |
-| status | str | running/waiting/completed/aborted |
+| status | str | running / waiting / completed / aborted |
 
-一个 Task 可以有多个 Job。config 是**强格式**的——每种 Expert 定义自己的 config schema，Task Agent (LLM) 必须按 schema 提供。
-
-#### 各 Expert 的 Job Config Schema（示例）
+### Expert Config Schema（每种 Expert 不同）
 
 **ReconJobConfig:**
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| search_region | str | "northeast", "enemy_half", "full_map" |
-| target_type | str | "base", "army", "expansion" |
-| target_owner | str | "enemy" |
-| retreat_hp_pct | float | 低于此血量撤退 |
-| avoid_combat | bool | 遇敌绕行还是硬闯 |
+- search_region: str（northeast / enemy_half / full_map）
+- target_type: str（base / army / expansion）
+- target_owner: str（enemy）
+- retreat_hp_pct: float
+- avoid_combat: bool
 
 **CombatJobConfig:**
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| target_position | tuple | 攻击目标位置 |
-| engagement_mode | str | "assault", "harass", "hold", "surround" |
-| max_chase_distance | int | 最大追击距离 |
-| retreat_threshold | float | 兵力比低于此值撤退 |
-| formation | str | "spread", "tight", "line" |
+- target_position: tuple
+- engagement_mode: str（assault / harass / hold / surround）
+- max_chase_distance: int
+- retreat_threshold: float
 
 **EconomyJobConfig:**
-| 字段 | 类型 | 说明 |
-|---|---|---|
-| unit_type | str | "2tnk", "e1" |
-| count | int | 生产数量 |
-| queue_type | str | "Vehicle", "Infantry" |
-| repeat | bool | 完成后是否继续循环生产 |
+- unit_type: str
+- count: int
+- queue_type: str
+- repeat: bool
 
-每种 Expert 注册时声明自己的 config schema。LLM Task Agent 通过 tool_use 创建 Job 时，框架校验 config 是否符合 schema。
-
-### ResourceNeed（声明式资源需求）
+### ResourceNeed（声明式）
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | job_id | str | |
@@ -228,186 +104,163 @@ Kernel 管理 Task 生命周期。Task Agent (LLM) 是 Task 的执行大脑。
 | count | int | |
 | predicates | dict | {category: vehicle, mobility: fast} |
 
-Kernel 持续满足：死了补、新造的自动分配、不足则降级运行。
-只有 Task Agent (LLM) 有权判断"没希望了"取消任务。
+Kernel 持续满足：死了补、新造自动分配、不足降级运行。只有 Task Agent 有权判断"没希望了"取消。
 
-### Constraint（活跃约束）
+### Constraint
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | constraint_id | str | |
-| kind | str | do_not_chase, economy_first, defend_base |
-| scope | str | global / 特定 task_id |
-| params | dict | {max_chase_distance: 20} |
+| kind | str | do_not_chase / economy_first / defend_base |
+| scope | str | global / task_id |
+| params | dict | |
 | active | bool | |
 
-由 Task Agent 创建，Kernel 管理生命周期。Expert 每 tick 查询活跃约束并据此调整行为。
-
-### Event（WorldModel 事件检测）
+### ExpertSignal（Job → Task Agent）
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| event_id | str | |
-| type | str | UNIT_DIED, UNIT_DAMAGED, ENEMY_DISCOVERED, BASE_UNDER_ATTACK, STRUCTURE_LOST, PRODUCTION_COMPLETE |
+| task_id, job_id | str | |
+| kind | str | progress / risk_alert / blocked / decision_request / resource_lost / target_found / task_complete |
+| summary | str | 人类可读 |
+| world_delta | dict | 发生了什么 |
+| expert_state | dict | phase, progress_pct, local_confidence |
+| decision | dict? | 需要 Brain 决策时：options + default_if_timeout |
+
+### Event（WorldModel 事件）
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| type | str | UNIT_DIED / UNIT_DAMAGED / ENEMY_DISCOVERED / BASE_UNDER_ATTACK / PRODUCTION_COMPLETE |
 | actor_id | int? | |
 | position | tuple? | |
 | data | dict | |
 | timestamp | float | |
 
-### NormalizedActor（WorldModel 中的标准化单位）
+### NormalizedActor
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | actor_id | int | |
-| name | str | 2tnk, e1, harv |
-| display_name | str | 重型坦克 |
-| owner | str | self/enemy/neutral |
-| category | str | infantry/vehicle/building/harvester/mcv |
+| name / display_name | str | 2tnk / 重型坦克 |
+| owner | str | self / enemy / neutral |
+| category | str | infantry / vehicle / building / harvester / mcv |
 | position | tuple | |
 | hp / hp_max | int | |
 | is_alive / is_idle | bool | |
-| mobility | str | fast/medium/slow/static |
+| mobility | str | fast / medium / slow / static |
 | combat_value | float | |
 | can_attack / can_harvest | bool | |
 | weapon_range | int | |
-| last_seen | float | |
 
-## 4. 核心组件职责
+## 4. 组件职责
 
-### Kernel（系统级调度器，无 LLM）
-Kernel 是确定性机械调度器，不含任何 LLM 调用。职责：
-- **Task 生命周期**：创建/销毁 Task Agent 实例
-- **资源分配**：actor/queue 的占用和释放，规则驱动
-- **冲突仲裁**：多个 Task 竞争同一资源时按优先级决定
-- **抢占**：高优先级 Task 可夺取低优先级 Task 的资源
-- **事件路由**：WorldModel 事件分发给相关 Task Agent
-- **取消**：cancel(CancelSelector) → 通知 Task Agent 终止
-- **等待队列**：资源不足时排队，资源释放时自动分配
+### Kernel（无 LLM）
+- 创建/销毁 Task 和 Task Agent
+- 资源分配：按 ResourceNeed + 优先级，持续满足
+- 冲突仲裁：多 Task 争资源 → 按优先级
+- 抢占：高优先级夺低优先级资源（单资源 Job → abort，多资源 Job → 降级）
+- 事件路由：WorldModel Event → 相关 Task Agent 和 Job
+- 取消：Kernel.cancel(task_id) → Task Agent abort → 回收资源
 
-### Expert（能力类型） + Job（运行时实例）
+### Task Agent（LLM 大脑，per-Task 实例）
+- 理解玩家意图（接收 raw_text + WorldModel 上下文）
+- 通过 tool_use 创建/配置 Job（框架校验 config schema）
+- 协调多个 Job 的时序依赖
+- 收到 ExpertSignal 时决策：调整参数 / 启动新 Job / 取消 Job
+- 判断 Task 整体成败
+- 事件驱动，不轮询。收到 Signal 才醒来。
+- 有 `default_if_timeout`：Expert 等不到 Brain 回复就用默认策略
 
-**Expert** 是领域能力的类型定义（类）。**Job** 是 Expert 的运行时实例（对象），绑定具体资源，自主 tick。
+### Job（传统 AI 小脑，per-Job 实例）
+- 自主 tick 执行，不等 LLM
+- **直接调 GameAPI**（无中间层，Macro Actions = GameAPI 工具封装）
+- 向 Task Agent 发 ExpertSignal（稀疏、面向决策，不是逐 tick 遥测）
+- 接受 Task Agent 中途调参（patch）
+- 内部用传统 AI：FSM / 评分 / 势场 / 寻路
 
-一个 Task Agent 可以创建多个 Job（跨多种 Expert），Kernel 管理所有 Job 的资源分配。
-
-Expert 类级别接口：
-- capabilities() → 声明能力（侦察、战斗、生产...）
-- create_job(params, world) → Job 实例
-
-Job 实例接口：
-- bind(world) → ResourceRequest[] 声明需要的资源
-- start(assigned_resources, resource_requester) → 开始执行
-- tick(world) → Action[] 或 Signal 或 Outcome
-- set_params(params) → Task Agent 中途调整参数（如改变目标、方向）
-- on_resource_lost(resource_id, world) → 资源被夺/死亡
-- on_resource_granted(request_id, resources) → 等待的资源到了
-- on_resource_wait_expired(request_id) → 等待超时
-- abort(reason) → Outcome（幂等）
-
-Signal = Job 向 Task Agent 汇报的中间事件（不是终态），如：
-- "发现敌方矿车"
-- "受到攻击，HP < 50%"
-- "到达目标区域"
-- Task Agent 收到 Signal 后决定是否介入（调整参数、启动新 Job、取消当前 Job）
-
-### 资源模型：声明式 + 持续满足 + 优雅降级
-
-RTS 中单位大量死亡、大量产生是常态。资源绑定不能是一次性的"绑定 actor:57，死了就失败"。
-
-**Job 声明需求，不绑定具体单位：**
-```
-ResourceNeed(kind="actor", count=2, predicates={category: "vehicle", mobility: "fast"})
-```
-
-Kernel 持续保证需求被满足：
-- 当前绑定的单位死亡 → Kernel 自动从空闲池/新生产单位中补充
-- 空闲池不足 → Job 降级运行（能用几个用几个），不是失败
-- 新单位造出来 → Kernel 检查等待队列 → 按优先级自动分配
-- 全军覆没 + 没钱 → Job 进入 waiting，等经济恢复，不是 failed
-- 只有 Task Agent（LLM）有权判断"没希望了"才主动取消
-
-资源竞争：多个 Job 要同类资源 → Kernel 按 Task 优先级分配。低优先级 Job 暂时少拿，不被直接拒绝。
-
-### GameAPI
-- Job 直接调 GameAPI，无中间层，RTS 需要即时执行
-- Macro Actions = GameAPI 的工具形式封装（如 produce_wait、deploy_mcv），本质等于 GameAPI，不是架构层
-- 日志和资源校验在 GameAPI adapter 内部做
-
-### Task Agent 框架（待选型）
-Task Agent（LLM 大脑）需要一个 agent 框架实现。核心需求：
-- **低延迟**：第一步 tool_use 尽快出（streaming）
-- **事件驱动**：收到 ExpertSignal 才醒来，不轮询
-- **Context 注入**：框架推送结构化 context packet，不靠 LLM 查询
-- **轻量并行**：5-10 个实例共享 API 连接
-- 候选：raw Anthropic SDK 自建 / Claude Agent SDK / LangGraph / AutoGen / PydanticAI
-- yu 正在调研（详见 agent_framework_research.md）
+Task Agent → Job 控制面：`start(config) / patch(params) / pause / resume / abort`
+Job → Task Agent 通信：`ExpertSignal`
 
 ### WorldModel
-- 游戏状态查询（actors/structures/economy/map）
-- 空间查询（unexplored regions, threat near pos）
-- 运行时状态（active jobs, resource bindings, constraints）
+- 游戏状态查询（actors / structures / economy / map）
 - 资源匹配（find_actors by predicates, idle_only）
-- 事件检测（对比前后快照 → Event[]）
-- 分层刷新（actor位置每tick, 经济500ms, 地图1s, 生产队列2s）
-- version + last_refresh_at 用于新鲜度判断
+- 事件检测（快照 diff → Event[]）
+- 分层刷新
+- 运行时状态（active tasks/jobs, resource bindings, constraints）
 
-## 5. 取消与抢占
+### GameAPI
+- 底层 Socket RPC，不改
+- Macro Actions = 工具形式封装，不是架构层
 
-**取消（用户说"取消探索"）：**
-Directive(kind=cancel) → CancelSelector(intent_match="recon|explore") → Kernel.cancel() → expert.abort() → on_outcome()（标准路径）
+## 5. 大脑-小脑协作
 
-**抢占（高优先级要低优先级的资源）：**
-- 目标Job只有一个资源 → abort + on_outcome（终止）
-- 目标Job有多个资源 → on_resource_lost（降级继续）
+### 核心原则
+1. Brain 是事件驱动的监督者，不是逐帧控制器
+2. Job 保持自主反射，Brain 慢/不响应也继续运行
+3. 上下文由框架推送给 Brain（context packet），不靠 LLM 主动查询
+4. Signal 是稀疏的、面向决策的，不是逐 tick 遥测
 
-**Mid-task资源补充（侦察兵死后）：**
-Expert 通过 resource_requester.request() 发起 → 同步返回 或 进入等待队列 → on_resource_granted / on_resource_wait_expired 回调
+### Context Packet（框架 → Brain）
+```
+task: {task_id, raw_text, priority}
+jobs: [{job_id, expert_type, phase, resources, config}]
+world_summary: {economy, military, map, known_enemy}
+recent_signals: [...]
+open_decisions: [...]
+```
+注入时机：task 启动全量 / Signal 触发 delta / 长时间无事件压缩摘要
+
+### 自治模式
+| 模式 | 适用 | Brain 介入 |
+|---|---|---|
+| fire_and_forget | 常规/可逆 | 仅异常 |
+| supervised | 不可逆/多 Job 协调 | 丰富更新+审批 |
+
+### 升级阈值（per-Expert）
+Job 在以下情况升级给 Brain：
+1. 目标语义变化
+2. 多条路线有本质不同的机会成本
+3. 本地置信度长时间低于阈值
+4. 资源损失超过重要性阈值
+5. 需要和其他 Job 协调
+6. 动作会违反约束或不可逆
+
+### Task Agent 框架（待选型）
+核心需求：低延迟 / 事件驱动 / context 注入 / 轻量并行 5-10 个
+候选：raw Anthropic SDK 自建 / Claude Agent SDK / LangGraph / AutoGen / PydanticAI
+yu 正在调研
 
 ## 6. 看板 + 日志
 
 **技术栈：** Vue 3
 **双模式：** 用户面板 / 调试面板
-**三区：** Operations（服务+画面）/ Tasks（任务看板）/ Diagnostics（日志+状态）
+**三区：** Operations / Tasks / Diagnostics
 
-**WebSocket 入站：** command_submit, command_cancel, clarification_response, mode_switch
-**WebSocket 出站：** world_snapshot(1Hz), task_update(变更时), task_list(1Hz), log_entry(实时), action_executed(调试)
-
-**结构化日志字段：** event, ts, level, layer, event_type, task_id, job_id, expert, actor_ids, world_version, directive_id, message, data
+WebSocket 入站：command_submit, command_cancel, mode_switch
+WebSocket 出站：world_snapshot(1Hz), task_update(变更时), task_list(1Hz), log_entry(实时)
 
 ## 7. 决策记录
 
 | # | 决策 | 日期 |
 |---|---|---|
-| 1 | Kernel 无循环，被动仲裁 | 03-29 |
+| 1 | 三级架构：Kernel(无LLM) / Task(LLM) / Job(传统AI) | 03-29 |
 | 2 | 全面重写 | 03-29 |
-| 3 | GameAPI 不改 | 03-29 |
+| 3 | GameAPI 不改，Macro = 工具封装 | 03-29 |
 | 4 | 对手 AI 不纳入 | 03-29 |
 | 5 | 4种Task: Instant/Managed/Background/Constraint | 03-29 |
-| 6 | 单线程GameLoop 10Hz, per-expert tick_interval | 03-30 |
-| 7 | Expert不直接调GameAPI, 全走Action→ActionExecutor | 03-30 |
-| 8 | Expert实例per-Job | 03-30 |
-| 9 | 看板 Vue 3 | 03-29 |
+| 6 | 单线程 GameLoop 10Hz | 03-30 |
+| 7 | Job 直接调 GameAPI，无中间层 | 03-30 |
+| 8 | Job config 强格式，每种 Expert 定义自己的 schema | 03-30 |
+| 9 | 声明式资源模型，Kernel 持续满足 | 03-30 |
+| 10 | 大脑-小脑模式：Brain 监督 + Job 自主执行 | 03-30 |
+| 11 | 看板 Vue 3 | 03-29 |
 
-## 8. 场景推演：探索地图，找到敌人基地
+## 8. 现有代码处置
 
-**Interpreter:** `Directive(kind=explore, target="敌人基地", goal=find, ambiguity=0.1)`
+详见 `code_asset_inventory.md`。
+Keep: GameAPI, models, NLU 管线。
+Reference: jobs, agents, intel, tactical_core。
+Delete: standalone launchers。
 
-**Resolver:** "敌人"→owner=enemy, "基地"→entity_type=base, WorldModel查无已知 → `ResolvedTarget(known=False)`
+## 9. 待定
 
-**Decomposer:** 模式"explore to find X" → `TaskSpec(kind=managed, intent=recon_find, success=target_found{base,enemy})`
-
-**Kernel:** 选ReconExpert → bind()请求1个fast actor → 分配actor:57 → start()
-
-**执行：**
-- t=0s: 查WorldModel未探索区域 → 对角方向评分最高 → move actor:57
-- t=15s: 发现敌方矿车 → 调整方向跟踪矿车
-- t=30s: 被攻击HP降 → 判断继续(距目标近) → attack_move
-- t=42s: 发现3个敌方建筑 → success_condition满足 → Outcome(succeeded)
-- Kernel释放actor:57, 通知玩家
-
-**边缘：侦察兵t=20s死亡** → UNIT_DIED事件 → on_resource_lost → resource_requester请求补充(wait_timeout=30s) → 等待/超时失败
-
-**边缘：用户"取消探索"** → CancelSelector(intent_match="recon|explore") → abort → Outcome(aborted)
-
-**边缘：新命令抢占actor:57** → 高优先级Job → abort旧Job → 资源重分配
-
-## 9. 现有代码处置
-
-详见 `code_asset_inventory.md`。Keep: GameAPI, models, NLU管线。Reference: jobs, agents, intel, tactical_core。Delete: standalone launchers。
+- [ ] Task Agent 框架选型（yu 调研中）
+- [ ] Expert 扩展机制和注册方式
+- [ ] 场景推演需要用新架构重写
