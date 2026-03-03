@@ -222,10 +222,10 @@ Job 在以下情况升级给 Brain：
 5. 需要和其他 Job 协调
 6. 动作会违反约束或不可逆
 
-### Task Agent 框架（待选型）
-核心需求：低延迟 / 事件驱动 / context 注入 / 轻量并行 5-10 个
-候选：raw Anthropic SDK 自建 / Claude Agent SDK / LangGraph / AutoGen / PydanticAI
-yu 正在调研
+### Task Agent 实现
+在 raw Anthropic/OpenAI SDK 上自建轻量事件驱动循环（~150-250 行）。
+框架（LangGraph/AutoGen/CrewAI）对我们的场景过重——Task Agent 模式是 `event → inject context → 一次 tool_use → sleep`，不需要 workflow 引擎。
+如需薄封装可选 PydanticAI 作为备选。（详见 archive/agent_framework_research.md）
 
 ## 6. 看板 + 日志
 
@@ -261,6 +261,6 @@ Delete: standalone launchers。
 
 ## 9. 待定
 
-- [ ] Task Agent 框架选型（yu 调研中）
+- [x] Task Agent 框架：raw SDK 自建（~150-250 行），备选 PydanticAI
 - [ ] Expert 扩展机制和注册方式
 - [ ] 场景推演需要用新架构重写
