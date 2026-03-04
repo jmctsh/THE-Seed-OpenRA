@@ -254,7 +254,133 @@ WebSocket 出站：world_snapshot(1Hz), task_update(变更时), task_list(1Hz), 
 | 10 | 大脑-小脑模式：Brain 监督 + Job 自主执行 | 03-30 |
 | 11 | 看板 Vue 3 | 03-29 |
 
-## 8. 现有代码处置
+## 8. 场景推演："探索地图，找到敌人基地"
+
+### 玩家输入
+```
+"探索地图，找到敌人基地"
+```
+
+### Kernel 创建 Task，spawn Task Agent
+```
+Task(task_id="t1", raw_text="探索地图，找到敌人基地",
+     kind="managed", priority=50, status="running",
+     autonomy_mode="fire_and_forget")
+```
+Kernel 注入 context packet 给 Task Agent（LLM），包含 WorldModel 摘要。
+
+### Task Agent 第一次 LLM 调用
+Task Agent 收到 context packet（经济、兵力、地图探索率、已知敌情）。
+
+LLM tool_use 响应：
+```
+call: start_job(
+    expert_type="ReconExpert",
+    config=ReconJobConfig(
+        search_region="enemy_half",
+        target_type="base",
+        target_owner="enemy",
+        retreat_hp_pct=0.3,
+        avoid_combat=True
+    )
+)
+```
+→ Kernel 创建 Job，按 ResourceNeed（1 个 fast unit）分配 actor:57
+→ ReconExpert Job 开始自主 tick
+
+Task Agent 进入 sleep，等待 Signal。
+
+### Job 自主执行
+
+```
+t=0s    ReconJob tick: 查 WorldModel 未探索区域
+        评分: 对角方向 > 中部（RTS 常识）
+        调 GameAPI: move actor:57 → (1600, 200)
+
+t=15s   WorldModel Event: ENEMY_DISCOVERED actor:201 (矿车)
+        ReconJob: 矿车附近可能有基地，调整方向
+        调 GameAPI: move actor:57 → (1800, 420)
+        发 Signal 给 Task Agent:
+          ExpertSignal(kind="progress",
+            summary="发现敌方矿车，调整侦察方向",
+            expert_state={phase: "tracking", progress_pct: 40})
+
+t=15s   Task Agent 收到 Signal（fire_and_forget 模式）
+        progress 类型，无 decision_request → 不需要 LLM 介入
+        继续 sleep
+
+t=30s   WorldModel Event: UNIT_DAMAGED actor:57 (HP 100→85)
+        ReconJob: HP 85% > retreat_hp_pct 30%，继续
+        调 GameAPI: attack_move actor:57 → (1820, 430)
+
+t=42s   WorldModel: 发现 3 个敌方建筑 at (1820, 430)
+        ReconJob: 目标达成
+        发 Signal:
+          ExpertSignal(kind="task_complete",
+            summary="找到敌人基地 (1820,430)，3个建筑",
+            world_delta={enemy_base_pos: (1820,430), structures: 3})
+
+t=42s   Task Agent 收到 task_complete Signal → LLM 判断任务成功
+        LLM tool_use: abort_job(job_id) → 回收资源
+        Task status → succeeded
+        Kernel 释放 actor:57，通知看板
+```
+
+### 边缘：t=20s 侦察兵死了
+
+```
+WorldModel Event: UNIT_DIED actor:57
+  → Kernel: 从 Job 移除 actor:57，按 ResourceNeed 尝试补充
+  → 空闲池有 actor:83 (吉普车, fast) → 自动分配给 Job
+  → ReconJob.on_resource_granted([83]) → 继续执行
+
+  如果空闲池没有 fast 单位：
+  → Job 降级 waiting，发 Signal:
+    ExpertSignal(kind="resource_lost",
+      summary="侦察兵阵亡，无可用替补",
+      decision={
+        options: ["wait_for_production", "use_infantry", "abort"],
+        default_if_timeout: "wait_for_production",
+        deadline_s: 3.0
+      })
+  → Task Agent 醒来，LLM 选择一个选项（或 3s 超时用 default）
+  → 如果选 "use_infantry": patch_job(config={avoid_combat:False, ...})
+  → 如果等待: 新单位造出来 → Kernel 自动分配 → Job 恢复
+```
+
+### 边缘：用户说"取消探索"
+
+```
+新 Task(kind="instant", raw_text="取消探索")
+  → Task Agent (LLM): 理解意图是取消
+  → LLM tool_use: cancel_task(task_id="t1")
+  → Kernel: abort Job → 释放资源 → Task status=aborted
+```
+
+### 边缘：用户说"用侦察车去攻击矿车"（抢占）
+
+```
+新 Task(kind="managed", raw_text="用侦察车去攻击矿车", priority=60)
+  → Task Agent (LLM): 需要 actor:57，创建 CombatJob
+  → Kernel: actor:57 被 ReconJob(priority=50) 占用
+  → 60 > 50，从 ReconJob 夺取 actor:57
+  → ReconJob 只有一个资源 → abort → Signal(task_complete, result=aborted)
+  → 原 Task Agent 收到 abort signal → 任务结束
+  → actor:57 分配给新 CombatJob
+```
+
+### 此场景 LLM 被调用了几次？
+
+| 时刻 | LLM 调用 | 原因 |
+|---|---|---|
+| t=0s | 1次 | 理解意图 + start_job |
+| t=15s | 0次 | progress signal, fire_and_forget 不唤醒 |
+| t=42s | 1次 | task_complete, 判断成功 |
+| **总计** | **2次** | 其余全是 Job 自主执行 |
+
+侦察兵死亡且无替补时多 1 次（decision_request）。正常流程只要 2 次 LLM 调用。
+
+## 9. 现有代码处置
 
 详见 `code_asset_inventory.md`。
 Keep: GameAPI, models, NLU 管线。
@@ -264,5 +390,5 @@ Delete: standalone launchers。
 ## 9. 待定
 
 - [x] Task Agent 框架：raw SDK 自建（~150-250 行），备选 PydanticAI
-- [ ] Expert 扩展机制和注册方式
-- [ ] 场景推演需要用新架构重写
+- [x] Expert 扩展：Expert 是写死的代码模块，启动时直接列出。扩展 = 收集玩家数据 → 开发新 Expert 代码
+- [x] 场景推演已用新架构重写（§8）
