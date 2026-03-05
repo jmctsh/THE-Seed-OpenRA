@@ -22,15 +22,27 @@ Kernel（无 LLM，确定性调度）
 
 ## 1. 流程
 
+玩家输入分三条路径：
+
+**执行路径**（改变游戏状态）：
 ```
-玩家: "探索地图，找到敌人基地"
-  → Kernel 创建 Task，spawn Task Agent (LLM)
-  → Task Agent 理解意图，创建 Job: ReconExpert(search_region="enemy_half", target_type="base")
-  → Kernel 为 Job 分配资源（快速单位）
-  → Job 自主 tick：查 WorldModel → 选路线 → 调 GameAPI 移动单位
-  → Job 发 Signal 给 Task Agent：发现敌方矿车 / 侦察兵受伤 / 找到基地
-  → Task Agent 根据 Signal 决策：调整方向 / 继续 / 放弃
-  → Job 完成 → Task Agent 判断成功 → Kernel 回收资源
+"探索地图找敌人基地" / "生产坦克" / "包围基地"
+  → Kernel 创建 Task → spawn Task Agent (LLM)
+  → Task Agent 创建 Job → Expert 自主执行 → GameAPI
+```
+
+**查询路径**（不改变游戏状态）：
+```
+"战况如何？" / "从哪进攻？" / "现在该做什么？"
+  → 直接 LLM + WorldModel 上下文 → 回答玩家
+  → 不进 Kernel，不创建 Task，不绑资源
+```
+
+**主动通知**（系统→玩家，无需玩家输入）：
+```
+WorldModel 事件触发 → Kernel 预注册规则检查 → 推送通知到看板
+例："发现敌人在扩张" / "我方前线空虚" / "经济充裕，可以考虑进攻"
+不自动执行动作，只通知玩家。玩家决定是否下令。
 ```
 
 ## 2. 运行时
@@ -302,6 +314,8 @@ WebSocket 出站：world_snapshot(1Hz), task_update(变更时), task_list(1Hz), 
 | 12 | Task Agent 框架：raw SDK 自建 ~200 行，LLM 暂定 Qwen3.5 | 03-30 |
 | 13 | Expert 写死在代码中，扩展 = 收集数据+开发代码 | 03-30 |
 | 14 | 被动事件(BASE_UNDER_ATTACK)由 Kernel 预注册规则自动创建 Task | 03-30 |
+| 15 | 系统不自主执行战略动作，只通知玩家。紧急防御除外（决策14）| 03-30 |
+| 16 | 查询指令（战况/建议）走 LLM+WorldModel 直接回答，不进 Kernel | 03-30 |
 
 ## 8. 场景推演："探索地图，找到敌人基地"
 
@@ -441,6 +455,9 @@ WorldModel Event: UNIT_DIED actor:57
 | 修理坦克然后进攻 | managed | start_job(Movement, target=repair_facility) → 到达后 patch 或新建 CombatJob |
 | 部署基地车 | instant | start_job(DeployExpert) → 立即 complete_task |
 | 建新基地在右边矿区 | managed/supervised | query_world(有MCV?) → 有:Movement到位+Deploy / 无:Economy生产MCV → 到位后Deploy。地点有敌人:先Combat清理或换地点 |
+| 战况如何？ | 查询（不进Kernel） | LLM + WorldModel 上下文 → 直接回答玩家 |
+| 从哪进攻？ | 查询（不进Kernel） | LLM + WorldModel 上下文 → 分析建议，不执行 |
+| 现在该做什么？ | 查询（不进Kernel） | LLM + WorldModel 上下文 → 战略建议 |
 
 修理 = MovementExpert（移动到维修设施）+ GameAPI repair 命令。
 无维修设施 → Task Agent 通过 query_world 发现 → 跳过修理，直接执行后续动作（继续进攻）。通知玩家"无维修设施，跳过修理"。
