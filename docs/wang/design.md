@@ -90,11 +90,19 @@ Kernel（无 LLM，确定性调度）
 - max_chase_distance: int
 - retreat_threshold: float
 
+**MovementJobConfig:**
+- target_position: tuple（目标位置）
+- actor_ids: list[int]（要移动的单位，可选，默认用 ResourceNeed 分配）
+- move_mode: str（move / attack_move / retreat）
+- arrival_radius: int（到达判定半径）
+
 **EconomyJobConfig:**
 - unit_type: str
 - count: int
 - queue_type: str
 - repeat: bool
+
+EconomyJob 语义：每生产完一个单位发 `progress` Signal。中途断钱/断电/工厂损毁 → Job 进 waiting（不 fail）。count 全部完成或被 abort → `task_complete`。部分完成 = result=partial。
 
 ### ResourceNeed（声明式）
 | 字段 | 类型 | 说明 |
@@ -187,7 +195,7 @@ enforcement=clamp：Job 自动遵守。enforcement=escalate：Job 发 decision_r
 | resume_job | job_id | ok | 恢复 |
 | abort_job | job_id | ok | 终止 Job |
 | complete_task | result, summary | ok | 标记 Task 成功/失败/部分完成 |
-| create_constraint | kind, scope, params | constraint_id | 创建约束 |
+| create_constraint | kind, scope, params, enforcement | constraint_id | 创建约束（enforcement=clamp\|escalate）|
 | remove_constraint | constraint_id | ok | 移除约束 |
 | query_world | query_type, params | data | 查询 WorldModel（actors/map/economy/threats）|
 | cancel_tasks | filters | count | 批量取消匹配的其他 Task（如"所有战斗任务"）|
@@ -406,7 +414,21 @@ WorldModel Event: UNIT_DIED actor:57
 
 侦察兵死亡且无替补时多 1 次（decision_request）。正常流程只要 2 次 LLM 调用。
 
-## 9. 现有代码处置
+## 9. 常见指令映射
+
+| 玩家指令 | Task kind | Task Agent 行为 |
+|---|---|---|
+| 探索地图找敌人基地 | managed | start_job(ReconExpert) |
+| 生产5辆坦克 | background | start_job(EconomyExpert) |
+| 包围右边基地 | managed/supervised | query_world → start_job(Recon) → 完成后 start_job(Combat×2-3) |
+| 所有部队撤退 | managed | cancel_tasks({expert_type:Combat}) → start_job(Movement, move_mode=retreat) |
+| 别追太远 | constraint | create_constraint(do_not_chase, global, {max_distance:20}, clamp) |
+| 修理坦克然后进攻 | managed | start_job(Movement, target=repair_facility) → 到达后 patch 或新建 CombatJob |
+| 部署基地车 | instant | start_job(DeployExpert) → 立即 complete_task |
+
+修理 = MovementExpert（移动到维修设施）+ GameAPI repair 命令。无维修设施 → Task Agent 通过 query_world 发现 → 告知玩家或降级处理。
+
+## 10. 现有代码处置
 
 详见 `code_asset_inventory.md`。
 Keep: GameAPI, models, NLU 管线。
