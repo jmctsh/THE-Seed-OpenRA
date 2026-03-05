@@ -173,7 +173,11 @@ enforcement=clamp：Job 自动遵守。enforcement=escalate：Job 发 decision_r
 - 抢占：高优先级夺低优先级资源（单资源 Job → abort，多资源 Job → 降级）
 - 事件路由：WorldModel Event → 相关 Task Agent 和 Job
 - 取消：Kernel.cancel(task_id) 或 Kernel.cancel_tasks(filters) → 批量取消
-- filters 可按 kind/priority/expert_type 筛选（如"所有战斗任务"）
+- **被动事件自动响应**：预注册的事件规则（写死，不需要 LLM），如：
+  - BASE_UNDER_ATTACK → 自动创建 Task(kind=managed, raw_text="defend_base", priority=80)
+  - 防御 Task priority=80 > 一般进攻 Task priority=50，Kernel 按优先级分配资源
+  - 进攻 Task 不会被强制取消，而是降级运行（资源被部分夺走）
+  - 防御 Task Agent 决定调多少兵回防，不是全部
 
 ### Task Agent（LLM 大脑，per-Task 实例）
 - 理解玩家意图（接收 raw_text + WorldModel 上下文）
@@ -426,7 +430,8 @@ WorldModel Event: UNIT_DIED actor:57
 | 修理坦克然后进攻 | managed | start_job(Movement, target=repair_facility) → 到达后 patch 或新建 CombatJob |
 | 部署基地车 | instant | start_job(DeployExpert) → 立即 complete_task |
 
-修理 = MovementExpert（移动到维修设施）+ GameAPI repair 命令。无维修设施 → Task Agent 通过 query_world 发现 → 告知玩家或降级处理。
+修理 = MovementExpert（移动到维修设施）+ GameAPI repair 命令。
+无维修设施 → Task Agent 通过 query_world 发现 → 跳过修理，直接执行后续动作（继续进攻）。通知玩家"无维修设施，跳过修理"。
 
 ## 10. 现有代码处置
 
