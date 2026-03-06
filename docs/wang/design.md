@@ -24,21 +24,11 @@ Kernel（无 LLM，确定性调度）
 
 玩家输入分三条路径：
 
-**执行路径**（改变游戏状态）：
-```
-"探索地图找敌人基地" / "生产坦克" / "包围基地"
-  → Kernel 创建 Task → spawn Task Agent (LLM)
-  → Task Agent 创建 Job → Expert 自主执行 → GameAPI
-```
+所有玩家输入先经 **Adjutant（副官）**，由 Adjutant 判断路由：
 
-**查询路径**（不改变游戏状态）：
-```
-"战况如何？" / "从哪进攻？" / "现在该做什么？"
-  → 直接 LLM + WorldModel 上下文 → 回答玩家
-  → 不进 Kernel，不创建 Task，不绑资源
-```
-
-**入口分类器（CommandProcessor）**：所有玩家输入先经过分类（NLU 模板 + LLM fallback），判断走哪条路径。
+**新命令** → Kernel 创建 Task → Task Agent → Job → GameAPI
+**回复某个 Task 的提问** → 路由回对应 Task Agent
+**查询** → Adjutant 直接 LLM+WorldModel 回答，不进 Kernel
 
 **主动通知**（系统→玩家，无需玩家输入）：
 ```
@@ -289,7 +279,128 @@ Job 在以下情况升级给 Brain：
 实现注意：system prompt 固定（利用 prompt caching）、max_turns 限制防循环。
 LLM 模型：待测试选型，暂定 Qwen3.5（便宜快速）。
 
-## 6. 看板 + 日志
+## 6. 玩家交互层：Adjutant（副官）
+
+### 问题
+- 多个 Task Agent 同时想和玩家说话 → 信息混乱
+- 玩家回复可能是给某个 Task 的（"继续"→回复 TaskA 的提问），但系统会当新命令处理
+- Task 内部 context 很大，全转发给前端 LLM 浪费 tokens
+
+### 方案：Adjutant（副官表面层）
+
+```
+玩家 ↔ Adjutant (轻量 LLM) ↔ Kernel / Task Agents
+```
+
+Adjutant 是玩家和系统之间的**唯一对话窗口**。
+
+**Adjutant 职责：**
+- 接收所有玩家输入 → 分类：新命令 / 回复某个 Task / 查询
+- 接收所有 Task-to-player 消息 → 统一格式化后呈现给玩家
+- 维护对话状态 → 知道哪个 Task 在等玩家回复
+- 同时服务文本输出模式和看板模式
+
+**Adjutant 不做的事：**
+- 不理解游戏细节（那是 Task Agent 的事）
+- 不做战术决策
+- 不持有 Task 内部状态
+
+### Task → 玩家（通过 Adjutant）
+
+Task Agent 不直接给玩家发消息。通过结构化 API：
+
+| 消息类型 | 用途 | 示例 |
+|---|---|---|
+| task_info | 通知，不需回复 | "已找到敌人基地 (1820,430)" |
+| task_warning | 警告 | "侦察兵血量低" |
+| task_question | 需要玩家回复 | "兵力不足，继续进攻还是放弃？" options=["继续","放弃"] |
+| task_complete_report | 任务完成 | "包围成功，敌人基地已摧毁" |
+
+Adjutant 收到后格式化呈现：
+- 文本模式："[进攻任务] 兵力不足，继续进攻还是放弃？"
+- 看板模式：Task 卡片上显示问题 + 按钮
+
+### 玩家 → 系统（通过 Adjutant）
+
+```
+玩家输入
+  → Adjutant LLM 判断:
+    1. 有 pending_question？且输入像是回复？→ 路由给对应 Task Agent
+    2. 明确的新命令？→ 交给 Kernel 创建新 Task
+    3. 查询？→ 直接 LLM+WorldModel 回答
+```
+
+### Adjutant 的 context（极小）
+
+```json
+{
+  "active_tasks": [
+    {"task_id": "t1", "raw_text": "包围右边基地", "status": "running"},
+    {"task_id": "t2", "raw_text": "生产坦克", "status": "running"}
+  ],
+  "pending_questions": [
+    {"task_id": "t1", "question": "兵力不足，继续还是放弃？",
+     "options": ["继续", "放弃"], "asked_at": 1774812000, "timeout_s": 30}
+  ],
+  "recent_dialogue": [
+    {"from": "task:t1", "content": "侧翼A损失过半"},
+    {"from": "task:t1", "content": "兵力不足，继续还是放弃？"},
+  ],
+  "player_input": "继续"
+}
+```
+
+~500-1000 tokens。不需要 Task 的完整 Job/Expert 内部状态。
+
+### 对话路由示例
+
+**场景：TaskA 提问 → 玩家回复**
+```
+1. CombatJob 发 Signal(kind=decision_request) → Task Agent A
+2. Task Agent A 决定问玩家 → task_question("兵力不足，继续还是放弃？", options=["继续","放弃"], timeout_s=30)
+3. Kernel 转发给 Adjutant → Adjutant 记录 pending_question(task_id=t1)
+4. Adjutant 呈现给玩家："[进攻任务] 兵力不足，继续进攻还是放弃？"
+5. 玩家说："继续"
+6. Adjutant LLM：检查 pending_questions → t1 在等回复 → "继续"是回复 t1
+7. Adjutant 路由给 Task Agent A：player_response(question_id, answer="继续")
+8. Task Agent A 收到回复 → patch_job(j1, {engagement_mode:"assault"})
+```
+
+**场景：玩家在 TaskA 提问时发了新命令**
+```
+1. TaskA pending_question: "继续还是放弃？"
+2. 玩家说："生产5辆坦克"
+3. Adjutant LLM：这不像是回复 → 识别为新命令
+4. 路由给 Kernel → 创建新 Task
+5. pending_question 超时 → TaskA 用 default_if_timeout
+```
+
+**场景：两个 Task 同时提问**
+```
+1. TaskA: "继续进攻还是放弃？"
+2. TaskB: "侦察发现第二个基地，要不要改变目标？"
+3. Adjutant 呈现两个问题（按优先级排序）
+4. 玩家说："放弃进攻，改目标"
+5. Adjutant LLM：解析出两个回复 → 分别路由给 TaskA("放弃") 和 TaskB("改变目标")
+```
+
+### Adjutant 与 CommandProcessor 的关系
+
+之前 CommandProcessor 负责分类（执行/查询）。现在 **Adjutant 取代 CommandProcessor**：
+- Adjutant = CommandProcessor + 对话管理 + 输出格式化
+- 所有玩家输入先经 Adjutant，Adjutant 决定路由
+
+### 两种输出模式
+
+| | 文本模式 | 看板模式 |
+|---|---|---|
+| Task 通知 | "[侦察] 发现敌方矿车" | Task 卡片状态更新 |
+| Task 提问 | "[进攻] 继续还是放弃？" | Task 卡片 + 问题弹窗/按钮 |
+| 任务完成 | "侦察完成，敌人基地在右上" | Task 卡片 → succeeded |
+| 系统通知 | "⚠ 敌人在扩张" | 告警条 |
+| 查询回答 | 自然语言回答 | 聊天面板 |
+
+## 7. 看板 + 日志
 
 **技术栈：** Vue 3
 **双模式：** 用户面板 / 调试面板
@@ -318,6 +429,9 @@ WebSocket 出站：world_snapshot(1Hz), task_update(变更时), task_list(1Hz), 
 | 14 | 被动事件(BASE_UNDER_ATTACK)由 Kernel 预注册规则自动创建 Task | 03-30 |
 | 15 | 系统不自主执行战略动作，只通知玩家。紧急防御除外（决策14）| 03-30 |
 | 16 | 查询指令（战况/建议）走 LLM+WorldModel 直接回答，不进 Kernel | 03-30 |
+| 17 | Adjutant 副官层：玩家唯一对话窗口，负责路由/格式化/对话状态 | 03-30 |
+| 18 | Task 不直接和玩家说话，通过结构化消息 API 经 Adjutant 转发 | 03-30 |
+| 19 | Adjutant 取代 CommandProcessor，统一处理输入分类+对话管理 | 03-30 |
 
 ## 8. 场景推演："探索地图，找到敌人基地"
 
