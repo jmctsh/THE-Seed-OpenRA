@@ -35,6 +35,14 @@
 | 1.4 | Task Agent agentic loop（raw SDK multi-turn tool use + event queue + review_interval + context packet builder） | 0.2 | `task_agent.py` | 中 |
 | 1.5 | Task Agent tools 实现（start_job, patch_job, abort_job, complete_task, create_constraint, remove_constraint, query_world, cancel_tasks, pause_job, resume_job） | 1.3, 1.4 | `task_tools.py` | 中 |
 
+### Phase 1.5: 后端通信 + 基础设施
+
+| # | 任务 | 依赖 | 产出 | 预估规模 |
+|---|---|---|---|---|
+| 1.6 | WebSocket 后端（WS server + 连接管理 + inbound handler + outbound serializer） | 1.2 | `ws_server.py` | 中 |
+| 1.7 | 全局 timestamp 传播（所有对外 payload 带 timestamp 字段：task_update/notification/log/signal） | 0.2 | 各 model + serializer 改动 | 小 |
+| 1.8 | review_interval 调度（GameLoop 中检查每个 Task Agent 的 review_interval，到期推送 wake 事件） | 1.2, 1.4 | 集成在 `game_loop.py` | 小 |
+
 ### Phase 2: 第一个 Expert
 
 | # | 任务 | 依赖 | 产出 | 预估规模 |
@@ -60,7 +68,8 @@
 | 4.1 | Adjutant LLM（输入分类：新命令/回复/查询 + 对话路由 + pending question 管理） | 1.3, 1.4 | `adjutant.py` | 中 |
 | 4.2 | 查询 LLM（WorldModel 上下文 → 自然语言回答） | 1.1 | 集成在 adjutant | 小 |
 | 4.3 | 主动通知系统（Kernel 事件规则 → player_notification） | 1.3 | 集成在 kernel | 小 |
-| 4.4 | 端到端测试 T9-T11（并发、空闲、查询） | 4.1-4.3 | 测试通过 | 中 |
+| 4.4 | Adjutant 路由测试（回复路由给正确 Task、pending question 超时走 default、迟到回复拒绝、多问题同时处理） | 4.1 | 测试通过 | 中 |
+| 4.5 | 端到端测试 T9-T11（并发、空闲、查询） | 4.1-4.4 | 测试通过 | 中 |
 
 ### Phase 5: 看板
 
@@ -105,7 +114,7 @@
 ```
 
 **第一个里程碑：2.3** — 能跑通"探索地图找到敌人基地"全流程。
-**第二个里程碑：3.5** — 四种 Expert 都能工作。
+**第二个里程碑：3.5** — 五种 Expert 都能工作（Recon/Economy/Movement/Combat/Deploy）。
 **第三个里程碑：4.4** — 玩家交互完整。
 **第四个里程碑：7.3** — 全量测试通过。
 
