@@ -54,12 +54,16 @@
 
 ### Phase 3: 更多 Expert
 
+**重要：每个 Expert 实现前，必须先深度调研互联网上的 RTS 游戏 AI 实现。不要凭想象写逻辑。**
+可使用行为树(BT)、状态树(ST)、状态机(FSM)，并出一套可配置系统（数据驱动，不硬编码行为）。
+
 | # | 任务 | 依赖 | 产出 | 预估规模 |
 |---|---|---|---|---|
-| 3.1 | EconomyExpert + EconomyJob（生产队列、进度跟踪、断钱 waiting） | 2.1 | `experts/economy.py` | 中 |
-| 3.2 | MovementExpert + MovementJob（移动、撤退、到达检测） | 2.1 | `experts/movement.py` | 中 |
-| 3.3 | CombatExpert + CombatJob（进攻、防守、hold、surround 模式，内部 FSM） | 2.1 | `experts/combat.py` | 大 |
-| 3.4 | DeployExpert + DeployJob（部署 MCV/建筑） | 2.1 | `experts/deploy.py` | 小 |
+| 3.0 | BT/FSM/ST 配置框架（数据驱动的行为定义系统，Expert 共用） | 2.1 | `expert_framework/` | 中 |
+| 3.1 | EconomyExpert 调研+实现（生产队列、进度跟踪、断钱 waiting） | 3.0 | `experts/economy.py` + 配置 | 中 |
+| 3.2 | MovementExpert 调研+实现（移动、撤退、到达检测） | 3.0 | `experts/movement.py` + 配置 | 中 |
+| 3.3 | CombatExpert 调研+实现（进攻、防守、hold、surround，内部 BT/FSM） | 3.0 | `experts/combat.py` + 配置 | 大 |
+| 3.4 | DeployExpert 调研+实现（部署 MCV/建筑） | 3.0 | `experts/deploy.py` + 配置 | 小 |
 | 3.5 | 端到端测试 T2-T8 | 3.1-3.4 | 测试通过 | 大 |
 
 ### Phase 4: Adjutant 交互层

@@ -492,6 +492,9 @@ WebSocket 出站：world_snapshot(1Hz), task_update(变更时), task_list(1Hz), 
 | 17 | Adjutant 副官层：玩家唯一对话窗口，负责路由/格式化/对话状态 | 03-30 |
 | 18 | Task 不直接和玩家说话，通过结构化消息 API 经 Adjutant 转发 | 03-30 |
 | 19 | Adjutant 取代 CommandProcessor，统一处理输入分类+对话管理 | 03-30 |
+| 20 | Expert 实现必须调研真实 RTS AI，使用 BT/FSM/ST + 数据驱动配置 | 03-30 |
+| 21 | OpenCodeAlert 可按需修改，无约束 | 03-30 |
+| 22 | 移除 the-seed 子库（NLU 规则迁出后删除） | 03-30 |
 
 ## 9. 场景推演："探索地图，找到敌人基地"
 
