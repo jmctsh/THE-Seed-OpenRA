@@ -22,6 +22,7 @@
 | # | 任务 | 依赖 | 产出 | 预估规模 |
 |---|---|---|---|---|
 | 0.1 | 删除可删代码（standalone launchers/demos/旧 console.html） | 无 | 干净代码库 | 小 |
+| 0.1b | 移除 the-seed 子库：迁出 NLU 规则资产（CommandRouter 规则字典/别名）到 `nlu_pipeline/rules/`，然后删除子库 | 0.1 | the-seed 移除 | 中 |
 | 0.2 | 定义数据模型 dataclass（Task, Job, ResourceNeed, Constraint, Event, ExpertSignal, NormalizedActor, TaskMessage, PlayerResponse） | 无 | `models/` 包 | 中 |
 | 0.3 | 搭建项目新目录结构 | 0.1 | 目录骨架 | 小 |
 
