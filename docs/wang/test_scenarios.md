@@ -7,12 +7,11 @@
 ## T1. "探索地图，找到敌人基地"
 
 **输入：** 玩家文本 "探索地图，找到敌人基地"
-**预期 Task 类型：** managed, fire_and_forget
-
+**预期 Task 类型：** managed
 | 步骤 | 触发 | 组件 | 行为 | 系统状态变化 |
 |---|---|---|---|---|
 | 1 | 玩家输入 | Adjutant | 分类为执行指令 | — |
-| 2 | | Kernel | 创建 Task | `Task(id=t1, kind=managed, priority=50, status=pending, autonomy_mode=fire_and_forget)` |
+| 2 | | Kernel | 创建 Task | `Task(id=t1, kind=managed, priority=50, status=pending)` |
 | 3 | | Kernel | spawn Task Agent | Task Agent t1 启动，注入 context packet：`{task:{id:t1, raw_text:"探索地图..."}, world_summary:{explored_pct:0.1, economy:{cash:2000}, known_enemy:{base_known:false}}}` |
 | 4 | context packet | Task Agent (LLM) | 第 1 次 LLM 调用。理解意图 → tool_use | `start_job(expert_type="ReconExpert", config=ReconJobConfig(search_region="enemy_half", target_type="base", target_owner="enemy", retreat_hp_pct=0.3, avoid_combat=true))` |
 | 5 | start_job 返回 job_id | Kernel | 创建 Job + 分配资源 | `Job(id=j1, task_id=t1, expert_type=ReconExpert, status=running, resources=["actor:57"])` WorldModel: `resource_bindings["actor:57"] = "j1"` |
@@ -21,7 +20,7 @@
 | 8 | t=15s, WorldModel 快照 diff | WorldModel | detect_events: 新 enemy actor:201 出现 | `Event(type=ENEMY_DISCOVERED, actor_id=201)` |
 | 9 | Event 路由 | Kernel | 路由给 ReconJob (资源 actor:57 相关) | — |
 | 10 | | ReconJob | 矿车在 (1700,350)，调整方向 → `GameAPI.move_actors([57], (1800,420))` | 发 Signal: `ExpertSignal(kind=progress, summary="发现敌方矿车，调整方向", expert_state={phase:"tracking", progress_pct:40})` |
-| 11 | Signal kind=progress | Kernel | 路由给 Task Agent | fire_and_forget 模式, progress 不唤醒 → Task Agent 保持 sleep |
+| 11 | Signal kind=progress | Kernel | 路由给 Task Agent | progress 类型，Task Agent 判断不需要介入 → 保持 sleep |
 | 12 | t=30s | WorldModel | detect_events: actor:57 HP 100→85 | `Event(type=UNIT_DAMAGED, actor_id=57, data={old_hp:100, new_hp:85})` |
 | 13 | | ReconJob | HP 85% > retreat_hp_pct 30% → 继续 → `GameAPI.move_actors([57], (1820,430), attack_move=true)` | — |
 | 14 | t=42s | WorldModel | 3 个敌方建筑出现在 (1820,430) | `Event(type=ENEMY_DISCOVERED, ...)` × 3 |
@@ -49,12 +48,11 @@
 ## T2. "生产5辆重型坦克"
 
 **输入：** "生产5辆重型坦克"
-**预期 Task 类型：** background, fire_and_forget
-
+**预期 Task 类型：** managed
 | 步骤 | 触发 | 组件 | 行为 | 系统状态变化 |
 |---|---|---|---|---|
 | 1 | 玩家输入 | Adjutant | 分类为执行指令 | — |
-| 2 | | Kernel | 创建 Task | `Task(id=t2, kind=background, priority=40, status=pending, autonomy_mode=fire_and_forget)` |
+| 2 | | Kernel | 创建 Task | `Task(id=t2, kind=managed, priority=40, status=pending)` |
 | 3 | | Kernel | spawn Task Agent | 注入 context: `{economy:{cash:5000, power:normal}, production_queues:{Vehicle:{building:"war_factory", busy:false}}}` |
 | 4 | context | Task Agent (LLM) | 第 1 次 LLM → tool_use | `start_job(expert_type="EconomyExpert", config=EconomyJobConfig(unit_type="2tnk", count=5, queue_type="Vehicle", repeat=false))` |
 | 5 | start_job | Kernel | 创建 Job + 分配资源 | `Job(id=j2, status=running, resources=["queue:Vehicle"])` |
@@ -62,7 +60,7 @@
 | 7 | tick (5s 间隔) | EconomyJob | `GameAPI.produce("Vehicle", "2tnk")` | 生产排队 |
 | 8 | WorldModel Event | WorldModel | PRODUCTION_COMPLETE | `Event(type=PRODUCTION_COMPLETE, data={unit_type:"2tnk", queue:"Vehicle"})` |
 | 9 | | EconomyJob | completed=1, remaining=4 | Signal: `ExpertSignal(kind=progress, expert_state={completed:1, remaining:4})` |
-| 10 | 重复 7-9 | EconomyJob | 每完成一个发 progress Signal | fire_and_forget: Task Agent 不唤醒 |
+| 10 | 重复 7-9 | EconomyJob | 每完成一个发 progress Signal | Task Agent 判断不介入 |
 | 11 | 中途 cash=0 | EconomyJob | 无法 produce → Job status→waiting | 不 fail，等钱恢复后自动继续 |
 | 12 | cash 恢复 | EconomyJob | 继续 produce → status→running | — |
 | 13 | 5/5 完成 | EconomyJob | Signal: `ExpertSignal(kind=task_complete, result=succeeded, data={produced:5})` | — |
@@ -127,19 +125,18 @@
 ## T5. "包围右边那个基地"
 
 **输入：** "包围右边那个基地"
-**预期 Task 类型：** managed, supervised
-
+**预期 Task 类型：** managed
 | 步骤 | 触发 | 组件 | 行为 | 系统状态变化 |
 |---|---|---|---|---|
 | 1 | 玩家输入 | Adjutant | 分类为执行指令 | — |
-| 2 | | Kernel | 创建 Task | `Task(id=t5, kind=managed, priority=60, autonomy_mode=supervised)` |
+| 2 | | Kernel | 创建 Task | `Task(id=t5, kind=managed, priority=60)` |
 | 3 | context | Task Agent (LLM) | 第 1 次 LLM → tool_use | `query_world("enemy_bases")` → 返回 [{pos:(1820,430), structures:3}, {pos:(500,800), structures:2}] |
 | 4 | | Task Agent | LLM 判断"右边"= (1820,430) → tool_use | `start_job("CombatExpert", CombatJobConfig(target_position=(1820,430), engagement_mode="surround", max_chase_distance=15, retreat_threshold=0.4))` |
 | 5 | | Task Agent | 同一 wake 继续 tool_use | `start_job("CombatExpert", CombatJobConfig(target_position=(1820,430), engagement_mode="surround", max_chase_distance=15, retreat_threshold=0.4))` ← 第 2 路 |
 | 6 | | Kernel | 创建 Job j5a + j5b，分配资源 | j5a: resources=[actor:58,59,60] j5b: resources=[actor:61,62,63] |
 | 7 | | Task Agent | sleep | — |
 | 8 | tick | CombatJob j5a, j5b | 各自自主执行：集结 → 接近 → 攻击 | GameAPI 调用 |
-| 9 | j5a 被打退 | CombatJob j5a | Signal: `ExpertSignal(kind=resource_lost, summary="侧翼A损失过半")` | supervised 模式 → 唤醒 Task Agent |
+| 9 | j5a 被打退 | CombatJob j5a | Signal: `ExpertSignal(kind=resource_lost, summary="侧翼A损失过半")` | 唤醒 Task Agent |
 | 10 | Signal | Task Agent (LLM) | 第 2 次 LLM → 决策 | 选择：`patch_job(j5b, {engagement_mode:"assault"})` 改为正面强攻。或 `abort_job(j5a)` + `start_job(...)` 重组 |
 | 11 | 包围成功 | CombatJob | Signal: task_complete | — |
 | 12 | | Task Agent (LLM) | 第 3 次 LLM | `complete_task(result="succeeded")` |
@@ -186,7 +183,7 @@
 | 步骤 | 触发 | 组件 | 行为 | 系统状态变化 |
 |---|---|---|---|---|
 | 1 | WorldModel diff | WorldModel | 敌方战斗单位在基地 30 格内 | `Event(type=BASE_UNDER_ATTACK, actor_id=enemy:201, position=(230,580))` |
-| 2 | Event | Kernel | 预注册规则匹配 → 自动创建 Task | `Task(id=t7, kind=managed, priority=80, raw_text="defend_base", autonomy_mode=supervised)` |
+| 2 | Event | Kernel | 预注册规则匹配 → 自动创建 Task | `Task(id=t7, kind=managed, priority=80, raw_text="defend_base")` |
 | 3 | | Kernel | spawn Task Agent | 注入 context: `{threat:{enemy_actors_near_base:[...], estimated_value:1200}}` |
 | 4 | context | Task Agent (LLM) | 第 1 次 LLM → tool_use | `query_world("enemy_threats_near", {position:base_pos, radius:30})` → 评估威胁 |
 | 5 | | Task Agent | tool_use | `start_job("CombatExpert", CombatJobConfig(target_position=(200,600), engagement_mode="hold", max_chase_distance=10, retreat_threshold=0.2))` |
@@ -203,12 +200,11 @@
 ## T8. "建造一个新基地在右边矿区"
 
 **输入：** "建造一个新基地在右边矿区"
-**预期 Task 类型：** managed, supervised
-
+**预期 Task 类型：** managed
 | 步骤 | 触发 | 组件 | 行为 | 系统状态变化 |
 |---|---|---|---|---|
 | 1 | 玩家输入 | Adjutant | 执行指令 | — |
-| 2 | | Kernel | 创建 Task(id=t8, kind=managed, priority=50, autonomy_mode=supervised) | — |
+| 2 | | Kernel | 创建 Task(id=t8, kind=managed, priority=50) | — |
 | 3 | context | Task Agent (LLM) | 第 1 次 LLM → 多个 tool_use | `query_world("my_actors", {category:"mcv"})` → [{actor_id:99}] 有 MCV |
 | 4 | | Task Agent | tool_use | `query_world("map_info", {query:"ore_fields"})` → 确定右边矿区位置 (1500,400) |
 | 5 | | Task Agent | tool_use | `start_job("MovementExpert", MovementJobConfig(actor_ids=[99], target_position=(1500,400), move_mode="move", arrival_radius=5))` |
@@ -237,7 +233,7 @@
 
 | 步骤 | 触发 | 组件 | 行为 | 系统状态变化 |
 |---|---|---|---|---|
-| 1 | "生产坦克" | Kernel | 创建 Task t9a(kind=background, priority=40) | spawn Task Agent A |
+| 1 | "生产坦克" | Kernel | 创建 Task t9a(kind=managed, priority=40) | spawn Task Agent A |
 | 2 | "探索地图" | Kernel | 创建 Task t9b(kind=managed, priority=50) | spawn Task Agent B |
 | 3 | "别追太远" | Kernel | 创建 Task t9c(kind=constraint, priority=50) | spawn Task Agent C |
 | 4 | 各 Agent 独立 | Task Agent A | `start_job("EconomyExpert", EconomyJobConfig(unit_type="2tnk", count=3, queue_type="Vehicle", repeat=false))` | EconomyJob 开始生产 |
