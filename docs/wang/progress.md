@@ -129,3 +129,33 @@ yu R2 审计发现 6 个剩余 gap（原 7 blocker 已关闭）。
   R4: 2 blocker (接口不一致) → 全关
   R5: 0 blocker ✅
 design.md 可作为实现基础。
+
+## [2026-03-30 02:00] DONE — 架构大转向：LLM agent + 大脑小脑模型
+用户反馈推动三次架构转变：
+  1. 合并 Interpreter/Resolver/Decomposer → CommandProcessor（后被 Adjutant 取代）
+  2. 每个 Task = LLM agent 实例（大脑）+ Expert/Job 自主执行（小脑）
+  3. 三级架构：Kernel(无LLM) / Task Agent(LLM) / Job(传统AI)
+关键设计：
+  - Job 直接调 GameAPI，无 ActionExecutor 中间层
+  - 声明式资源模型（死了补、降级、不轻易 fail）
+  - Expert 是写死的代码模块，Job config 是 per-Expert 强 schema
+  - 大脑小脑协作：ExpertSignal + context packet 注入 + default_if_timeout
+  - Task Agent 框架：raw SDK 自建 ~200 行
+精简数据模型：14+ → 7 个
+
+## [2026-03-30 03:00] DONE — 场景审计 7 轮全部通过 (A-I)
+11 个测试场景全部 zero blockers（T1-T11）
+拆出独立 test_scenarios.md，每步详细系统状态
+
+## [2026-03-30 03:30] DONE — Adjutant 玩家交互层
+设计 + 2 轮审计 zero blockers
+TaskMessage/PlayerResponse schema、pending question timeout（Kernel 持有）、多问题路由规则
+
+## [2026-03-30 04:00] DONE — 实现任务列表
+implementation_plan.md：35+ 任务，7 Phase，4 里程碑
+yu 审计后补充：WS 后端、timestamp 传播、review_interval 调度、Adjutant 路由测试
+
+## [2026-03-30 04:15] IN PROGRESS — the-seed 子库移除评估
+用户决定移除 the-seed 框架子库（隔离增加复杂度，重写后不需要）
+保留 OpenCodeAlert 游戏子库
+yu 正在审计 the-seed 里是否有需要迁移的内容
