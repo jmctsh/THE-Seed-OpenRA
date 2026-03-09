@@ -118,6 +118,7 @@ def test_context_packet_construction():
     assert packet.recent_signals[0]["kind"] == "progress"
     assert len(packet.open_decisions) == 1
     assert packet.open_decisions[0]["decision"]["default_if_timeout"] == "wait"
+    assert packet.recent_events == []  # No events passed
     assert packet.timestamp > 0
     print("  PASS: context_packet_construction")
 
@@ -393,6 +394,107 @@ def test_review_interval_timer():
     print("  PASS: review_interval_timer")
 
 
+def test_event_in_context_packet():
+    """Events routed to agent appear in context packet for LLM."""
+    mock = MockProvider(responses=[
+        LLMResponse(text="Noted the enemy discovery.", model="mock"),
+    ])
+
+    task = make_task()
+    captured_conversations = []
+
+    class CaptureMock(MockProvider):
+        async def chat(self, messages, **kwargs):
+            captured_conversations.append(messages)
+            return await super().chat(messages, **kwargs)
+
+    capture_mock = CaptureMock(responses=[
+        LLMResponse(text="Noted the enemy discovery.", model="mock"),
+    ])
+
+    agent = TaskAgent(
+        task=task,
+        llm=capture_mock,
+        tool_executor=make_executor(),
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.1),
+    )
+
+    # Push an event into the queue before wake
+    agent.queue.push(Event(type=EventType.ENEMY_DISCOVERED, actor_id=201, position=(1800, 420)))
+
+    async def run():
+        await agent._wake_cycle(trigger="event")
+
+    asyncio.run(run())
+
+    # Verify the event appears in the context message sent to LLM
+    assert len(captured_conversations) == 1
+    messages = captured_conversations[0]
+    context_msg = [m for m in messages if m.get("role") == "user" and "[CONTEXT UPDATE]" in m.get("content", "")]
+    assert len(context_msg) >= 1
+    import json as _json
+    content = _json.loads(context_msg[-1]["content"].split("\n", 1)[1])
+    events = content["context_packet"]["recent_events"]
+    assert len(events) == 1
+    assert events[0]["type"] == "ENEMY_DISCOVERED"
+    assert events[0]["actor_id"] == 201
+    assert events[0]["position"] == [1800, 420]
+    print("  PASS: event_in_context_packet")
+
+
+def test_default_if_timeout_applied():
+    """When LLM fails, default_if_timeout calls patch_job handler."""
+    applied_defaults = []
+
+    async def tracking_handler(name: str, args: dict) -> dict:
+        applied_defaults.append({"name": name, "args": args})
+        return {"ok": True}
+
+    executor = ToolExecutor()
+    from task_agent.tools import get_tool_names
+    for tn in get_tool_names():
+        executor.register(tn, tracking_handler)
+
+    # MockProvider that always fails (no responses → returns fallback text)
+    class FailingProvider(MockProvider):
+        async def chat(self, messages, **kwargs):
+            raise TimeoutError("LLM timeout simulated")
+
+    task = make_task()
+    agent = TaskAgent(
+        task=task,
+        llm=FailingProvider(),
+        tool_executor=executor,
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.1, max_retries=0, llm_timeout=1.0),
+    )
+
+    # Push a decision_request signal
+    agent.queue.push(ExpertSignal(
+        task_id="t1", job_id="j1", kind=SignalKind.DECISION_REQUEST,
+        summary="Scout lost, what to do?",
+        decision={
+            "options": ["wait", "use_infantry", "abort"],
+            "default_if_timeout": "wait",
+        },
+    ))
+
+    async def run():
+        await agent._wake_cycle(trigger="event")
+
+    asyncio.run(run())
+
+    # Verify patch_job was called with the default
+    assert len(applied_defaults) == 1
+    assert applied_defaults[0]["name"] == "patch_job"
+    assert applied_defaults[0]["args"]["job_id"] == "j1"
+    assert applied_defaults[0]["args"]["params"]["decision_response"] == "wait"
+    print("  PASS: default_if_timeout_applied")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -409,5 +511,7 @@ if __name__ == "__main__":
     test_tool_executor_error_handling()
     test_full_lifecycle_with_signal()
     test_review_interval_timer()
+    test_event_in_context_packet()
+    test_default_if_timeout_applied()
 
-    print(f"\nAll 11 tests passed!")
+    print(f"\nAll 13 tests passed!")

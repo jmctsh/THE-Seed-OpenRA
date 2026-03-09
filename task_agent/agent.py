@@ -163,6 +163,7 @@ class TaskAgent:
             jobs=jobs,
             world_summary=world,
             recent_signals=recent_signals,
+            recent_events=events,
             open_decisions=open_decisions,
         )
 
@@ -177,7 +178,7 @@ class TaskAgent:
             response = await self._call_llm(messages)
             if response is None:
                 # LLM failure — apply defaults for any open decisions
-                self._apply_defaults(open_decisions)
+                await self._apply_defaults(open_decisions)
                 break
 
             self._total_llm_calls += 1
@@ -268,18 +269,36 @@ class TaskAgent:
             results.append(result)
         return results
 
-    def _apply_defaults(self, open_decisions: list[ExpertSignal]) -> None:
-        """When LLM fails, apply default_if_timeout for open decisions."""
+    async def _apply_defaults(self, open_decisions: list[ExpertSignal]) -> None:
+        """When LLM fails, apply default_if_timeout for open decisions.
+
+        Executes the default option by calling the appropriate tool handler,
+        so the decision has real side effects (not just logging).
+        """
         for dec in open_decisions:
-            if dec.decision and "default_if_timeout" in dec.decision:
-                default = dec.decision["default_if_timeout"]
-                logger.info(
-                    "Applying default_if_timeout=%r for decision in job=%s",
-                    default,
+            if not (dec.decision and "default_if_timeout" in dec.decision):
+                continue
+            default = dec.decision["default_if_timeout"]
+            logger.info(
+                "Applying default_if_timeout=%r for decision in job=%s",
+                default,
+                dec.job_id,
+            )
+            # Execute the default by calling patch_job with the chosen option
+            result = await self.tool_executor.execute(
+                tool_call_id=f"default_{dec.job_id}",
+                name="patch_job",
+                arguments_json=json.dumps({
+                    "job_id": dec.job_id,
+                    "params": {"decision_response": default},
+                }),
+            )
+            if result.error:
+                logger.warning(
+                    "Failed to apply default for job=%s: %s",
                     dec.job_id,
+                    result.error,
                 )
-                # The actual application is handled by Kernel/Job (task 1.5).
-                # Here we log it so the next wake cycle can see the decision was made.
 
     # --- Message format helpers ---
 

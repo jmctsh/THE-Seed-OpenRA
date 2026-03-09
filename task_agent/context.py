@@ -33,6 +33,7 @@ class ContextPacket:
     jobs: list[dict[str, Any]]
     world_summary: dict[str, Any]
     recent_signals: list[dict[str, Any]]
+    recent_events: list[dict[str, Any]]
     open_decisions: list[dict[str, Any]]
     timestamp: float = field(default_factory=time.time)
 
@@ -42,6 +43,7 @@ def build_context_packet(
     jobs: list[Job],
     world_summary: Optional[WorldSummary] = None,
     recent_signals: Optional[list[ExpertSignal]] = None,
+    recent_events: Optional[list[Event]] = None,
     open_decisions: Optional[list[ExpertSignal]] = None,
 ) -> ContextPacket:
     """Build a context packet from current state.
@@ -51,6 +53,7 @@ def build_context_packet(
         jobs: Active Jobs belonging to this Task.
         world_summary: Current world state snapshot.
         recent_signals: Signals received since last wake (or all for initial).
+        recent_events: WorldModel Events routed to this agent since last wake.
         open_decisions: Pending decision_request signals awaiting response.
     """
     task_dict = {
@@ -120,11 +123,26 @@ def build_context_packet(
             dec_dict["decision"] = dec.decision
         decisions_list.append(dec_dict)
 
+    events_list = []
+    for evt in (recent_events or []):
+        evt_dict: dict[str, Any] = {
+            "type": evt.type.value if hasattr(evt.type, "value") else str(evt.type),
+            "timestamp": evt.timestamp,
+        }
+        if evt.actor_id is not None:
+            evt_dict["actor_id"] = evt.actor_id
+        if evt.position is not None:
+            evt_dict["position"] = list(evt.position)
+        if evt.data:
+            evt_dict["data"] = evt.data
+        events_list.append(evt_dict)
+
     return ContextPacket(
         task=task_dict,
         jobs=jobs_list,
         world_summary=ws_dict,
         recent_signals=signals_list,
+        recent_events=events_list,
         open_decisions=decisions_list,
     )
 
@@ -138,6 +156,7 @@ def context_to_message(packet: ContextPacket) -> dict[str, str]:
                 "jobs": packet.jobs,
                 "world_summary": packet.world_summary,
                 "recent_signals": packet.recent_signals,
+                "recent_events": packet.recent_events,
                 "open_decisions": packet.open_decisions,
                 "timestamp": packet.timestamp,
             }

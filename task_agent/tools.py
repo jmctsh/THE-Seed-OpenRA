@@ -131,7 +131,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "description": "Enforcement mode.",
                     },
                 },
-                "required": ["kind", "scope", "params"],
+                "required": ["kind", "scope", "params", "enforcement"],
             },
         },
     },
