@@ -78,3 +78,6 @@ Migrated the OpenRA NLU rule assets into `nlu_pipeline/rules/` plus `nlu_pipelin
 
 ## [2026-03-30 12:40] DONE — Audit of xi's Phase 0 tasks 0.2/0.3/0.4
 Audited `models/*`, `llm/provider.py`, and the directory skeleton against `docs/wang/design.md`, then wrote findings to `docs/wang/xi_phase0_audit.md`. Confirmed that the `AutonomyMode` drift is gone and `TaskKind` is correctly reduced to `instant` / `managed`, and verified locally that `MockProvider` is testable. I did not clear the work as zero-gap: two blockers remain, namely that `Job.config` is not mechanically bound to `expert_type`, and `AnthropicProvider` does not correctly convert a multi-turn tool-use transcript from the abstraction's OpenAI-style message format.
+
+## [2026-03-30 12:50] DONE — Regression audit of xi's Phase 0 audit fixes
+Re-audited xi's follow-up fix commit `1f5a7ce`, wrote the result to `docs/wang/xi_phase0_audit_r2.md`, and verified locally that `validate_job_config()` accepts matching config/expert pairs, rejects mismatches, and that the enum-typed config fields now preserve `EngagementMode` / `MoveMode` values at runtime. I cleared the requested Phase 0 follow-up fixes as zero blockers; the deferred Anthropic multi-turn gap is now explicitly documented in `llm/provider.py` per Wang's decision.
