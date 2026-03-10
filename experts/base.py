@@ -152,7 +152,10 @@ class BaseJob(ABC):
         logger.debug("Job paused: %s", self.job_id)
 
     def resume(self) -> None:
-        """Resume a paused Job."""
+        """Resume a paused Job. No-op if already in a terminal state."""
+        terminal = {JobStatus.ABORTED, JobStatus.SUCCEEDED, JobStatus.FAILED}
+        if self.status in terminal:
+            return
         self._paused = False
         self.status = JobStatus.RUNNING
         logger.debug("Job resumed: %s", self.job_id)

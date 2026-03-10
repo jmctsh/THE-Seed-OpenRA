@@ -337,6 +337,25 @@ def test_job_to_model():
     print("  PASS: job_to_model")
 
 
+def test_abort_then_resume_no_revive():
+    """resume() after abort does not change terminal status."""
+    signals: list[ExpertSignal] = []
+    config = ReconJobConfig(search_region="full_map", target_type="base", target_owner="enemy")
+
+    job = MockReconJob(
+        job_id="j1", task_id="t1", config=config,
+        signal_callback=signals.append,
+    )
+
+    job.abort()
+    assert job.status == JobStatus.ABORTED
+
+    job.resume()
+    assert job.status == JobStatus.ABORTED  # Not revived
+    assert job.is_paused is False  # _paused unchanged (was never paused)
+    print("  PASS: abort_then_resume_no_revive")
+
+
 def test_tick_intervals():
     """Different job types have different tick intervals."""
     signals: list[ExpertSignal] = []
@@ -371,6 +390,7 @@ if __name__ == "__main__":
     test_resource_grant_revoke()
     test_constraint_reading()
     test_job_to_model()
+    test_abort_then_resume_no_revive()
     test_tick_intervals()
 
-    print(f"\nAll 11 tests passed!")
+    print(f"\nAll 12 tests passed!")
