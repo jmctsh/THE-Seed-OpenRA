@@ -150,16 +150,15 @@ class GameLoop:
         now = time.time()
 
         with bm_span("job_tick", name=f"game_loop:tick_{self._tick_count}"):
-            # 1. WorldModel refresh (layered) + event detection
-            events = self.world_model.refresh(now=now)
+            # 1. WorldModel refresh (layered refresh + internal event detection)
+            self.world_model.refresh(now=now)
 
-            # 2. Collect any additional buffered events
-            buffered = self.world_model.detect_events(clear=True)
-            all_events = events + buffered if buffered else events
+            # 2. Collect events (single source — avoids double-counting)
+            events = self.world_model.detect_events(clear=True)
 
             # 3. Forward events to Kernel
-            if all_events:
-                self.kernel.route_events(all_events)
+            if events:
+                self.kernel.route_events(events)
 
             # 4. Tick due Jobs
             self._tick_jobs(now)

@@ -148,11 +148,13 @@ class BaseJob(ABC):
     def pause(self) -> None:
         """Pause this Job. Ticks will be skipped until resume."""
         self._paused = True
+        self.status = JobStatus.WAITING
         logger.debug("Job paused: %s", self.job_id)
 
     def resume(self) -> None:
         """Resume a paused Job."""
         self._paused = False
+        self.status = JobStatus.RUNNING
         logger.debug("Job resumed: %s", self.job_id)
 
     def abort(self) -> None:
@@ -179,7 +181,9 @@ class BaseJob(ABC):
         for aid in actor_ids:
             if aid in self.resources:
                 self.resources.remove(aid)
-        if not self.resources:
+        # Only transition to WAITING if not already in a terminal state
+        terminal = {JobStatus.ABORTED, JobStatus.SUCCEEDED, JobStatus.FAILED}
+        if not self.resources and self.status not in terminal:
             self.status = JobStatus.WAITING
         logger.debug("Resources revoked from %s: %s (remaining: %s)", self.job_id, actor_ids, self.resources)
 

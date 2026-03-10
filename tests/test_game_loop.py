@@ -35,6 +35,8 @@ class MockWorldModel:
 
     def refresh(self, *, now=None, force=False) -> list[Event]:
         self.refresh_count += 1
+        # Buffer events internally (like real WorldModel does)
+        self._buffered = list(self._events)
         return list(self._events)
 
     def detect_events(self, *, clear=True) -> list[Event]:
