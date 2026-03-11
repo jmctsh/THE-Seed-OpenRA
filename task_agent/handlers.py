@@ -32,10 +32,19 @@ class KernelLike(Protocol):
     def cancel_tasks(self, filters: dict[str, Any]) -> int: ...
 
 
+class ConstraintStoreLike(Protocol):
+    """Minimal constraint store interface (typically WorldModel or Kernel)."""
+
+    def set_constraint(self, constraint: Constraint) -> None: ...
+    def remove_constraint(self, constraint_id: str) -> None: ...
+
+
 class WorldModelLike(Protocol):
     """Minimal WorldModel interface used by tool handlers."""
 
     def query(self, query_type: str, params: Optional[dict[str, Any]] = None) -> Any: ...
+    def set_constraint(self, constraint: Constraint) -> None: ...
+    def remove_constraint(self, constraint_id: str) -> None: ...
 
 
 class TaskToolHandlers:
@@ -109,8 +118,6 @@ class TaskToolHandlers:
     # --- Constraints ---
 
     async def handle_create_constraint(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
-        # Delegate to Kernel — constraint creation is Kernel's responsibility
-        # For now, construct and pass through. Kernel will store it.
         import uuid
         constraint_id = f"c_{uuid.uuid4().hex[:8]}"
         constraint = Constraint(
@@ -120,12 +127,13 @@ class TaskToolHandlers:
             params=dict(args.get("params", {})),
             enforcement=ConstraintEnforcement(args["enforcement"]),
         )
-        # TODO: Kernel.create_constraint(constraint) when available
+        self.world_model.set_constraint(constraint)
         return {"constraint_id": constraint_id, "timestamp": time.time()}
 
     async def handle_remove_constraint(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
-        # TODO: Kernel.remove_constraint(constraint_id) when available
-        return {"ok": True, "constraint_id": args["constraint_id"], "timestamp": time.time()}
+        constraint_id = args["constraint_id"]
+        self.world_model.remove_constraint(constraint_id)
+        return {"ok": True, "constraint_id": constraint_id, "timestamp": time.time()}
 
     # --- Queries ---
 

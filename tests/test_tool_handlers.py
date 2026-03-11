@@ -80,6 +80,7 @@ class MockKernel:
 class MockWorldModel:
     def __init__(self):
         self.queries: list[dict] = []
+        self.constraints: dict[str, Any] = {}
 
     def query(self, query_type: str, params: Optional[dict] = None) -> Any:
         self.queries.append({"query_type": query_type, "params": params})
@@ -88,6 +89,12 @@ class MockWorldModel:
         if query_type == "world_summary":
             return {"economy": {"cash": 5000}, "military": {"units": 10}, "timestamp": time.time()}
         return {"data": [], "timestamp": time.time()}
+
+    def set_constraint(self, constraint: Any) -> None:
+        self.constraints[constraint.constraint_id] = constraint
+
+    def remove_constraint(self, constraint_id: str) -> None:
+        self.constraints.pop(constraint_id, None)
 
 
 # --- Tests ---
@@ -249,6 +256,47 @@ def test_all_responses_have_timestamp():
     print("  PASS: all_responses_have_timestamp")
 
 
+def test_constraint_handlers_side_effects():
+    """create/remove_constraint handlers actually update WorldModel state."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    async def run():
+        # Create constraint
+        r = await executor.execute(
+            "tc1", "create_constraint",
+            '{"kind":"do_not_chase","scope":"global","params":{"max_distance":20},"enforcement":"clamp"}',
+        )
+        assert r.error is None
+        constraint_id = r.result["constraint_id"]
+        assert constraint_id.startswith("c_")
+
+        # Verify constraint stored in WorldModel
+        assert constraint_id in wm.constraints
+        c = wm.constraints[constraint_id]
+        assert c.kind == "do_not_chase"
+        assert c.scope == "global"
+        assert c.params["max_distance"] == 20
+        assert c.enforcement.value == "clamp"
+
+        # Remove constraint
+        r = await executor.execute(
+            "tc2", "remove_constraint",
+            json.dumps({"constraint_id": constraint_id}),
+        )
+        assert r.error is None
+        assert r.result["ok"] is True
+
+        # Verify constraint removed from WorldModel
+        assert constraint_id not in wm.constraints
+
+    asyncio.run(run())
+    print("  PASS: constraint_handlers_side_effects")
+
+
 def test_end_to_end_agent_with_handlers():
     """Full e2e: TaskAgent receives signal → LLM calls tools → handlers execute on Kernel."""
     kernel = MockKernel()
@@ -325,6 +373,7 @@ if __name__ == "__main__":
     test_query_world_handler()
     test_cancel_tasks_handler()
     test_all_responses_have_timestamp()
+    test_constraint_handlers_side_effects()
     test_end_to_end_agent_with_handlers()
 
-    print(f"\nAll 8 tests passed!")
+    print(f"\nAll 9 tests passed!")
