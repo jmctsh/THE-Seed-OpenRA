@@ -1,0 +1,330 @@
+"""Tests for TaskToolHandlers — end-to-end with mock Kernel + WorldModel."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+import os
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from typing import Any, Optional
+
+from llm import LLMResponse, MockProvider, ToolCall
+from models import (
+    ExpertSignal,
+    Job,
+    JobStatus,
+    ReconJobConfig,
+    SignalKind,
+    Task,
+    TaskKind,
+    TaskStatus,
+)
+from task_agent import AgentConfig, TaskAgent, ToolExecutor, WorldSummary
+from task_agent.handlers import TaskToolHandlers
+
+
+# --- Mock Kernel ---
+
+class MockKernel:
+    def __init__(self):
+        self.started_jobs: list[dict] = []
+        self.patched_jobs: list[dict] = []
+        self.paused_jobs: list[str] = []
+        self.resumed_jobs: list[str] = []
+        self.aborted_jobs: list[str] = []
+        self.completed_tasks: list[dict] = []
+        self.cancelled_filters: list[dict] = []
+        self._job_counter = 0
+
+    def start_job(self, task_id: str, expert_type: str, config: Any) -> Job:
+        self._job_counter += 1
+        job_id = f"j_{self._job_counter}"
+        self.started_jobs.append({"task_id": task_id, "expert_type": expert_type, "job_id": job_id})
+        return Job(
+            job_id=job_id,
+            task_id=task_id,
+            expert_type=expert_type,
+            config=config,
+            status=JobStatus.RUNNING,
+        )
+
+    def patch_job(self, job_id: str, params: dict) -> bool:
+        self.patched_jobs.append({"job_id": job_id, "params": params})
+        return True
+
+    def pause_job(self, job_id: str) -> bool:
+        self.paused_jobs.append(job_id)
+        return True
+
+    def resume_job(self, job_id: str) -> bool:
+        self.resumed_jobs.append(job_id)
+        return True
+
+    def abort_job(self, job_id: str) -> bool:
+        self.aborted_jobs.append(job_id)
+        return True
+
+    def complete_task(self, task_id: str, result: str, summary: str) -> bool:
+        self.completed_tasks.append({"task_id": task_id, "result": result, "summary": summary})
+        return True
+
+    def cancel_tasks(self, filters: dict) -> int:
+        self.cancelled_filters.append(filters)
+        return 1
+
+
+class MockWorldModel:
+    def __init__(self):
+        self.queries: list[dict] = []
+
+    def query(self, query_type: str, params: Optional[dict] = None) -> Any:
+        self.queries.append({"query_type": query_type, "params": params})
+        if query_type == "my_actors":
+            return {"actors": [{"actor_id": 57, "name": "2tnk"}], "timestamp": time.time()}
+        if query_type == "world_summary":
+            return {"economy": {"cash": 5000}, "military": {"units": 10}, "timestamp": time.time()}
+        return {"data": [], "timestamp": time.time()}
+
+
+# --- Tests ---
+
+def test_handlers_register_all():
+    """TaskToolHandlers registers all 11 handlers."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    # All 11 tools should have handlers
+    from task_agent.tools import get_tool_names
+    for name in get_tool_names():
+        assert name in executor._handlers, f"Missing handler: {name}"
+    print("  PASS: handlers_register_all")
+
+
+def test_start_job_handler():
+    """start_job handler calls Kernel.start_job with correct config."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    async def run():
+        result = await executor.execute(
+            "tc1", "start_job",
+            '{"expert_type":"ReconExpert","config":{"search_region":"enemy_half","target_type":"base","target_owner":"enemy"}}',
+        )
+        assert result.error is None
+        assert "job_id" in result.result
+        assert result.result["status"] == "running"
+        assert "timestamp" in result.result
+
+    asyncio.run(run())
+    assert len(kernel.started_jobs) == 1
+    assert kernel.started_jobs[0]["expert_type"] == "ReconExpert"
+    assert kernel.started_jobs[0]["task_id"] == "t1"
+    print("  PASS: start_job_handler")
+
+
+def test_patch_pause_resume_abort_handlers():
+    """Job lifecycle handlers call Kernel correctly."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    async def run():
+        r = await executor.execute("tc1", "patch_job", '{"job_id":"j1","params":{"max_chase_distance":10}}')
+        assert r.error is None and r.result["ok"]
+
+        r = await executor.execute("tc2", "pause_job", '{"job_id":"j1"}')
+        assert r.error is None and r.result["ok"]
+
+        r = await executor.execute("tc3", "resume_job", '{"job_id":"j1"}')
+        assert r.error is None and r.result["ok"]
+
+        r = await executor.execute("tc4", "abort_job", '{"job_id":"j1"}')
+        assert r.error is None and r.result["ok"]
+
+    asyncio.run(run())
+    assert kernel.patched_jobs[0]["params"]["max_chase_distance"] == 10
+    assert kernel.paused_jobs == ["j1"]
+    assert kernel.resumed_jobs == ["j1"]
+    assert kernel.aborted_jobs == ["j1"]
+    print("  PASS: patch_pause_resume_abort_handlers")
+
+
+def test_complete_task_handler():
+    """complete_task handler calls Kernel.complete_task."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    async def run():
+        r = await executor.execute("tc1", "complete_task", '{"result":"succeeded","summary":"Found base"}')
+        assert r.error is None and r.result["ok"]
+
+    asyncio.run(run())
+    assert kernel.completed_tasks[0] == {"task_id": "t1", "result": "succeeded", "summary": "Found base"}
+    print("  PASS: complete_task_handler")
+
+
+def test_query_world_handler():
+    """query_world handler calls WorldModel.query with correct mapping."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    async def run():
+        r = await executor.execute("tc1", "query_world", '{"query_type":"my_actors"}')
+        assert r.error is None
+        assert "data" in r.result
+        assert "timestamp" in r.result
+
+        r = await executor.execute("tc2", "query_world", '{"query_type":"threat_assessment"}')
+        assert r.error is None
+
+    asyncio.run(run())
+    assert wm.queries[0]["query_type"] == "my_actors"
+    assert wm.queries[1]["query_type"] == "world_summary"
+    print("  PASS: query_world_handler")
+
+
+def test_cancel_tasks_handler():
+    """cancel_tasks handler calls Kernel.cancel_tasks."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    async def run():
+        r = await executor.execute("tc1", "cancel_tasks", '{"filters":{"kind":"managed"}}')
+        assert r.error is None
+        assert r.result["count"] == 1
+
+    asyncio.run(run())
+    assert kernel.cancelled_filters[0] == {"kind": "managed"}
+    print("  PASS: cancel_tasks_handler")
+
+
+def test_all_responses_have_timestamp():
+    """Every handler response includes a timestamp field."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    async def run():
+        calls = [
+            ("start_job", '{"expert_type":"ReconExpert","config":{"search_region":"full_map","target_type":"base","target_owner":"enemy"}}'),
+            ("patch_job", '{"job_id":"j1","params":{}}'),
+            ("pause_job", '{"job_id":"j1"}'),
+            ("resume_job", '{"job_id":"j1"}'),
+            ("abort_job", '{"job_id":"j1"}'),
+            ("complete_task", '{"result":"succeeded","summary":"done"}'),
+            ("create_constraint", '{"kind":"do_not_chase","scope":"global","params":{},"enforcement":"clamp"}'),
+            ("remove_constraint", '{"constraint_id":"c1"}'),
+            ("query_world", '{"query_type":"my_actors"}'),
+            ("query_planner", '{"planner_type":"ReconRoutePlanner"}'),
+            ("cancel_tasks", '{"filters":{}}'),
+        ]
+        for name, args in calls:
+            r = await executor.execute(f"tc_{name}", name, args)
+            assert "timestamp" in r.result, f"{name} response missing timestamp"
+
+    asyncio.run(run())
+    print("  PASS: all_responses_have_timestamp")
+
+
+def test_end_to_end_agent_with_handlers():
+    """Full e2e: TaskAgent receives signal → LLM calls tools → handlers execute on Kernel."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+
+    task = Task(task_id="t1", raw_text="侦察东北方向", kind=TaskKind.MANAGED, priority=50)
+
+    # Set up handlers + executor
+    executor = ToolExecutor()
+    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers.register_all(executor)
+
+    # Mock LLM: query_world → start_job → text
+    mock_llm = MockProvider(responses=[
+        # Init wake: query then start job
+        LLMResponse(
+            tool_calls=[ToolCall(id="tc1", name="query_world", arguments='{"query_type":"my_actors"}')],
+            model="mock",
+        ),
+        LLMResponse(
+            tool_calls=[ToolCall(id="tc2", name="start_job", arguments='{"expert_type":"ReconExpert","config":{"search_region":"northeast","target_type":"base","target_owner":"enemy"}}')],
+            model="mock",
+        ),
+        LLMResponse(text="Job started, monitoring.", model="mock"),
+        # Signal wake: complete the task
+        LLMResponse(
+            tool_calls=[ToolCall(id="tc3", name="complete_task", arguments='{"result":"succeeded","summary":"Found enemy base"}')],
+            model="mock",
+        ),
+    ])
+
+    agent = TaskAgent(
+        task=task,
+        llm=mock_llm,
+        tool_executor=executor,
+        jobs_provider=lambda tid: [],
+        world_summary_provider=lambda: WorldSummary(),
+        config=AgentConfig(review_interval=60.0),
+    )
+
+    async def run():
+        agent_task = asyncio.create_task(agent.run())
+        await asyncio.sleep(0.1)
+
+        # Push signal to trigger second wake
+        agent.push_signal(ExpertSignal(
+            task_id="t1", job_id="j_1", kind=SignalKind.TARGET_FOUND,
+            summary="Enemy base found",
+        ))
+
+        await asyncio.wait_for(agent_task, timeout=5.0)
+
+    asyncio.run(run())
+
+    # Verify real side effects on Kernel
+    assert len(wm.queries) >= 1  # query_world was called
+    assert len(kernel.started_jobs) == 1  # start_job was called
+    assert kernel.started_jobs[0]["expert_type"] == "ReconExpert"
+    assert len(kernel.completed_tasks) == 1  # complete_task was called
+    assert kernel.completed_tasks[0]["result"] == "succeeded"
+    assert agent._task_completed is True
+    print("  PASS: end_to_end_agent_with_handlers")
+
+
+# --- Run all tests ---
+
+if __name__ == "__main__":
+    print("Running TaskToolHandlers tests...\n")
+
+    test_handlers_register_all()
+    test_start_job_handler()
+    test_patch_pause_resume_abort_handlers()
+    test_complete_task_handler()
+    test_query_world_handler()
+    test_cancel_tasks_handler()
+    test_all_responses_have_timestamp()
+    test_end_to_end_agent_with_handlers()
+
+    print(f"\nAll 8 tests passed!")

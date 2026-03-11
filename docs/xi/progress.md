@@ -49,7 +49,7 @@ Implemented experts/base.py:
 - PlannerExpert ABC: plan(query_type, params, world_state) → proposal
 - ExecutionExpert ABC: create_job() factory + generate_job_id()
 - BaseJob: full lifecycle (tick/patch/pause/resume/abort), signal emission via callback, resource grant/revoke with auto WAITING/RUNNING transition, constraint reading by scope (global/expert_type/task_id), tick_interval per subclass, benchmark @timed("job_tick"), to_model() for context packets
-- tests/test_expert_base.py: 11 tests all passing
+- tests/test_expert_base.py: 12 tests all passing (incl. abort→resume guard)
 
 ## [2026-03-31 00:00] DONE — Task 1.2: GameLoop (10Hz main loop)
 Implemented game_loop/loop.py:
@@ -58,3 +58,9 @@ Implemented game_loop/loop.py:
 - Job tick scheduler: register/unregister, per-Job tick_interval, skips terminated jobs
 - Benchmark instrumented: span("job_tick") per tick
 - tests/test_game_loop.py: 7 tests all passing (start/stop, event routing, job scheduling, register/unregister, terminated skip, dashboard callback, configurable tick rate)
+
+## [2026-03-31 00:00] DONE — Task 1.5+1.7: Tool handlers + timestamp propagation
+- task_agent/handlers.py: TaskToolHandlers class with 11 handlers wiring to Kernel/WorldModel via Protocol interfaces
+- All handler responses include timestamp field (1.7 compliance)
+- 1.7 check: all 11 data models + ContextPacket + WorldSummary have timestamp fields
+- tests/test_tool_handlers.py: 8 tests (register_all, start_job, lifecycle, complete_task, query_world, cancel_tasks, all_timestamps, end-to-end agent→LLM→handler→Kernel)
