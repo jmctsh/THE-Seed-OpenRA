@@ -20,11 +20,14 @@ from models import (
     ExpertSignal,
     Job,
     JobStatus,
+    PlayerResponse,
     ResourceKind,
     ResourceNeed,
     SignalKind,
     Task,
     TaskKind,
+    TaskMessage,
+    TaskMessageType,
     TaskStatus,
     validate_job_config,
 )
@@ -147,6 +150,20 @@ class _TaskRuntime:
     runner: Optional[asyncio.Task[Any]] = None
 
 
+@dataclass(slots=True)
+class _PendingQuestion:
+    message: TaskMessage
+    deadline_at: float
+    default_option: str
+
+
+@dataclass(slots=True)
+class _AutoResponseRule:
+    rule_id: str
+    event_type: EventType
+    handler: Callable[[Event], None]
+
+
 class Kernel:
     """Deterministic orchestration layer for Tasks and Jobs."""
 
@@ -172,6 +189,17 @@ class Kernel:
         self._resource_needs: dict[str, list[ResourceNeed]] = {}
         self._resource_loss_notified: set[str] = set()
         self.player_notifications: list[dict[str, Any]] = []
+        self.task_messages: list[TaskMessage] = []
+        self._pending_questions: dict[str, _PendingQuestion] = {}
+        self._timed_out_questions: set[str] = set()
+        self._closed_questions: set[str] = set()
+        self._delivered_player_responses: dict[str, list[PlayerResponse]] = {}
+        self._auto_response_rules: dict[EventType, list[_AutoResponseRule]] = {}
+        self.register_auto_response_rule(
+            "base_under_attack_defend_base",
+            EventType.BASE_UNDER_ATTACK,
+            self._handle_base_under_attack_auto_response,
+        )
 
     def create_task(self, raw_text: str, kind: TaskKind | str, priority: int) -> Task:
         with bm_span("tool_exec", name="kernel:create_task"):
@@ -207,6 +235,7 @@ class Kernel:
             for job in list(self._jobs.values()):
                 if job.task_id == task_id and job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}:
                     self.abort_job(job.job_id)
+            self._close_pending_questions_for_task(task_id)
             task.status = TaskStatus.ABORTED
             task.timestamp = _now()
             self._stop_agent(task_id)
@@ -238,6 +267,7 @@ class Kernel:
             for job in list(self._jobs.values()):
                 if job.task_id == task_id and job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}:
                     self.abort_job(job.job_id)
+            self._close_pending_questions_for_task(task_id)
             self._stop_agent(task_id)
             self._sync_world_runtime()
             return True
@@ -295,6 +325,7 @@ class Kernel:
 
     def route_event(self, event: Event) -> None:
         with bm_span("tool_exec", name=f"kernel:route_event:{event.type.value}"):
+            self._apply_auto_response_rules(event)
             if event.type in {EventType.UNIT_DIED, EventType.UNIT_DAMAGED}:
                 self._route_actor_event(event)
                 return
@@ -302,7 +333,6 @@ class Kernel:
                 self._broadcast_event(event)
                 return
             if event.type == EventType.BASE_UNDER_ATTACK:
-                self._ensure_defend_base_task()
                 self._broadcast_event(event)
                 return
             if event.type in {EventType.ENEMY_EXPANSION, EventType.FRONTLINE_WEAK, EventType.ECONOMY_SURPLUS}:
@@ -351,6 +381,131 @@ class Kernel:
 
     def list_player_notifications(self) -> list[dict[str, Any]]:
         return list(self.player_notifications)
+
+    def list_task_messages(self, task_id: Optional[str] = None) -> list[TaskMessage]:
+        if task_id is None:
+            return list(self.task_messages)
+        return [message for message in self.task_messages if message.task_id == task_id]
+
+    def list_pending_questions(self) -> list[dict[str, Any]]:
+        pending = sorted(self._pending_questions.values(), key=lambda item: (item.message.priority, item.message.timestamp), reverse=True)
+        return [
+            {
+                "message_id": item.message.message_id,
+                "task_id": item.message.task_id,
+                "question": item.message.content,
+                "options": list(item.message.options or []),
+                "default_option": item.message.default_option,
+                "priority": item.message.priority,
+                "asked_at": item.message.timestamp,
+                "timeout_s": item.message.timeout_s,
+                "deadline_at": item.deadline_at,
+            }
+            for item in pending
+        ]
+
+    def register_task_message(self, message: TaskMessage) -> bool:
+        with bm_span("tool_exec", name=f"kernel:register_task_message:{message.type.value}"):
+            task = self.tasks.get(message.task_id)
+            if task is None or task.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.ABORTED, TaskStatus.PARTIAL}:
+                return False
+            self.task_messages.append(message)
+            if message.type == TaskMessageType.TASK_QUESTION:
+                if message.timeout_s is None or message.default_option is None:
+                    raise ValueError("task_question requires timeout_s and default_option")
+                self._pending_questions[message.message_id] = _PendingQuestion(
+                    message=message,
+                    deadline_at=message.timestamp + message.timeout_s,
+                    default_option=message.default_option,
+                )
+                self._timed_out_questions.discard(message.message_id)
+                self._closed_questions.discard(message.message_id)
+            return True
+
+    def cancel_pending_question(self, message_id: str) -> bool:
+        pending = self._pending_questions.pop(message_id, None)
+        if pending is None:
+            return False
+        self._closed_questions.add(message_id)
+        return True
+
+    def submit_player_response(
+        self,
+        response: PlayerResponse,
+        *,
+        now: Optional[float] = None,
+    ) -> dict[str, Any]:
+        with bm_span("tool_exec", name="kernel:submit_player_response"):
+            timestamp = _now() if now is None else now
+            pending = self._pending_questions.get(response.message_id)
+            if pending is None:
+                if response.message_id in self._timed_out_questions:
+                    return {
+                        "ok": False,
+                        "status": "timed_out",
+                        "message": "已按默认处理，如需更改请重新下令",
+                        "timestamp": timestamp,
+                    }
+                if response.message_id in self._closed_questions:
+                    return {
+                        "ok": False,
+                        "status": "closed",
+                        "message": "任务已结束，请重新下令",
+                        "timestamp": timestamp,
+                    }
+                return {
+                    "ok": False,
+                    "status": "unknown_message",
+                    "message": "未找到对应问题",
+                    "timestamp": timestamp,
+                }
+            if pending.deadline_at <= timestamp:
+                self._expire_pending_question(response.message_id, timestamp)
+                return {
+                    "ok": False,
+                    "status": "timed_out",
+                    "message": "已按默认处理，如需更改请重新下令",
+                    "timestamp": timestamp,
+                }
+            if pending.message.task_id != response.task_id:
+                return {
+                    "ok": False,
+                    "status": "task_mismatch",
+                    "message": "回复与任务不匹配",
+                    "timestamp": timestamp,
+                }
+            self._pending_questions.pop(response.message_id, None)
+            self._deliver_player_response(
+                PlayerResponse(
+                    message_id=response.message_id,
+                    task_id=response.task_id,
+                    answer=response.answer,
+                    timestamp=timestamp,
+                )
+            )
+            return {"ok": True, "status": "delivered", "timestamp": timestamp}
+
+    def tick(self, *, now: Optional[float] = None) -> int:
+        with bm_span("tool_exec", name="kernel:tick"):
+            timestamp = _now() if now is None else now
+            expired_ids = [
+                message_id
+                for message_id, pending in self._pending_questions.items()
+                if pending.deadline_at <= timestamp
+            ]
+            for message_id in expired_ids:
+                self._expire_pending_question(message_id, timestamp)
+            return len(expired_ids)
+
+    def register_auto_response_rule(
+        self,
+        rule_id: str,
+        event_type: EventType,
+        handler: Callable[[Event], None],
+    ) -> None:
+        rules = self._auto_response_rules.setdefault(event_type, [])
+        rules[:] = [rule for rule in rules if rule.rule_id != rule_id]
+        rules.append(_AutoResponseRule(rule_id=rule_id, event_type=event_type, handler=handler))
 
     def _default_task_agent_factory(
         self,
@@ -482,6 +637,16 @@ class Kernel:
 
     def _constraints_for_scope(self, scope: str) -> list[Constraint]:
         return [constraint for constraint in self._constraints.values() if constraint.active and constraint.scope == scope]
+
+    def _close_pending_questions_for_task(self, task_id: str) -> None:
+        closed_ids = [
+            message_id
+            for message_id, pending in self._pending_questions.items()
+            if pending.message.task_id == task_id
+        ]
+        for message_id in closed_ids:
+            self._pending_questions.pop(message_id, None)
+            self._closed_questions.add(message_id)
 
     def _task_matches_filters(self, task: Task, filters: dict[str, Any]) -> bool:
         task_ids = filters.get("task_ids")
@@ -798,6 +963,13 @@ class Kernel:
                 return
         self.create_task("defend_base", TaskKind.MANAGED, 80)
 
+    def _handle_base_under_attack_auto_response(self, event: Event) -> None:
+        self._ensure_defend_base_task()
+
+    def _apply_auto_response_rules(self, event: Event) -> None:
+        for rule in self._auto_response_rules.get(event.type, []):
+            rule.handler(event)
+
     def _push_player_notification(self, event: Event) -> None:
         content_map = {
             EventType.ENEMY_EXPANSION: "发现敌人在扩张",
@@ -816,6 +988,28 @@ class Kernel:
     @staticmethod
     def _is_terminal_status(status: JobStatus) -> bool:
         return status in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}
+
+    def _expire_pending_question(self, message_id: str, timestamp: float) -> None:
+        pending = self._pending_questions.pop(message_id, None)
+        if pending is None:
+            return
+        self._timed_out_questions.add(message_id)
+        self._deliver_player_response(
+            PlayerResponse(
+                message_id=message_id,
+                task_id=pending.message.task_id,
+                answer=pending.default_option,
+                timestamp=timestamp,
+            )
+        )
+
+    def _deliver_player_response(self, response: PlayerResponse) -> None:
+        self._delivered_player_responses.setdefault(response.task_id, []).append(response)
+        runtime = self._task_runtimes.get(response.task_id)
+        if runtime is None:
+            return
+        if hasattr(runtime.agent, "push_player_response"):
+            runtime.agent.push_player_response(response)  # type: ignore[attr-defined]
 
     def _tool_start_job(self, task_id: str) -> Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]:
         async def handler(_: str, args: dict[str, Any]) -> dict[str, Any]:

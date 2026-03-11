@@ -20,12 +20,15 @@ from models import (
     ExpertSignal,
     Job,
     JobStatus,
+    PlayerResponse,
     ResourceKind,
     ResourceNeed,
     ReconJobConfig,
     SignalKind,
     Task,
     TaskKind,
+    TaskMessage,
+    TaskMessageType,
     TaskStatus,
 )
 from openra_api.models import Actor, Location, MapQueryResult, PlayerBaseInfo
@@ -49,6 +52,7 @@ class RecordingAgent:
         self.world_summary_provider = world_summary_provider
         self.signals: list[ExpertSignal] = []
         self.events: list[Event] = []
+        self.player_responses: list[PlayerResponse] = []
         self.run_calls = 0
         self.stopped = False
 
@@ -64,6 +68,9 @@ class RecordingAgent:
 
     def push_event(self, event: Event) -> None:
         self.events.append(event)
+
+    def push_player_response(self, response: PlayerResponse) -> None:
+        self.player_responses.append(response)
 
 
 class MockReconJob(BaseJob):
@@ -483,6 +490,99 @@ def test_production_queue_matching_and_remaining_event_types() -> None:
     print("  PASS: production_queue_matching_and_remaining_event_types")
 
 
+def test_pending_question_timeout_and_late_reply() -> None:
+    kernel = make_kernel()
+    task = kernel.create_task("继续进攻还是放弃", TaskKind.MANAGED, 60)
+    agent = kernel.get_task_agent(task.task_id)
+    assert isinstance(agent, RecordingAgent)
+
+    message = TaskMessage(
+        message_id="msg_1",
+        task_id=task.task_id,
+        type=TaskMessageType.TASK_QUESTION,
+        content="兵力不足，继续还是放弃？",
+        options=["继续", "放弃"],
+        timeout_s=3.0,
+        default_option="放弃",
+        priority=60,
+        timestamp=100.0,
+    )
+    assert kernel.register_task_message(message) is True
+    assert kernel.list_pending_questions()[0]["message_id"] == "msg_1"
+
+    assert kernel.tick(now=102.0) == 0
+    assert agent.player_responses == []
+
+    assert kernel.tick(now=103.0) == 1
+    assert len(agent.player_responses) == 1
+    assert agent.player_responses[0].message_id == "msg_1"
+    assert agent.player_responses[0].answer == "放弃"
+    assert kernel.list_pending_questions() == []
+
+    late = kernel.submit_player_response(
+        PlayerResponse(message_id="msg_1", task_id=task.task_id, answer="继续", timestamp=104.0),
+        now=104.0,
+    )
+    assert late["ok"] is False
+    assert late["status"] == "timed_out"
+    assert late["message"] == "已按默认处理，如需更改请重新下令"
+    print("  PASS: pending_question_timeout_and_late_reply")
+
+
+def test_cancel_task_closes_pending_question() -> None:
+    kernel = make_kernel()
+    task = kernel.create_task("等待玩家决定", TaskKind.MANAGED, 55)
+
+    kernel.register_task_message(
+        TaskMessage(
+            message_id="msg_cancel",
+            task_id=task.task_id,
+            type=TaskMessageType.TASK_QUESTION,
+            content="继续还是取消？",
+            options=["继续", "取消"],
+            timeout_s=10.0,
+            default_option="取消",
+            priority=55,
+            timestamp=100.0,
+        )
+    )
+    assert len(kernel.list_pending_questions()) == 1
+
+    assert kernel.cancel_task(task.task_id) is True
+    assert kernel.list_pending_questions() == []
+
+    late = kernel.submit_player_response(
+        PlayerResponse(message_id="msg_cancel", task_id=task.task_id, answer="继续", timestamp=101.0),
+        now=101.0,
+    )
+    assert late["ok"] is False
+    assert late["status"] == "closed"
+    print("  PASS: cancel_task_closes_pending_question")
+
+
+def test_auto_response_rule_registration_and_base_under_attack_dedup() -> None:
+    kernel = make_kernel()
+    kernel.create_task("普通进攻", TaskKind.MANAGED, 50)
+    triggered: list[EventType] = []
+
+    kernel.register_auto_response_rule(
+        "record_enemy_expansion",
+        EventType.ENEMY_EXPANSION,
+        lambda event: triggered.append(event.type),
+    )
+
+    kernel.route_event(Event(type=EventType.ENEMY_EXPANSION, actor_id=201))
+    kernel.route_event(Event(type=EventType.BASE_UNDER_ATTACK, actor_id=20))
+    kernel.route_event(Event(type=EventType.BASE_UNDER_ATTACK, actor_id=20))
+
+    defend_tasks = [task for task in kernel.list_tasks() if task.raw_text == "defend_base"]
+    assert triggered == [EventType.ENEMY_EXPANSION]
+    assert len(defend_tasks) == 1
+    assert defend_tasks[0].priority == 80
+    assert defend_tasks[0].kind == TaskKind.MANAGED
+    print("  PASS: auto_response_rule_registration_and_base_under_attack_dedup")
+
+
 def main() -> None:
     test_create_task_and_task_agent_registration()
     test_start_job_validates_and_lifecycle_controls()
@@ -493,7 +593,10 @@ def main() -> None:
     test_multi_resource_job_degrades_and_unit_died_auto_replaces()
     test_actor_event_routing_broadcasts_and_notifications()
     test_production_queue_matching_and_remaining_event_types()
-    print("OK: 9 Kernel tests passed")
+    test_pending_question_timeout_and_late_reply()
+    test_cancel_task_closes_pending_question()
+    test_auto_response_rule_registration_and_base_under_attack_dedup()
+    print("OK: 12 Kernel tests passed")
 
 
 if __name__ == "__main__":
