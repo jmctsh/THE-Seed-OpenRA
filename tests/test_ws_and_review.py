@@ -35,8 +35,15 @@ class MockWorldModel:
 
 
 class MockKernel:
+    def __init__(self):
+        self.tick_count = 0
+
     def route_events(self, events: list[Event]) -> None:
         pass
+
+    def tick(self, *, now=None) -> int:
+        self.tick_count += 1
+        return 0
 
 
 # --- 1.8 Tests: review_interval scheduling ---

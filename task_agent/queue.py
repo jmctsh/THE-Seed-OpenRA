@@ -29,11 +29,16 @@ class AgentQueue:
         self._wake_event.set()
 
     def drain(self) -> list[QueueItem]:
-        """Drain all pending items from the queue (non-blocking)."""
+        """Drain all pending items from the queue (non-blocking).
+
+        Filters out review sentinels so the agent only sees real items.
+        """
         items: list[QueueItem] = []
         while not self._queue.empty():
             try:
-                items.append(self._queue.get_nowait())
+                item = self._queue.get_nowait()
+                if not isinstance(item, _ReviewSentinel):
+                    items.append(item)
             except asyncio.QueueEmpty:
                 break
         return items
@@ -54,6 +59,24 @@ class AgentQueue:
         except asyncio.TimeoutError:
             return False
 
+    def trigger_review(self) -> None:
+        """Trigger a review wake without pushing a real item.
+
+        Race-free: sets the wake event AND puts a sentinel in the queue.
+        The sentinel is filtered out by drain() so the agent sees an
+        empty queue — which it handles as a timer-triggered review.
+        """
+        self._queue.put_nowait(_REVIEW_SENTINEL)
+        self._wake_event.set()
+
     @property
     def pending_count(self) -> int:
         return self._queue.qsize()
+
+
+class _ReviewSentinel:
+    """Sentinel object for review wake — filtered out by drain()."""
+    pass
+
+
+_REVIEW_SENTINEL = _ReviewSentinel()

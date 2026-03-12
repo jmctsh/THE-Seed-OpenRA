@@ -35,6 +35,7 @@ class KernelInterface(Protocol):
     """Minimal Kernel interface needed by GameLoop."""
 
     def route_events(self, events: list[Event]) -> None: ...
+    def tick(self, *, now: Optional[float] = None) -> int: ...
 
 
 # Dashboard push callback: (tick_number, timestamp) -> None
@@ -188,6 +189,9 @@ class GameLoop:
             if events:
                 self.kernel.route_events(events)
 
+            # 3b. Kernel tick (pending question timeout scan)
+            self.kernel.tick(now=now)
+
             # 4. Tick due Jobs
             self._tick_jobs(now)
 
@@ -218,13 +222,13 @@ class GameLoop:
     def _check_agent_reviews(self, now: float) -> None:
         """Wake Task Agents whose review_interval has elapsed.
 
-        Uses the AgentQueue's wake trigger directly — the TaskAgent's
-        wait_for_wake() will return False (timeout), which it already
-        handles as a timer wake. This just ensures the wake happens
-        promptly rather than waiting for the full sleep timeout.
+        Pushes a lightweight review Event into the AgentQueue. This is
+        race-free because push() enqueues an item (persistent) AND sets
+        the wake event — even if the agent re-clears the event before
+        waiting, the queued item ensures drain() returns non-empty.
         """
         for task_id, reg in list(self._agents.items()):
             if now - reg.last_review_at >= reg.review_interval:
                 reg.last_review_at = now
-                reg.agent_queue._wake_event.set()
+                reg.agent_queue.trigger_review()
                 logger.debug("Review wake for agent %s", task_id)

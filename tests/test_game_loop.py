@@ -49,9 +49,14 @@ class MockWorldModel:
 class MockKernel:
     def __init__(self):
         self.routed_events: list[Event] = []
+        self.tick_calls = 0
 
     def route_events(self, events: list[Event]) -> None:
         self.routed_events.extend(events)
+
+    def tick(self, *, now=None) -> int:
+        self.tick_calls += 1
+        return 0
 
 
 class MockTickJob(BaseJob):
