@@ -25,13 +25,26 @@ from ws_server import WSServer, WSServerConfig
 class MockWorldModel:
     def __init__(self):
         self.refresh_count = 0
+        self._health = {
+            "stale": False,
+            "consecutive_failures": 0,
+            "total_failures": 0,
+            "last_error": None,
+            "failure_threshold": 3,
+            "timestamp": 0.0,
+        }
 
     def refresh(self, *, now=None, force=False) -> list[Event]:
         self.refresh_count += 1
+        if now is not None:
+            self._health["timestamp"] = now
         return []
 
     def detect_events(self, *, clear=True) -> list[Event]:
         return []
+
+    def refresh_health(self) -> dict[str, Any]:
+        return dict(self._health)
 
 
 class MockKernel:
@@ -44,6 +57,9 @@ class MockKernel:
     def tick(self, *, now=None) -> int:
         self.tick_count += 1
         return 0
+
+    def push_player_notification(self, notification_type: str, content: str, *, data=None, timestamp=None) -> None:
+        return None
 
 
 # --- 1.8 Tests: review_interval scheduling ---

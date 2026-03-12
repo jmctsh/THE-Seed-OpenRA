@@ -18,7 +18,7 @@ from typing import Any, Callable, Optional, Protocol
 
 from benchmark import span as bm_span
 from experts.base import BaseJob
-from models import Event
+from models import Event, JobStatus, SignalKind
 from task_agent.queue import AgentQueue
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ class WorldModelInterface(Protocol):
 
     def refresh(self, *, now: Optional[float] = None, force: bool = False) -> list[Event]: ...
     def detect_events(self, *, clear: bool = True) -> list[Event]: ...
+    def refresh_health(self) -> dict[str, Any]: ...
 
 
 class KernelInterface(Protocol):
@@ -36,6 +37,14 @@ class KernelInterface(Protocol):
 
     def route_events(self, events: list[Event]) -> None: ...
     def tick(self, *, now: Optional[float] = None) -> int: ...
+    def push_player_notification(
+        self,
+        notification_type: str,
+        content: str,
+        *,
+        data: Optional[dict[str, Any]] = None,
+        timestamp: Optional[float] = None,
+    ) -> None: ...
 
 
 # Dashboard push callback: (tick_number, timestamp) -> None
@@ -94,18 +103,25 @@ class GameLoop:
         self._running = False
         self._tick_count = 0
         self._started_at: Optional[float] = None
+        self._world_stale_active = False
+        self._world_stale_notified = False
+        self._paused_for_recovery: set[str] = set()
 
     # --- Job registration ---
 
     def register_job(self, job: BaseJob) -> None:
         """Register a Job to be ticked by the GameLoop."""
         self._jobs[job.job_id] = _RegisteredJob(job=job)
+        if self._world_stale_active and job.status == JobStatus.RUNNING and not job.is_paused:
+            job.pause()
+            self._paused_for_recovery.add(job.job_id)
         logger.debug("Job registered: %s (interval=%.2fs)", job.job_id, job.tick_interval)
 
     def unregister_job(self, job_id: str) -> None:
         """Remove a Job from the tick schedule."""
         if job_id in self._jobs:
             del self._jobs[job_id]
+            self._paused_for_recovery.discard(job_id)
             logger.debug("Job unregistered: %s", job_id)
 
     # --- Agent registration (1.8 review_interval) ---
@@ -192,6 +208,9 @@ class GameLoop:
             # 3b. Kernel tick (pending question timeout scan)
             self.kernel.tick(now=now)
 
+            # 3c. Recovery / stale handling
+            self._handle_world_model_health(now)
+
             # 4. Tick due Jobs
             self._tick_jobs(now)
 
@@ -216,8 +235,16 @@ class GameLoop:
             reg.last_tick_at = now
             try:
                 job.do_tick()
-            except Exception:
+            except Exception as exc:
                 logger.exception("Job tick error: %s", job.job_id)
+                job.status = JobStatus.FAILED
+                self._paused_for_recovery.discard(job.job_id)
+                job.emit_signal(
+                    kind=SignalKind.TASK_COMPLETE,
+                    summary=f"Job {job.job_id} failed: {exc}",
+                    result="failed",
+                    data={"error": str(exc), "error_type": type(exc).__name__},
+                )
 
     def _check_agent_reviews(self, now: float) -> None:
         """Wake Task Agents whose review_interval has elapsed.
@@ -232,3 +259,48 @@ class GameLoop:
                 reg.last_review_at = now
                 reg.agent_queue.trigger_review()
                 logger.debug("Review wake for agent %s", task_id)
+
+    def _handle_world_model_health(self, now: float) -> None:
+        health = self.world_model.refresh_health()
+        if not health.get("stale", False):
+            if self._world_stale_active:
+                self._resume_jobs_after_recovery()
+            self._world_stale_active = False
+            self._world_stale_notified = False
+            return
+
+        if not self._world_stale_active:
+            self._pause_jobs_for_recovery()
+            self._world_stale_active = True
+
+        if (
+            health.get("consecutive_failures", 0) >= health.get("failure_threshold", 3)
+            and not self._world_stale_notified
+        ):
+            self.kernel.push_player_notification(
+                "world_model_stale",
+                "WorldModel refresh failed repeatedly; using stale snapshot.",
+                data={
+                    "consecutive_failures": health.get("consecutive_failures", 0),
+                    "last_error": health.get("last_error"),
+                },
+                timestamp=now,
+            )
+            self._world_stale_notified = True
+
+    def _pause_jobs_for_recovery(self) -> None:
+        for reg in self._jobs.values():
+            job = reg.job
+            if job.status != JobStatus.RUNNING or job.is_paused:
+                continue
+            job.pause()
+            self._paused_for_recovery.add(job.job_id)
+
+    def _resume_jobs_after_recovery(self) -> None:
+        for job_id in list(self._paused_for_recovery):
+            reg = self._jobs.get(job_id)
+            if reg is None:
+                self._paused_for_recovery.discard(job_id)
+                continue
+            reg.job.resume()
+            self._paused_for_recovery.discard(job_id)

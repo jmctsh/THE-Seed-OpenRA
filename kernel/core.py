@@ -382,6 +382,23 @@ class Kernel:
     def list_player_notifications(self) -> list[dict[str, Any]]:
         return list(self.player_notifications)
 
+    def push_player_notification(
+        self,
+        notification_type: str,
+        content: str,
+        *,
+        data: Optional[dict[str, Any]] = None,
+        timestamp: Optional[float] = None,
+    ) -> None:
+        self.player_notifications.append(
+            {
+                "type": notification_type,
+                "content": content,
+                "data": dict(data or {}),
+                "timestamp": _now() if timestamp is None else timestamp,
+            }
+        )
+
     def list_task_messages(self, task_id: Optional[str] = None) -> list[TaskMessage]:
         if task_id is None:
             return list(self.task_messages)

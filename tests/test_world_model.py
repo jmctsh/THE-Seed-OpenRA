@@ -56,6 +56,36 @@ class MockWorldSource:
         return self._frame().queues
 
 
+class FailingWorldSource(MockWorldSource):
+    def __init__(self, frames: list[Frame]) -> None:
+        super().__init__(frames)
+        self.fail = False
+
+    def _maybe_fail(self, layer: str) -> None:
+        if self.fail:
+            raise RuntimeError(f"{layer} disconnected")
+
+    def fetch_self_actors(self) -> list[Actor]:
+        self._maybe_fail("actors")
+        return super().fetch_self_actors()
+
+    def fetch_enemy_actors(self) -> list[Actor]:
+        self._maybe_fail("actors")
+        return super().fetch_enemy_actors()
+
+    def fetch_economy(self) -> PlayerBaseInfo:
+        self._maybe_fail("economy")
+        return super().fetch_economy()
+
+    def fetch_map(self) -> MapQueryResult:
+        self._maybe_fail("map")
+        return super().fetch_map()
+
+    def fetch_production_queues(self) -> dict[str, dict]:
+        self._maybe_fail("queues")
+        return super().fetch_production_queues()
+
+
 def make_map(explored: float, visible: float) -> MapQueryResult:
     size = 4
     total = size * size
@@ -208,12 +238,41 @@ def test_unit_death_runtime_state_and_constraints() -> None:
     print("  PASS: unit_death_runtime_state_and_constraints")
 
 
+def test_refresh_failure_marks_stale_and_recovers() -> None:
+    source = FailingWorldSource(make_frames())
+    world = WorldModel(source, stale_failure_threshold=3)
+    world.refresh(now=100.0, force=True)
+
+    source.fail = True
+    for now in (101.0, 102.0, 103.0):
+        world.refresh(now=now, force=True)
+
+    health = world.refresh_health()
+    summary = world.world_summary()
+
+    assert summary["stale"] is True
+    assert summary["military"]["self_units"] == 3  # previous snapshot still usable
+    assert health["consecutive_failures"] == 3
+    assert health["failure_threshold"] == 3
+    assert "actors disconnected" in health["last_error"]
+
+    source.fail = False
+    world.refresh(now=104.0, force=True)
+    recovered = world.refresh_health()
+
+    assert recovered["stale"] is False
+    assert recovered["consecutive_failures"] == 0
+    assert recovered["last_error"] is None
+    print("  PASS: refresh_failure_marks_stale_and_recovers")
+
+
 def main() -> None:
     test_refresh_layers_and_summary()
     test_layered_refresh_respects_intervals()
     test_event_detection_and_queries()
     test_unit_death_runtime_state_and_constraints()
-    print("OK: 4 WorldModel tests passed")
+    test_refresh_failure_marks_stale_and_recovers()
+    print("OK: 5 WorldModel tests passed")
 
 
 if __name__ == "__main__":

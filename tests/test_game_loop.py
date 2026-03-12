@@ -28,15 +28,28 @@ from game_loop import GameLoop, GameLoopConfig
 # --- Mocks ---
 
 class MockWorldModel:
-    def __init__(self, events_per_refresh: Optional[list[Event]] = None):
+    def __init__(self, events_per_refresh: Optional[list[Event]] = None, health_sequence: Optional[list[dict[str, Any]]] = None):
         self._events = events_per_refresh or []
         self.refresh_count = 0
         self._buffered: list[Event] = []
+        self._health_sequence = list(health_sequence or [])
+        self._health = {
+            "stale": False,
+            "consecutive_failures": 0,
+            "total_failures": 0,
+            "last_error": None,
+            "failure_threshold": 3,
+            "timestamp": 0.0,
+        }
 
     def refresh(self, *, now=None, force=False) -> list[Event]:
         self.refresh_count += 1
         # Buffer events internally (like real WorldModel does)
         self._buffered = list(self._events)
+        if self._health_sequence:
+            self._health = dict(self._health_sequence.pop(0))
+        if now is not None:
+            self._health["timestamp"] = now
         return list(self._events)
 
     def detect_events(self, *, clear=True) -> list[Event]:
@@ -45,11 +58,15 @@ class MockWorldModel:
             self._buffered = []
         return events
 
+    def refresh_health(self) -> dict[str, Any]:
+        return dict(self._health)
+
 
 class MockKernel:
     def __init__(self):
         self.routed_events: list[Event] = []
         self.tick_calls = 0
+        self.player_notifications: list[dict[str, Any]] = []
 
     def route_events(self, events: list[Event]) -> None:
         self.routed_events.extend(events)
@@ -57,6 +74,16 @@ class MockKernel:
     def tick(self, *, now=None) -> int:
         self.tick_calls += 1
         return 0
+
+    def push_player_notification(self, notification_type: str, content: str, *, data=None, timestamp=None) -> None:
+        self.player_notifications.append(
+            {
+                "type": notification_type,
+                "content": content,
+                "data": dict(data or {}),
+                "timestamp": timestamp,
+            }
+        )
 
 
 class MockTickJob(BaseJob):
@@ -87,6 +114,17 @@ class SlowTickJob(BaseJob):
 
     def tick(self) -> None:
         self.tick_count += 1
+
+
+class FaultyJob(BaseJob):
+    tick_interval = 0.0
+
+    @property
+    def expert_type(self) -> str:
+        return "FaultyExpert"
+
+    def tick(self) -> None:
+        raise RuntimeError("boom")
 
 
 # --- Tests ---
@@ -289,6 +327,62 @@ def test_configurable_tick_rate():
     print(f"  PASS: configurable_tick_rate (50Hz, ticks={loop.tick_count})")
 
 
+def test_worldmodel_stale_pauses_jobs_notifies_and_recovers():
+    health_sequence = [
+        {"stale": True, "consecutive_failures": 1, "total_failures": 1, "last_error": "disconnect", "failure_threshold": 3, "timestamp": 101.0},
+        {"stale": True, "consecutive_failures": 2, "total_failures": 2, "last_error": "disconnect", "failure_threshold": 3, "timestamp": 102.0},
+        {"stale": True, "consecutive_failures": 3, "total_failures": 3, "last_error": "disconnect", "failure_threshold": 3, "timestamp": 103.0},
+        {"stale": False, "consecutive_failures": 0, "total_failures": 3, "last_error": None, "failure_threshold": 3, "timestamp": 104.0},
+    ]
+    wm = MockWorldModel(health_sequence=health_sequence)
+    kernel = MockKernel()
+    loop = GameLoop(wm, kernel, config=GameLoopConfig(tick_hz=100))
+
+    signals: list[ExpertSignal] = []
+    config = ReconJobConfig(search_region="full_map", target_type="base", target_owner="enemy")
+    job = MockTickJob(job_id="j_recover", task_id="t1", config=config, signal_callback=signals.append)
+    job.tick_interval = 0.0
+    job.on_resource_granted(["actor:57"])
+    loop.register_job(job)
+
+    async def run():
+        for _ in range(4):
+            await loop._tick()
+
+    asyncio.run(run())
+
+    assert kernel.tick_calls == 4
+    assert len(kernel.player_notifications) == 1
+    assert kernel.player_notifications[0]["type"] == "world_model_stale"
+    assert job.status == JobStatus.RUNNING
+    assert job.tick_count == 1
+    print("  PASS: worldmodel_stale_pauses_jobs_notifies_and_recovers")
+
+
+def test_job_exception_emits_failed_signal():
+    wm = MockWorldModel()
+    kernel = MockKernel()
+    loop = GameLoop(wm, kernel, config=GameLoopConfig(tick_hz=100))
+
+    signals: list[ExpertSignal] = []
+    config = ReconJobConfig(search_region="full_map", target_type="base", target_owner="enemy")
+    job = FaultyJob(job_id="j_fail", task_id="t1", config=config, signal_callback=signals.append)
+    job.on_resource_granted(["actor:57"])
+    loop.register_job(job)
+
+    async def run():
+        await loop._tick()
+
+    asyncio.run(run())
+
+    assert job.status == JobStatus.FAILED
+    assert len(signals) == 1
+    assert signals[0].kind == SignalKind.TASK_COMPLETE
+    assert signals[0].result == "failed"
+    assert signals[0].data["error_type"] == "RuntimeError"
+    print("  PASS: job_exception_emits_failed_signal")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -301,5 +395,7 @@ if __name__ == "__main__":
     test_terminated_jobs_skipped()
     test_dashboard_callback()
     test_configurable_tick_rate()
+    test_worldmodel_stale_pauses_jobs_notifies_and_recovers()
+    test_job_exception_emits_failed_signal()
 
-    print(f"\nAll 7 tests passed!")
+    print(f"\nAll 9 tests passed!")

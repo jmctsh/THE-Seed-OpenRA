@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
+import logging
 import math
 import time
 from typing import Any, Optional, Protocol
@@ -49,6 +50,8 @@ BUILDING_CODES = {
     "agun",
     "kenn",
 }
+
+logger = logging.getLogger(__name__)
 
 
 class WorldModelSource(Protocol):
@@ -141,10 +144,12 @@ class WorldModel:
         *,
         refresh_policy: Optional[RefreshPolicy] = None,
         event_history_limit: int = 200,
+        stale_failure_threshold: int = 3,
     ) -> None:
         self.source = source
         self.refresh_policy = refresh_policy or RefreshPolicy()
         self.event_history_limit = event_history_limit
+        self.stale_failure_threshold = stale_failure_threshold
 
         self.state = WorldState(timestamp=0.0)
         self.active_tasks: dict[str, Any] = {}
@@ -160,6 +165,9 @@ class WorldModel:
         self._last_refresh_layers: list[str] = []
         self._frontline_weak_active = False
         self._economy_surplus_active = False
+        self._consecutive_refresh_failures = 0
+        self._total_refresh_failures = 0
+        self._last_refresh_error: Optional[str] = None
 
     @timed("world_refresh")
     def refresh(self, *, now: Optional[float] = None, force: bool = False) -> list[Event]:
@@ -182,6 +190,7 @@ class WorldModel:
         )
 
         stale = False
+        refresh_errors: list[str] = []
         if "actors" in layers:
             try:
                 self_actors = self.source.fetch_self_actors()
@@ -191,8 +200,10 @@ class WorldModel:
                 self.state.self_ids = normalized["self_ids"]
                 self.state.enemy_ids = normalized["enemy_ids"]
                 self._last_actor_refresh = timestamp
-            except Exception:
+            except Exception as exc:
                 stale = True
+                refresh_errors.append(f"actors:{exc}")
+                logger.warning("WorldModel actor refresh failed: %s", exc)
 
         if "economy" in layers:
             try:
@@ -201,15 +212,27 @@ class WorldModel:
                 self.state.economy = economy
                 self.state.production_queues = queues
                 self._last_economy_refresh = timestamp
-            except Exception:
+            except Exception as exc:
                 stale = True
+                refresh_errors.append(f"economy:{exc}")
+                logger.warning("WorldModel economy refresh failed: %s", exc)
 
         if "map" in layers:
             try:
                 self.state.map_info = self._normalize_map(self.source.fetch_map(), timestamp)
                 self._last_map_refresh = timestamp
-            except Exception:
+            except Exception as exc:
                 stale = True
+                refresh_errors.append(f"map:{exc}")
+                logger.warning("WorldModel map refresh failed: %s", exc)
+
+        if stale:
+            self._consecutive_refresh_failures += 1
+            self._total_refresh_failures += 1
+            self._last_refresh_error = "; ".join(refresh_errors) if refresh_errors else "unknown refresh failure"
+        else:
+            self._consecutive_refresh_failures = 0
+            self._last_refresh_error = None
 
         self.state.timestamp = timestamp
         self.state.stale = stale
@@ -415,6 +438,16 @@ class WorldModel:
 
     def recent_events(self, limit: int = 20) -> list[Event]:
         return list(self._event_history[-limit:])
+
+    def refresh_health(self) -> dict[str, Any]:
+        return {
+            "stale": self.state.stale,
+            "consecutive_failures": self._consecutive_refresh_failures,
+            "total_failures": self._total_refresh_failures,
+            "last_error": self._last_refresh_error,
+            "failure_threshold": self.stale_failure_threshold,
+            "timestamp": self.state.timestamp,
+        }
 
     def _due_layers(self, now: float, force: bool) -> list[str]:
         layers: list[str] = []
