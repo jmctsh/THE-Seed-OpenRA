@@ -495,6 +495,136 @@ def test_default_if_timeout_applied():
     print("  PASS: default_if_timeout_applied")
 
 
+def test_consecutive_failures_auto_terminate():
+    """Agent auto-terminates after max_consecutive_failures LLM failures."""
+    completed_calls = []
+
+    async def tracking_handler(name: str, args: dict) -> dict:
+        if name == "complete_task":
+            completed_calls.append(args)
+        return {"ok": True}
+
+    executor = ToolExecutor()
+    from task_agent.tools import get_tool_names
+    for tn in get_tool_names():
+        executor.register(tn, tracking_handler)
+
+    # LLM always fails
+    class AlwaysFailProvider(MockProvider):
+        async def chat(self, messages, **kwargs):
+            raise TimeoutError("LLM always fails")
+
+    task = make_task()
+    agent = TaskAgent(
+        task=task,
+        llm=AlwaysFailProvider(),
+        tool_executor=executor,
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(
+            review_interval=0.05,
+            max_retries=0,
+            llm_timeout=0.5,
+            max_consecutive_failures=3,
+        ),
+    )
+
+    async def run():
+        await asyncio.wait_for(agent.run(), timeout=5.0)
+
+    asyncio.run(run())
+
+    assert agent._task_completed is True
+    assert agent._consecutive_failures >= 3
+    # complete_task should have been called with result=failed
+    assert len(completed_calls) >= 1
+    fail_call = completed_calls[-1]
+    assert fail_call["result"] == "failed"
+    assert "连续失败" in fail_call["summary"]
+    print("  PASS: consecutive_failures_auto_terminate")
+
+
+def test_failure_counter_resets_on_success():
+    """Consecutive failure counter resets when LLM succeeds."""
+    mock = MockProvider(responses=[
+        # Wake 1: fail (no responses left → fallback text)
+        LLMResponse(text="recovered", model="mock"),
+    ])
+
+    # First make a provider that fails once then succeeds
+    call_count = 0
+
+    class FailOnceProvider(MockProvider):
+        async def chat(self, messages, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise TimeoutError("temporary failure")
+            return LLMResponse(text="recovered", model="mock")
+
+    task = make_task()
+    agent = TaskAgent(
+        task=task,
+        llm=FailOnceProvider(),
+        tool_executor=make_executor(),
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.05, max_retries=0, max_consecutive_failures=3),
+    )
+
+    async def run():
+        # Wake 1: LLM fails → consecutive_failures = 1
+        await agent._wake_cycle(trigger="init")
+        assert agent._consecutive_failures == 1
+
+        # Wake 2: LLM succeeds → consecutive_failures resets to 0
+        await agent._wake_cycle(trigger="timer")
+        assert agent._consecutive_failures == 0
+
+    asyncio.run(run())
+    print("  PASS: failure_counter_resets_on_success")
+
+
+def test_single_agent_error_isolation():
+    """Exception in one wake cycle doesn't crash the agent permanently."""
+    call_count = 0
+
+    class ErrorThenOkProvider(MockProvider):
+        async def chat(self, messages, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("unexpected internal error")
+            if call_count == 4:
+                # Complete on 4th call
+                return LLMResponse(
+                    tool_calls=[ToolCall(id="tc1", name="complete_task",
+                                        arguments='{"result":"succeeded","summary":"done"}')],
+                    model="mock",
+                )
+            return LLMResponse(text="ok", model="mock")
+
+    task = make_task()
+    agent = TaskAgent(
+        task=task,
+        llm=ErrorThenOkProvider(),
+        tool_executor=make_executor(),
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.05, max_retries=0, max_consecutive_failures=5),
+    )
+
+    async def run():
+        await asyncio.wait_for(agent.run(), timeout=5.0)
+
+    asyncio.run(run())
+
+    # Agent should have recovered and completed successfully
+    assert agent._task_completed is True
+    assert agent._wake_count >= 2  # At least init (error) + timer (recovery)
+    print("  PASS: single_agent_error_isolation")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -513,5 +643,8 @@ if __name__ == "__main__":
     test_review_interval_timer()
     test_event_in_context_packet()
     test_default_if_timeout_applied()
+    test_consecutive_failures_auto_terminate()
+    test_failure_counter_resets_on_success()
+    test_single_agent_error_isolation()
 
-    print(f"\nAll 13 tests passed!")
+    print(f"\nAll 16 tests passed!")

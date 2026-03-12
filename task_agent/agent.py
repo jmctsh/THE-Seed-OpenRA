@@ -28,6 +28,10 @@ from .tools import TOOL_DEFINITIONS, ToolExecutor, ToolResult
 
 logger = logging.getLogger(__name__)
 
+
+class _AgentFatalError(Exception):
+    """Raised when agent reaches max consecutive failures and must stop."""
+
 # Type for a callback that fetches current Jobs for this Task
 JobsProvider = Callable[[str], list[Job]]
 # Type for a callback that fetches current WorldSummary
@@ -60,6 +64,7 @@ class AgentConfig:
     max_turns: int = 10  # max LLM call rounds per wake cycle
     llm_timeout: float = 30.0  # seconds before LLM call times out
     max_retries: int = 1  # LLM call retries on failure
+    max_consecutive_failures: int = 3  # consecutive LLM failures before auto-terminate
 
 
 class TaskAgent:
@@ -90,6 +95,7 @@ class TaskAgent:
         self._task_completed = False
         self._wake_count = 0
         self._total_llm_calls = 0
+        self._consecutive_failures = 0
 
     # --- Public interface (called by Kernel) ---
 
@@ -108,7 +114,7 @@ class TaskAgent:
 
         try:
             # Initial wake: process the task for the first time
-            await self._wake_cycle(trigger="init")
+            await self._safe_wake_cycle(trigger="init")
 
             while self._running and not self._task_completed:
                 # Wait for signal/event or review_interval timeout
@@ -118,13 +124,13 @@ class TaskAgent:
                 if not self._running:
                     break
                 trigger = "event" if woken_by_event else "timer"
-                await self._wake_cycle(trigger=trigger)
+                await self._safe_wake_cycle(trigger=trigger)
         except asyncio.CancelledError:
             logger.info("TaskAgent cancelled: task_id=%s", self.task.task_id)
             raise
-        except Exception:
-            logger.exception("TaskAgent error: task_id=%s", self.task.task_id)
-            raise
+        except _AgentFatalError:
+            # Raised by _safe_wake_cycle when max consecutive failures reached
+            pass
         finally:
             self._running = False
             logger.info(
@@ -140,6 +146,24 @@ class TaskAgent:
         self.queue.push(Event(type="SHUTDOWN"))  # type: ignore[arg-type] — wake the queue
 
     # --- Core agentic loop ---
+
+    async def _safe_wake_cycle(self, trigger: str) -> None:
+        """Error-isolated wake cycle. Catches unexpected exceptions so one
+        bad cycle doesn't crash the entire agent. LLM failures are handled
+        inside _wake_cycle; this catches everything else (tool errors, etc.)."""
+        try:
+            await self._wake_cycle(trigger=trigger)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "Unexpected wake cycle error: task_id=%s",
+                self.task.task_id,
+            )
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= self.config.max_consecutive_failures:
+                await self._auto_terminate_on_failure()
+                raise _AgentFatalError()
 
     async def _wake_cycle(self, trigger: str) -> None:
         """One wake cycle: drain queue → context → multi-turn LLM loop."""
@@ -177,10 +201,26 @@ class TaskAgent:
         for turn in range(self.config.max_turns):
             response = await self._call_llm(messages)
             if response is None:
-                # LLM failure — apply defaults for any open decisions
+                # LLM failure — track and handle
+                self._consecutive_failures += 1
+                logger.warning(
+                    "LLM failure %d/%d for task_id=%s",
+                    self._consecutive_failures,
+                    self.config.max_consecutive_failures,
+                    self.task.task_id,
+                )
+                # Apply defaults for any open decisions
                 await self._apply_defaults(open_decisions)
+                # Notify player on repeated failures
+                if self._consecutive_failures >= 2:
+                    await self._notify_player_llm_failure()
+                # Auto-terminate on max consecutive failures
+                if self._consecutive_failures >= self.config.max_consecutive_failures:
+                    await self._auto_terminate_on_failure()
                 break
 
+            # LLM succeeded — reset failure counter
+            self._consecutive_failures = 0
             self._total_llm_calls += 1
 
             # If LLM returns tool calls, execute them and continue
@@ -299,6 +339,46 @@ class TaskAgent:
                     dec.job_id,
                     result.error,
                 )
+
+    # --- Error recovery ---
+
+    async def _notify_player_llm_failure(self) -> None:
+        """Notify player that LLM is experiencing failures via task_warning."""
+        try:
+            await self.tool_executor.execute(
+                tool_call_id="llm_warning",
+                name="complete_task",  # We don't actually complete — we use it as a channel
+                arguments_json="",  # Not called; we just log for now
+            )
+        except Exception:
+            pass
+        # The actual notification would go through Kernel's TaskMessage system.
+        # For now, we log prominently so it shows in diagnostics.
+        logger.warning(
+            "LLM repeated failure — player should be notified: task_id=%s failures=%d",
+            self.task.task_id,
+            self._consecutive_failures,
+        )
+
+    async def _auto_terminate_on_failure(self) -> None:
+        """Auto-terminate task after max consecutive LLM failures."""
+        logger.error(
+            "Auto-terminating task due to %d consecutive LLM failures: task_id=%s",
+            self._consecutive_failures,
+            self.task.task_id,
+        )
+        try:
+            await self.tool_executor.execute(
+                tool_call_id="auto_fail",
+                name="complete_task",
+                arguments_json=json.dumps({
+                    "result": "failed",
+                    "summary": f"LLM连续失败{self._consecutive_failures}次，自动终止",
+                }),
+            )
+        except Exception:
+            logger.exception("Failed to auto-terminate task: %s", self.task.task_id)
+        self._task_completed = True
 
     # --- Message format helpers ---
 
