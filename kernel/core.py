@@ -540,6 +540,7 @@ class Kernel:
             jobs_provider=jobs_provider,
             world_summary_provider=world_summary_provider,
             config=self.config.default_agent_config,
+            message_callback=self.register_task_message,
         )
 
     def _build_tool_executor(self, task_id: str) -> ToolExecutor:
