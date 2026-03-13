@@ -343,22 +343,26 @@ class TaskAgent:
     # --- Error recovery ---
 
     async def _notify_player_llm_failure(self) -> None:
-        """Notify player that LLM is experiencing failures via task_warning."""
-        try:
-            await self.tool_executor.execute(
-                tool_call_id="llm_warning",
-                name="complete_task",  # We don't actually complete — we use it as a channel
-                arguments_json="",  # Not called; we just log for now
-            )
-        except Exception:
-            pass
-        # The actual notification would go through Kernel's TaskMessage system.
-        # For now, we log prominently so it shows in diagnostics.
+        """Notify player that LLM is experiencing failures via ExpertSignal."""
         logger.warning(
-            "LLM repeated failure — player should be notified: task_id=%s failures=%d",
+            "LLM repeated failure — notifying player: task_id=%s failures=%d",
             self.task.task_id,
             self._consecutive_failures,
         )
+        # Emit a risk_alert signal — Kernel will route to Adjutant/dashboard
+        signal = ExpertSignal(
+            task_id=self.task.task_id,
+            job_id="",
+            kind=SignalKind.RISK_ALERT,
+            summary=f"LLM 连续失败 {self._consecutive_failures} 次，任务可能受影响",
+            data={
+                "consecutive_failures": self._consecutive_failures,
+                "max_consecutive_failures": self.config.max_consecutive_failures,
+                "warning_type": "llm_failure",
+            },
+        )
+        # Push to our own queue so Kernel can route it on next cycle
+        self.queue.push(signal)
 
     async def _auto_terminate_on_failure(self) -> None:
         """Auto-terminate task after max consecutive LLM failures."""

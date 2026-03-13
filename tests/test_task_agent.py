@@ -586,17 +586,24 @@ def test_failure_counter_resets_on_success():
 
 
 def test_single_agent_error_isolation():
-    """Exception in one wake cycle doesn't crash the agent permanently."""
-    call_count = 0
+    """Exception outside _call_llm (in world_summary_provider) is caught
+    by _safe_wake_cycle, doesn't crash the agent permanently."""
+    provider_call_count = 0
 
-    class ErrorThenOkProvider(MockProvider):
+    def flaky_world_provider():
+        nonlocal provider_call_count
+        provider_call_count += 1
+        if provider_call_count == 1:
+            raise RuntimeError("world_summary_provider crashed")
+        return make_world()
+
+    llm_call_count = 0
+
+    class CountingProvider(MockProvider):
         async def chat(self, messages, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("unexpected internal error")
-            if call_count == 4:
-                # Complete on 4th call
+            nonlocal llm_call_count
+            llm_call_count += 1
+            if llm_call_count >= 2:
                 return LLMResponse(
                     tool_calls=[ToolCall(id="tc1", name="complete_task",
                                         arguments='{"result":"succeeded","summary":"done"}')],
@@ -607,10 +614,10 @@ def test_single_agent_error_isolation():
     task = make_task()
     agent = TaskAgent(
         task=task,
-        llm=ErrorThenOkProvider(),
+        llm=CountingProvider(),
         tool_executor=make_executor(),
         jobs_provider=noop_jobs_provider,
-        world_summary_provider=noop_world_provider,
+        world_summary_provider=flaky_world_provider,
         config=AgentConfig(review_interval=0.05, max_retries=0, max_consecutive_failures=5),
     )
 
@@ -619,9 +626,11 @@ def test_single_agent_error_isolation():
 
     asyncio.run(run())
 
-    # Agent should have recovered and completed successfully
+    # Agent should have recovered: first wake crashes in provider,
+    # _safe_wake_cycle catches it, next wake succeeds and completes
     assert agent._task_completed is True
-    assert agent._wake_count >= 2  # At least init (error) + timer (recovery)
+    assert agent._wake_count >= 2
+    assert provider_call_count >= 2  # Called at least twice (crash + recovery)
     print("  PASS: single_agent_error_isolation")
 
 
