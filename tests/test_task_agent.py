@@ -496,8 +496,10 @@ def test_default_if_timeout_applied():
 
 
 def test_consecutive_failures_auto_terminate():
-    """Agent auto-terminates after max_consecutive_failures LLM failures."""
+    """Agent auto-terminates after max_consecutive_failures LLM failures,
+    and sends task_warning to player via message_callback."""
     completed_calls = []
+    player_warnings = []
 
     async def tracking_handler(name: str, args: dict) -> dict:
         if name == "complete_task":
@@ -508,6 +510,9 @@ def test_consecutive_failures_auto_terminate():
     from task_agent.tools import get_tool_names
     for tn in get_tool_names():
         executor.register(tn, tracking_handler)
+
+    def capture_message(msg):
+        player_warnings.append(msg)
 
     # LLM always fails
     class AlwaysFailProvider(MockProvider):
@@ -527,6 +532,7 @@ def test_consecutive_failures_auto_terminate():
             llm_timeout=0.5,
             max_consecutive_failures=3,
         ),
+        message_callback=capture_message,
     )
 
     async def run():
@@ -541,6 +547,10 @@ def test_consecutive_failures_auto_terminate():
     fail_call = completed_calls[-1]
     assert fail_call["result"] == "failed"
     assert "连续失败" in fail_call["summary"]
+    # Player warning should have been sent via message_callback
+    assert len(player_warnings) >= 1
+    assert player_warnings[0].type.value == "task_warning"
+    assert "连续失败" in player_warnings[0].content
     print("  PASS: consecutive_failures_auto_terminate")
 
 

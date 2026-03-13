@@ -15,7 +15,7 @@ from typing import Any, Callable, Optional
 
 from benchmark import span as bm_span
 from llm import LLMProvider, LLMResponse
-from models import Event, ExpertSignal, Job, SignalKind, Task, TaskStatus
+from models import Event, ExpertSignal, Job, SignalKind, Task, TaskMessage, TaskMessageType, TaskStatus
 
 from .context import (
     ContextPacket,
@@ -36,6 +36,8 @@ class _AgentFatalError(Exception):
 JobsProvider = Callable[[str], list[Job]]
 # Type for a callback that fetches current WorldSummary
 WorldSummaryProvider = Callable[[], WorldSummary]
+# Type for a callback that sends TaskMessage to Kernel (for player notification)
+MessageCallback = Callable[[TaskMessage], None]
 
 SYSTEM_PROMPT = """\
 You are a Task Agent in a real-time strategy game (OpenRA). You manage one player task by creating and coordinating Jobs (executed by Experts — traditional AI).
@@ -81,6 +83,7 @@ class TaskAgent:
         jobs_provider: JobsProvider,
         world_summary_provider: WorldSummaryProvider,
         config: Optional[AgentConfig] = None,
+        message_callback: Optional[MessageCallback] = None,
     ) -> None:
         self.task = task
         self.llm = llm
@@ -88,6 +91,7 @@ class TaskAgent:
         self._jobs_provider = jobs_provider
         self._world_provider = world_summary_provider
         self.config = config or AgentConfig()
+        self._message_callback = message_callback
 
         self.queue = AgentQueue()
         self._conversation: list[dict[str, Any]] = []
@@ -343,26 +347,31 @@ class TaskAgent:
     # --- Error recovery ---
 
     async def _notify_player_llm_failure(self) -> None:
-        """Notify player that LLM is experiencing failures via ExpertSignal."""
+        """Notify player that LLM is experiencing failures via TaskMessage(task_warning).
+
+        Uses message_callback to send TaskMessage to Kernel, which holds it
+        for Adjutant/dashboard delivery. This is the correct outbound path —
+        messages leave the agent and reach the player.
+        """
         logger.warning(
             "LLM repeated failure — notifying player: task_id=%s failures=%d",
             self.task.task_id,
             self._consecutive_failures,
         )
-        # Emit a risk_alert signal — Kernel will route to Adjutant/dashboard
-        signal = ExpertSignal(
+        if self._message_callback is None:
+            return
+        import uuid
+        message = TaskMessage(
+            message_id=f"warn_{uuid.uuid4().hex[:8]}",
             task_id=self.task.task_id,
-            job_id="",
-            kind=SignalKind.RISK_ALERT,
-            summary=f"LLM 连续失败 {self._consecutive_failures} 次，任务可能受影响",
-            data={
-                "consecutive_failures": self._consecutive_failures,
-                "max_consecutive_failures": self.config.max_consecutive_failures,
-                "warning_type": "llm_failure",
-            },
+            type=TaskMessageType.TASK_WARNING,
+            content=f"LLM 连续失败 {self._consecutive_failures} 次，任务可能受影响",
+            priority=self.task.priority,
         )
-        # Push to our own queue so Kernel can route it on next cycle
-        self.queue.push(signal)
+        try:
+            self._message_callback(message)
+        except Exception:
+            logger.exception("Failed to send LLM failure warning to Kernel")
 
     async def _auto_terminate_on_failure(self) -> None:
         """Auto-terminate task after max consecutive LLM failures."""
