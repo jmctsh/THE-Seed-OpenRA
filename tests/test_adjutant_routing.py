@@ -1,0 +1,353 @@
+"""Adjutant routing edge-case tests (Task 4.4).
+
+Tests cover:
+  1. Reply routing — single/multi pending question, priority matching
+  2. Timeout — late reply after default applied
+  3. Mixed — command during pending question, concurrent questions
+  4. Classification robustness — LLM failure, empty/malformed input
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+import os
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from typing import Any, Optional
+
+from llm import LLMResponse, MockProvider
+from models import PlayerResponse, TaskKind, TaskMessage, TaskMessageType
+from adjutant import Adjutant, AdjutantConfig
+
+
+# --- Shared mocks (same pattern as test_adjutant.py) ---
+
+class MockTask:
+    def __init__(self, task_id, raw_text, status="running"):
+        self.task_id = task_id
+        self.raw_text = raw_text
+        self.status = type("S", (), {"value": status})()
+        self.kind = TaskKind.MANAGED
+        self.priority = 50
+        self.created_at = time.time()
+        self.timestamp = time.time()
+
+
+class MockKernel:
+    def __init__(self):
+        self.created_tasks: list[dict] = []
+        self.submitted_responses: list[PlayerResponse] = []
+        self._pending_questions: list[dict] = []
+        self._tasks: list[MockTask] = []
+        self._task_counter = 0
+        self._timed_out: set[str] = set()
+
+    def create_task(self, raw_text, kind, priority):
+        self._task_counter += 1
+        task = MockTask(f"t_{self._task_counter}", raw_text)
+        self.created_tasks.append({"raw_text": raw_text, "kind": kind, "priority": priority})
+        self._tasks.append(task)
+        return task
+
+    def submit_player_response(self, response, *, now=None):
+        if response.message_id in self._timed_out:
+            return {"ok": False, "status": "timed_out", "message": "已按默认处理，如需更改请重新下令"}
+        self.submitted_responses.append(response)
+        return {"ok": True, "status": "delivered"}
+
+    def list_pending_questions(self):
+        return sorted(self._pending_questions, key=lambda q: q.get("priority", 0), reverse=True)
+
+    def list_tasks(self):
+        return list(self._tasks)
+
+    def add_pending_question(self, message_id, task_id, question, options, priority=50):
+        self._pending_questions.append({
+            "message_id": message_id,
+            "task_id": task_id,
+            "question": question,
+            "options": options,
+            "default_option": options[0] if options else None,
+            "priority": priority,
+            "asked_at": time.time(),
+            "timeout_s": 30.0,
+        })
+
+    def expire_question(self, message_id):
+        """Simulate question timeout."""
+        self._pending_questions = [q for q in self._pending_questions if q["message_id"] != message_id]
+        self._timed_out.add(message_id)
+
+
+class MockWorldModel:
+    def world_summary(self):
+        return {"economy": {"cash": 5000}, "military": {"self_units": 10}, "timestamp": time.time()}
+
+    def query(self, query_type, params=None):
+        return {"data": [], "timestamp": time.time()}
+
+
+# --- 1. Reply Routing Tests ---
+
+def test_single_pending_reply():
+    """Single pending question → reply routed correctly."""
+    kernel = MockKernel()
+    kernel._tasks.append(MockTask("t1", "侦察"))
+    kernel.add_pending_question("msg_1", "t1", "发现敌人，继续？", ["继续", "撤退"], priority=50)
+
+    llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"reply","target_message_id":"msg_1","target_task_id":"t1","confidence":0.95}', model="mock"),
+    ])
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("继续")
+        assert result["type"] == "reply"
+        assert result["ok"] is True
+
+    asyncio.run(run())
+    assert kernel.submitted_responses[0].answer == "继续"
+    assert kernel.submitted_responses[0].message_id == "msg_1"
+    print("  PASS: single_pending_reply")
+
+
+def test_multi_pending_priority_routing():
+    """Multiple pending questions → ambiguous reply matches highest priority."""
+    kernel = MockKernel()
+    kernel._tasks.append(MockTask("t1", "进攻"))
+    kernel._tasks.append(MockTask("t2", "侦察"))
+    kernel._tasks.append(MockTask("t3", "生产"))
+    kernel.add_pending_question("msg_low", "t3", "继续生产？", ["是", "否"], priority=30)
+    kernel.add_pending_question("msg_mid", "t2", "改变方向？", ["是", "否"], priority=50)
+    kernel.add_pending_question("msg_high", "t1", "继续进攻？", ["继续", "放弃"], priority=70)
+
+    # LLM returns reply without specific target
+    llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"reply","confidence":0.7}', model="mock"),
+    ])
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("放弃")
+        assert result["type"] == "reply"
+        assert result["ok"] is True
+
+    asyncio.run(run())
+    assert kernel.submitted_responses[0].message_id == "msg_high"  # Highest priority
+    assert kernel.submitted_responses[0].task_id == "t1"
+    print("  PASS: multi_pending_priority_routing")
+
+
+def test_reply_no_pending_questions():
+    """Reply classification but no pending questions → error response."""
+    kernel = MockKernel()
+    kernel._tasks.append(MockTask("t1", "进攻"))
+    # No pending questions
+
+    llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"reply","confidence":0.6}', model="mock"),
+    ])
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("继续")
+        assert result["type"] == "reply"
+        assert result["ok"] is False
+        assert "没有待回答的问题" in result["response_text"]
+
+    asyncio.run(run())
+    assert len(kernel.submitted_responses) == 0
+    print("  PASS: reply_no_pending_questions")
+
+
+# --- 2. Timeout Tests ---
+
+def test_late_reply_after_timeout():
+    """Question times out → late player reply gets rejection message."""
+    kernel = MockKernel()
+    kernel._tasks.append(MockTask("t1", "进攻"))
+    kernel.add_pending_question("msg_1", "t1", "继续？", ["继续", "放弃"], priority=60)
+
+    # Simulate timeout
+    kernel.expire_question("msg_1")
+
+    # LLM classifies as reply to msg_1
+    llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"reply","target_message_id":"msg_1","target_task_id":"t1","confidence":0.9}', model="mock"),
+    ])
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("继续")
+        assert result["type"] == "reply"
+        assert result["ok"] is False
+        assert result["status"] == "timed_out"
+        assert "默认处理" in result["response_text"]
+
+    asyncio.run(run())
+    print("  PASS: late_reply_after_timeout")
+
+
+# --- 3. Mixed Scenario Tests ---
+
+def test_new_command_during_pending_question():
+    """TaskA has pending question, player sends unrelated command → new Task created."""
+    kernel = MockKernel()
+    kernel._tasks.append(MockTask("t1", "进攻基地"))
+    kernel.add_pending_question("msg_1", "t1", "继续还是放弃？", ["继续", "放弃"], priority=60)
+
+    # LLM correctly classifies as command (not reply)
+    llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"command","confidence":0.9}', model="mock"),
+    ])
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("生产5辆坦克")
+        assert result["type"] == "command"
+        assert result["ok"] is True
+
+    asyncio.run(run())
+    assert len(kernel.created_tasks) == 1
+    assert kernel.created_tasks[0]["raw_text"] == "生产5辆坦克"
+    assert len(kernel.submitted_responses) == 0  # No reply submitted
+    print("  PASS: new_command_during_pending_question")
+
+
+def test_query_during_pending_question():
+    """Player asks a query while a question is pending → query answered, question stays."""
+    kernel = MockKernel()
+    kernel._tasks.append(MockTask("t1", "进攻基地"))
+    kernel.add_pending_question("msg_1", "t1", "继续？", ["继续", "放弃"], priority=60)
+
+    llm = MockProvider(responses=[
+        # Classification: query
+        LLMResponse(text='{"type":"query","confidence":0.95}', model="mock"),
+        # Query answer
+        LLMResponse(text="当前兵力优势，建议继续", model="mock"),
+    ])
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("战况如何？")
+        assert result["type"] == "query"
+        assert result["ok"] is True
+        assert "兵力" in result["response_text"]
+
+    asyncio.run(run())
+    # No task created, no reply submitted
+    assert len(kernel.created_tasks) == 0
+    assert len(kernel.submitted_responses) == 0
+    # Pending question still exists
+    assert len(kernel.list_pending_questions()) == 1
+    print("  PASS: query_during_pending_question")
+
+
+# --- 4. Classification Robustness ---
+
+def test_empty_input():
+    """Empty input defaults to command."""
+    llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"command","confidence":0.5}', model="mock"),
+    ])
+    kernel = MockKernel()
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("")
+        assert result["type"] == "command"
+
+    asyncio.run(run())
+    print("  PASS: empty_input")
+
+
+def test_malformed_llm_response():
+    """LLM returns garbage → defaults to command."""
+    llm = MockProvider(responses=[
+        LLMResponse(text="I don't understand the question", model="mock"),
+    ])
+    kernel = MockKernel()
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("随便说点什么")
+        assert result["type"] == "command"
+
+    asyncio.run(run())
+    assert len(kernel.created_tasks) == 1
+    print("  PASS: malformed_llm_response")
+
+
+def test_llm_returns_invalid_type():
+    """LLM returns unknown type → defaults to command."""
+    llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"unknown_type","confidence":0.9}', model="mock"),
+    ])
+    kernel = MockKernel()
+    adj = Adjutant(llm=llm, kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        result = await adj.handle_player_input("???")
+        assert result["type"] == "command"
+
+    asyncio.run(run())
+    print("  PASS: llm_returns_invalid_type")
+
+
+def test_sequential_interactions():
+    """Multiple interactions build dialogue history correctly."""
+    call_count = 0
+
+    class SequentialLLM(MockProvider):
+        async def chat(self, messages, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                return LLMResponse(text='{"type":"command","confidence":0.9}', model="mock")
+            if call_count == 3:
+                return LLMResponse(text='{"type":"query","confidence":0.9}', model="mock")
+            return LLMResponse(text="回答", model="mock")
+
+    kernel = MockKernel()
+    adj = Adjutant(llm=SequentialLLM(), kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        await adj.handle_player_input("生产坦克")
+        await adj.handle_player_input("探索地图")
+        await adj.handle_player_input("战况如何？")
+
+    asyncio.run(run())
+
+    assert len(kernel.created_tasks) == 2
+    assert len(adj._dialogue_history) == 6  # 3 player + 3 adjutant
+    print("  PASS: sequential_interactions")
+
+
+# --- Run all tests ---
+
+if __name__ == "__main__":
+    print("Running Adjutant routing tests...\n")
+
+    # 1. Reply routing
+    test_single_pending_reply()
+    test_multi_pending_priority_routing()
+    test_reply_no_pending_questions()
+
+    # 2. Timeout
+    test_late_reply_after_timeout()
+
+    # 3. Mixed
+    test_new_command_during_pending_question()
+    test_query_during_pending_question()
+
+    # 4. Robustness
+    test_empty_input()
+    test_malformed_llm_response()
+    test_llm_returns_invalid_type()
+    test_sequential_interactions()
+
+    print(f"\nAll 10 tests passed!")
