@@ -8,6 +8,7 @@ from .base import (
     PlannerExpert,
     SignalCallback,
 )
+from .economy import EconomyExpert, EconomyJob
 from .recon import ReconExpert, ReconJob
 
 __all__ = [
@@ -17,6 +18,8 @@ __all__ = [
     "PlannerExpert",
     "SignalCallback",
     "ConstraintProvider",
+    "EconomyExpert",
+    "EconomyJob",
     "ReconExpert",
     "ReconJob",
 ]

@@ -1,0 +1,264 @@
+"""EconomyExpert and EconomyJob implementation."""
+
+from __future__ import annotations
+
+from typing import Any, Optional, Protocol
+
+from benchmark import span as bm_span
+from models import EventType, JobStatus, EconomyJobConfig, ResourceKind, ResourceNeed, SignalKind
+
+from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
+
+
+class GameAPILike(Protocol):
+    def can_produce(self, unit_type: str) -> bool:
+        ...
+
+    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = False) -> Optional[int]:
+        ...
+
+
+class WorldModelLike(Protocol):
+    def query(self, query_type: str, params: Optional[dict[str, Any]] = None) -> Any:
+        ...
+
+
+class EconomyJob(BaseJob):
+    """Production queue controller for deterministic macro tasks."""
+
+    tick_interval = 5.0
+
+    def __init__(
+        self,
+        *,
+        job_id: str,
+        task_id: str,
+        config: EconomyJobConfig,
+        signal_callback: SignalCallback,
+        game_api: GameAPILike,
+        world_model: WorldModelLike,
+        constraint_provider: Optional[ConstraintProvider] = None,
+    ) -> None:
+        super().__init__(
+            job_id=job_id,
+            task_id=task_id,
+            config=config,
+            signal_callback=signal_callback,
+            constraint_provider=constraint_provider,
+        )
+        self.game_api = game_api
+        self.world_model = world_model
+        self.phase = "producing"
+        self.produced_count = 0
+        self.issued_count = 0
+        self._last_seen_event_ts = 0.0
+        self._waiting_reason: Optional[str] = None
+
+    @property
+    def expert_type(self) -> str:
+        return "EconomyExpert"
+
+    def get_resource_needs(self) -> list[ResourceNeed]:
+        return [
+            ResourceNeed(
+                job_id=self.job_id,
+                kind=ResourceKind.PRODUCTION_QUEUE,
+                count=1,
+                predicates={"queue_type": self.config.queue_type},
+            )
+        ]
+
+    def do_tick(self) -> None:
+        """Economy jobs continue light recovery checks while waiting."""
+        if self._paused or self.status in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}:
+            return
+        with bm_span("job_tick", name=f"{self.expert_type}:{self.job_id}"):
+            self.tick()
+
+    def tick(self) -> None:
+        queue = self._queue_state()
+        economy = self.world_model.query("economy")
+
+        self._apply_completion_events()
+        if self.status == JobStatus.SUCCEEDED:
+            return
+
+        reason = self._waiting_reason_for(queue, economy)
+        if reason is not None:
+            self._enter_waiting(reason)
+            return
+
+        if self.status == JobStatus.WAITING:
+            self.status = JobStatus.RUNNING
+            self.phase = "producing"
+            self._waiting_reason = None
+
+        if self.produced_count >= self.config.count:
+            self._finish_succeeded()
+            return
+
+        active_items = self._matching_queue_items(queue, include_done=False)
+        if active_items:
+            self.phase = "producing"
+            return
+
+        if self.issued_count >= self.config.count:
+            return
+
+        with bm_span("expert_logic", name=f"economy:{self.job_id}:produce"):
+            self.game_api.produce(self.config.unit_type, 1)
+        self.issued_count += 1
+        self.phase = "producing"
+        self.status = JobStatus.RUNNING
+
+    def _apply_completion_events(self) -> None:
+        history = self.world_model.query("events", {"limit": 50})
+        events = history.get("events", []) if isinstance(history, dict) else []
+        new_events = [
+            event
+            for event in events
+            if event.get("type") == EventType.PRODUCTION_COMPLETE.value
+            and float(event.get("timestamp", 0.0) or 0.0) > self._last_seen_event_ts
+        ]
+        new_events.sort(key=lambda item: float(item.get("timestamp", 0.0) or 0.0))
+        for event in new_events:
+            data = event.get("data") or {}
+            queue_type = data.get("queue_type")
+            name = data.get("name")
+            display_name = data.get("display_name")
+            if queue_type != self.config.queue_type:
+                continue
+            if name != self.config.unit_type and display_name != self.config.unit_type:
+                continue
+            if self.produced_count >= self.config.count:
+                continue
+            self.produced_count += 1
+            self.phase = "producing"
+            self.status = JobStatus.RUNNING
+            self.emit_signal(
+                kind=SignalKind.PROGRESS,
+                summary=f"生产完成 {self.produced_count}/{self.config.count}: {display_name or name}",
+                expert_state={
+                    "phase": self.phase,
+                    "produced_count": self.produced_count,
+                    "requested_count": self.config.count,
+                    "queue_type": self.config.queue_type,
+                },
+                data={
+                    "unit_type": name,
+                    "display_name": display_name,
+                    "queue_type": queue_type,
+                    "produced_count": self.produced_count,
+                    "requested_count": self.config.count,
+                },
+            )
+        if new_events:
+            self._last_seen_event_ts = max(float(event.get("timestamp", 0.0) or 0.0) for event in new_events)
+        if self.produced_count >= self.config.count:
+            self._finish_succeeded()
+
+    def _waiting_reason_for(self, queue: Optional[dict[str, Any]], economy: dict[str, Any]) -> Optional[str]:
+        if not self.resources:
+            return "queue_unassigned"
+        if queue is None:
+            return "queue_missing"
+        if bool(economy.get("low_power")):
+            return "low_power"
+        if float(economy.get("total_credits", 0) or 0) <= 0 and not self._matching_queue_items(queue, include_done=False):
+            return "no_funds"
+        if not self.game_api.can_produce(self.config.unit_type):
+            return "cannot_produce"
+        items = list(queue.get("items", []))
+        if items and all(bool(item.get("paused")) for item in items):
+            return "queue_paused"
+        return None
+
+    def _enter_waiting(self, reason: str) -> None:
+        self.phase = "waiting"
+        self.status = JobStatus.WAITING
+        if reason == self._waiting_reason:
+            return
+        self._waiting_reason = reason
+        summary_map = {
+            "queue_unassigned": "生产队列资源未分配，等待中",
+            "queue_missing": f"生产队列 {self.config.queue_type} 不可用，等待工厂恢复",
+            "low_power": "电力不足，生产暂停等待恢复",
+            "no_funds": "资金不足，生产暂停等待资源恢复",
+            "cannot_produce": f"当前无法生产 {self.config.unit_type}，等待前置条件恢复",
+            "queue_paused": f"{self.config.queue_type} 队列暂停，等待恢复",
+        }
+        self.emit_signal(
+            kind=SignalKind.BLOCKED,
+            summary=summary_map.get(reason, "生产等待中"),
+            expert_state={
+                "phase": self.phase,
+                "reason": reason,
+                "produced_count": self.produced_count,
+                "requested_count": self.config.count,
+            },
+            data={"reason": reason, "queue_type": self.config.queue_type},
+        )
+
+    def _finish_succeeded(self) -> None:
+        if self.status == JobStatus.SUCCEEDED:
+            return
+        self.phase = "completed"
+        self.status = JobStatus.SUCCEEDED
+        self.emit_signal(
+            kind=SignalKind.TASK_COMPLETE,
+            summary=f"生产完成 {self.produced_count}/{self.config.count}: {self.config.unit_type}",
+            expert_state={"phase": self.phase, "produced_count": self.produced_count},
+            result="succeeded",
+            data={
+                "unit_type": self.config.unit_type,
+                "queue_type": self.config.queue_type,
+                "produced_count": self.produced_count,
+                "repeat": self.config.repeat,
+            },
+        )
+
+    def _queue_state(self) -> Optional[dict[str, Any]]:
+        queues = self.world_model.query("production_queues")
+        if not isinstance(queues, dict):
+            return None
+        queue = queues.get(self.config.queue_type)
+        return dict(queue) if isinstance(queue, dict) else None
+
+    def _matching_queue_items(self, queue: Optional[dict[str, Any]], *, include_done: bool) -> list[dict[str, Any]]:
+        if queue is None:
+            return []
+        items = []
+        for item in queue.get("items", []):
+            if item.get("name") != self.config.unit_type and item.get("display_name") != self.config.unit_type:
+                continue
+            if not include_done and bool(item.get("done")):
+                continue
+            items.append(dict(item))
+        return items
+
+
+class EconomyExpert(ExecutionExpert):
+    def __init__(self, *, game_api: GameAPILike, world_model: WorldModelLike) -> None:
+        self.game_api = game_api
+        self.world_model = world_model
+
+    @property
+    def expert_type(self) -> str:
+        return "EconomyExpert"
+
+    def create_job(
+        self,
+        task_id: str,
+        config: EconomyJobConfig,
+        signal_callback: SignalCallback,
+        constraint_provider: Optional[ConstraintProvider] = None,
+    ) -> EconomyJob:
+        return EconomyJob(
+            job_id=self.generate_job_id(),
+            task_id=task_id,
+            config=config,
+            signal_callback=signal_callback,
+            game_api=self.game_api,
+            world_model=self.world_model,
+            constraint_provider=constraint_provider,
+        )
