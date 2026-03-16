@@ -7,17 +7,15 @@ Used for MCV deployment, building placement, etc.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Protocol
+from typing import Any, Optional
 
 from models import DeployJobConfig, JobStatus, SignalKind
+from openra_api.models import Actor
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
+from .game_api_protocol import GameAPILike
 
 logger = logging.getLogger(__name__)
-
-
-class GameAPILike(Protocol):
-    def deploy_actor(self, actor_id: int) -> bool: ...
 
 
 class DeployJob(BaseJob):
@@ -57,9 +55,12 @@ class DeployJob(BaseJob):
         self._deployed = True
 
         try:
-            success = self.game_api.deploy_actor(config.actor_id)
+            actor = Actor(actor_id=config.actor_id)
+            self.game_api.deploy_units([actor])
+            success = True
         except Exception as e:
-            logger.warning("DeployJob deploy_actor failed: %s", e)
+            success = False
+            logger.warning("DeployJob deploy failed: %s", e)
             self.status = JobStatus.FAILED
             self.emit_signal(
                 kind=SignalKind.TASK_COMPLETE,

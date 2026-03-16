@@ -17,15 +17,12 @@ from enum import Enum
 from typing import Any, Optional, Protocol
 
 from models import CombatJobConfig, EngagementMode, JobStatus, SignalKind
+from openra_api.models import Actor, Location
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
+from .game_api_protocol import GameAPILike
 
 logger = logging.getLogger(__name__)
-
-
-class GameAPILike(Protocol):
-    def move_actors(self, actor_ids: list[int], position: tuple[int, int], *, attack_move: bool = False) -> None: ...
-    def attack_target(self, actor_ids: list[int], target_actor_id: int) -> None: ...
 
 
 class WorldModelLike(Protocol):
@@ -147,7 +144,7 @@ class CombatJob(BaseJob):
         if config.engagement_mode == EngagementMode.SURROUND:
             self._issue_surround_approach(actor_ids, config.target_position)
         else:
-            self.game_api.move_actors(actor_ids, config.target_position, attack_move=True)
+            self._move_units(actor_ids, config.target_position, attack_move=True)
 
     def _tick_engaging(self, actor_ids: list[int], config: CombatJobConfig) -> None:
         """Engage enemies at target position."""
@@ -188,7 +185,7 @@ class CombatJob(BaseJob):
                 return
 
         # Continue pursuit
-        self.game_api.move_actors(actor_ids, closest_enemy_pos, attack_move=True)
+        self._move_units(actor_ids, closest_enemy_pos, attack_move=True)
 
     def _tick_retreating(self, actor_ids: list[int], config: CombatJobConfig) -> None:
         """Retreat away from target position."""
@@ -205,7 +202,7 @@ class CombatJob(BaseJob):
             int(centroid[0] + dx / dist * 150),
             int(centroid[1] + dy / dist * 150),
         )
-        self.game_api.move_actors(actor_ids, retreat_pos, attack_move=False)
+        self._move_units(actor_ids, retreat_pos, attack_move=False)
 
         self.emit_signal(
             kind=SignalKind.RISK_ALERT,
@@ -222,11 +219,11 @@ class CombatJob(BaseJob):
         target_id = target.get("actor_id")
         if target_id is not None:
             try:
-                self.game_api.attack_target(actor_ids, target_id)
+                self._attack_unit(actor_ids, target_id)
             except Exception:
                 # Fallback to attack-move toward enemy position
                 pos = tuple(target.get("position", [0, 0]))
-                self.game_api.move_actors(actor_ids, pos, attack_move=True)
+                self._move_units(actor_ids, pos, attack_move=True)
 
     def _engage_harass(self, actor_ids: list[int], enemies: list[dict], config: CombatJobConfig) -> None:
         """Harass: attack then disengage if pressured."""
@@ -242,7 +239,7 @@ class CombatJob(BaseJob):
                 int(centroid[0] + dx / dist * 80),
                 int(centroid[1] + dy / dist * 80),
             )
-            self.game_api.move_actors(actor_ids, disengage_pos, attack_move=False)
+            self._move_units(actor_ids, disengage_pos, attack_move=False)
             return
 
         if self._harass_disengage:
@@ -279,7 +276,7 @@ class CombatJob(BaseJob):
                 int(target_pos[0] + _SURROUND_OFFSET * math.cos(angle_rad)),
                 int(target_pos[1] + _SURROUND_OFFSET * math.sin(angle_rad)),
             )
-            self.game_api.move_actors(group, approach_pos, attack_move=True)
+            self._move_units(group, approach_pos, attack_move=True)
 
     def _issue_surround_approach(self, actor_ids: list[int], target_pos: tuple[int, int]) -> None:
         """Approach from multiple angles for surround mode."""
@@ -292,9 +289,20 @@ class CombatJob(BaseJob):
                 int(target_pos[0] + _SURROUND_OFFSET * 1.5 * math.cos(angle_rad)),
                 int(target_pos[1] + _SURROUND_OFFSET * 1.5 * math.sin(angle_rad)),
             )
-            self.game_api.move_actors(group, approach_pos, attack_move=True)
+            self._move_units(group, approach_pos, attack_move=True)
 
     # --- Helpers ---
+
+    def _move_units(self, actor_ids: list[int], position: tuple, *, attack_move: bool = False) -> None:
+        """Wrapper: convert to real GameAPI call."""
+        actors = [Actor(actor_id=aid) for aid in actor_ids]
+        loc = Location(x=int(position[0]), y=int(position[1]))
+        self.game_api.move_units_by_location(actors, loc, attack_move=attack_move)
+
+    def _attack_unit(self, actor_ids: list[int], target_id: int) -> None:
+        """Wrapper: attack a specific enemy unit."""
+        for aid in actor_ids:
+            self.game_api.attack_target(Actor(actor_id=aid), Actor(actor_id=target_id))
 
     def _split_into_flanks(self, actor_ids: list[int]) -> list[list[int]]:
         """Split actors into flank groups (2-4 groups based on unit count)."""

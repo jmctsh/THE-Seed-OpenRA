@@ -127,6 +127,7 @@ class NotificationManager:
             return []
 
         new_formatted = []
+        failed_count = 0
         for raw in new_raw:
             formatted = format_notification(raw)
             new_formatted.append(formatted)
@@ -137,8 +138,11 @@ class NotificationManager:
                     await self._sink(notification_to_dict(formatted))
                 except Exception:
                     logger.exception("Failed to push notification: %s", formatted.type)
+                    failed_count += 1
 
-        self._pushed_count = len(all_notifications)
+        # Only advance count for successfully pushed notifications.
+        # Failed ones will be retried on next poll.
+        self._pushed_count = len(all_notifications) - failed_count
         return new_formatted
 
     @property

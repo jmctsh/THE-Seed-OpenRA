@@ -12,20 +12,12 @@ import math
 from typing import Any, Optional, Protocol
 
 from models import MovementJobConfig, MoveMode, SignalKind
+from openra_api.models import Actor, Location
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
+from .game_api_protocol import GameAPILike
 
 logger = logging.getLogger(__name__)
-
-
-class GameAPILike(Protocol):
-    def move_actors(
-        self,
-        actor_ids: list[int],
-        position: tuple[int, int],
-        *,
-        attack_move: bool = False,
-    ) -> None: ...
 
 
 class WorldModelLike(Protocol):
@@ -91,10 +83,12 @@ class MovementJob(BaseJob):
         if not self._move_issued or self._tick_count % 5 == 0:
             attack_move = config.move_mode in (MoveMode.ATTACK_MOVE, MoveMode.RETREAT)
             try:
-                self.game_api.move_actors(actor_ids, config.target_position, attack_move=attack_move)
+                actors = [Actor(actor_id=aid) for aid in actor_ids]
+                location = Location(x=config.target_position[0], y=config.target_position[1])
+                self.game_api.move_units_by_location(actors, location, attack_move=attack_move)
                 self._move_issued = True
             except Exception as e:
-                logger.warning("MovementJob move_actors failed: %s", e)
+                logger.warning("MovementJob move failed: %s", e)
 
         # Progress report every 10 ticks
         if self._tick_count % 10 == 0:
@@ -116,17 +110,22 @@ class MovementJob(BaseJob):
         return ids
 
     def _all_arrived(self, actor_ids: list[int], target: tuple[int, int], radius: int) -> bool:
-        """Check if all actors are within arrival_radius of target."""
+        """Check if all living actors are within arrival_radius of target.
+
+        Returns False if no living actors remain (all dead ≠ arrived).
+        """
+        alive_count = 0
         for aid in actor_ids:
             result = self.world_model.query("actor_by_id", {"actor_id": aid})
             actor = result.get("actor") if isinstance(result, dict) else None
             if actor is None:
                 continue  # Dead actor — skip
+            alive_count += 1
             pos = actor.get("position", [0, 0])
             dist = math.dist((pos[0], pos[1]), (target[0], target[1]))
             if dist > radius:
                 return False
-        return True
+        return alive_count > 0
 
 
 class MovementExpert(ExecutionExpert):

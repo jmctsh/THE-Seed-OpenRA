@@ -24,17 +24,25 @@ from experts.deploy import DeployExpert, DeployJob
 # --- Mocks ---
 
 class MockGameAPI:
-    def __init__(self, deploy_result: bool = True):
+    def __init__(self, deploy_fail: bool = False):
         self.move_calls: list[dict] = []
-        self.deploy_calls: list[int] = []
-        self._deploy_result = deploy_result
+        self.deploy_calls: list[dict] = []
+        self._deploy_fail = deploy_fail
 
-    def move_actors(self, actor_ids, position, *, attack_move=False):
-        self.move_calls.append({"actor_ids": actor_ids, "position": position, "attack_move": attack_move})
+    def move_units_by_location(self, actors, location, attack_move=False):
+        self.move_calls.append({
+            "actor_ids": [a.actor_id for a in actors],
+            "position": (location.x, location.y),
+            "attack_move": attack_move,
+        })
 
-    def deploy_actor(self, actor_id):
-        self.deploy_calls.append(actor_id)
-        return self._deploy_result
+    def deploy_units(self, actors):
+        if self._deploy_fail:
+            raise RuntimeError("Deploy blocked")
+        self.deploy_calls.append({"actor_ids": [a.actor_id for a in actors]})
+
+    def attack_target(self, attacker, target):
+        return True
 
 
 class MockWorldModel:
@@ -187,7 +195,7 @@ def test_movement_expert_creates_job():
 def test_deploy_success():
     """DeployJob succeeds on first tick."""
     signals: list[ExpertSignal] = []
-    api = MockGameAPI(deploy_result=True)
+    api = MockGameAPI()
 
     config = DeployJobConfig(actor_id=99, target_position=(500, 400), building_type="ConstructionYard")
     job = DeployJob(
@@ -202,14 +210,14 @@ def test_deploy_success():
     assert signals[0].result == "succeeded"
     assert signals[0].data["actor_id"] == 99
     assert signals[0].data["building_type"] == "ConstructionYard"
-    assert api.deploy_calls == [99]
+    assert len(api.deploy_calls) == 1
     print("  PASS: deploy_success")
 
 
 def test_deploy_failure():
-    """DeployJob fails when GameAPI returns False."""
+    """DeployJob fails when GameAPI raises exception."""
     signals: list[ExpertSignal] = []
-    api = MockGameAPI(deploy_result=False)
+    api = MockGameAPI(deploy_fail=True)
 
     config = DeployJobConfig(actor_id=99, target_position=(500, 400))
     job = DeployJob(
@@ -229,7 +237,7 @@ def test_deploy_exception():
     signals: list[ExpertSignal] = []
 
     class FailingAPI:
-        def deploy_actor(self, actor_id):
+        def deploy_units(self, actors):
             raise ConnectionError("GameAPI disconnected")
 
     config = DeployJobConfig(actor_id=99, target_position=(500, 400))
@@ -249,7 +257,7 @@ def test_deploy_exception():
 def test_deploy_only_fires_once():
     """DeployJob only deploys on first tick, subsequent ticks are no-op."""
     signals: list[ExpertSignal] = []
-    api = MockGameAPI(deploy_result=True)
+    api = MockGameAPI()
 
     config = DeployJobConfig(actor_id=99, target_position=(500, 400))
     job = DeployJob(

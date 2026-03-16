@@ -28,11 +28,19 @@ class MockGameAPI:
         self.move_calls: list[dict] = []
         self.attack_calls: list[dict] = []
 
-    def move_actors(self, actor_ids, position, *, attack_move=False):
-        self.move_calls.append({"actor_ids": actor_ids, "position": position, "attack_move": attack_move})
+    def move_units_by_location(self, actors, location, attack_move=False):
+        self.move_calls.append({
+            "actor_ids": [a.actor_id for a in actors],
+            "position": (location.x, location.y),
+            "attack_move": attack_move,
+        })
 
-    def attack_target(self, actor_ids, target_actor_id):
-        self.attack_calls.append({"actor_ids": actor_ids, "target": target_actor_id})
+    def attack_target(self, attacker, target):
+        self.attack_calls.append({"attacker": attacker.actor_id, "target": target.actor_id})
+        return True
+
+    def deploy_units(self, actors):
+        pass
 
 
 class MockWorldModel:
