@@ -29,6 +29,7 @@ class InboundHandler(Protocol):
     async def on_command_submit(self, text: str, client_id: str) -> None: ...
     async def on_command_cancel(self, task_id: str, client_id: str) -> None: ...
     async def on_mode_switch(self, mode: str, client_id: str) -> None: ...
+    async def on_question_reply(self, message_id: str, task_id: str, answer: str, client_id: str) -> None: ...
 
 
 class NoOpInboundHandler:
@@ -42,6 +43,9 @@ class NoOpInboundHandler:
 
     async def on_mode_switch(self, mode: str, client_id: str) -> None:
         logger.info("mode_switch: %s from %s", mode, client_id)
+
+    async def on_question_reply(self, message_id: str, task_id: str, answer: str, client_id: str) -> None:
+        logger.info("question_reply: msg=%s task=%s answer=%r from %s", message_id, task_id, answer, client_id)
 
 
 @dataclass
@@ -154,6 +158,13 @@ class WSServer:
             await self.inbound_handler.on_mode_switch(
                 message.get("mode", ""), client_id
             )
+        elif msg_type == "question_reply":
+            await self.inbound_handler.on_question_reply(
+                message.get("message_id", ""),
+                message.get("task_id", ""),
+                message.get("answer", ""),
+                client_id,
+            )
         else:
             await self._send_to(client_id, {
                 "type": "error",
@@ -181,6 +192,9 @@ class WSServer:
 
     async def send_world_snapshot(self, snapshot: dict[str, Any]) -> None:
         await self.broadcast("world_snapshot", snapshot)
+
+    async def send_benchmark(self, benchmark_data: list[dict[str, Any]]) -> None:
+        await self.broadcast("benchmark", {"records": benchmark_data})
 
     async def send_task_update(self, task_data: dict[str, Any]) -> None:
         await self.broadcast("task_update", task_data)

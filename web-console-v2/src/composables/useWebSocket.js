@@ -12,7 +12,9 @@ export function useWebSocket(url = 'ws://localhost:8765/ws') {
     ws.onopen = () => { connected.value = true }
     ws.onclose = () => {
       connected.value = false
-      reconnectTimer = setTimeout(connect, 3000)
+      if (!intentionalDisconnect) {
+        reconnectTimer = setTimeout(connect, 3000)
+      }
     }
     ws.onerror = () => { ws.close() }
     ws.onmessage = (event) => {
@@ -40,7 +42,10 @@ export function useWebSocket(url = 'ws://localhost:8765/ws') {
     handlers[type].push(fn)
   }
 
+  let intentionalDisconnect = false
+
   function disconnect() {
+    intentionalDisconnect = true
     clearTimeout(reconnectTimer)
     if (ws) ws.close()
   }

@@ -59,9 +59,20 @@ function updateBenchmark(records) {
 }
 
 if (props.on) {
-  props.on('log_entry', (msg) => addLog(msg.data || msg))
+  props.on('log_entry', (msg) => {
+    const entry = msg.data || msg
+    addLog({
+      level: entry.level || 'INFO',
+      tag: entry.component || entry.tag || 'log',
+      message: entry.message || JSON.stringify(entry),
+      timestamp: entry.timestamp || msg.timestamp,
+    })
+  })
   props.on('world_snapshot', (msg) => {
     if (msg.data?.benchmark) updateBenchmark(msg.data.benchmark)
+  })
+  props.on('benchmark', (msg) => {
+    if (msg.data?.records) updateBenchmark(msg.data.records)
   })
 }
 </script>

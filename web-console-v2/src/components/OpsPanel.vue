@@ -5,8 +5,8 @@
       <iframe :src="vncUrl" class="vnc-frame" allowfullscreen></iframe>
     </div>
     <div class="controls">
-      <button @click="$emit('mode-switch', 'user')">用户模式</button>
-      <button @click="$emit('mode-switch', 'debug')">调试模式</button>
+      <button @click="switchMode('user')">用户模式</button>
+      <button @click="switchMode('debug')">调试模式</button>
     </div>
     <div class="connection-status">
       <span :class="connected ? 'online' : 'offline'">
@@ -19,10 +19,20 @@
 <script setup>
 import { ref, defineProps, defineEmits } from 'vue'
 
-defineProps({ connected: Boolean })
-defineEmits(['mode-switch'])
+const props = defineProps({
+  connected: Boolean,
+  send: Function,
+})
+const emit = defineEmits(['mode-switch'])
 
-const vncUrl = ref('about:blank')
+const vncUrl = ref(
+  new URLSearchParams(window.location.search).get('vnc_url') || '/vnc/vnc.html'
+)
+
+function switchMode(mode) {
+  if (props.send) props.send('mode_switch', { mode })
+  emit('mode-switch', mode)
+}
 </script>
 
 <style scoped>

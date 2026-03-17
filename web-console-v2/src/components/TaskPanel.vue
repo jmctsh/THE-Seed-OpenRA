@@ -37,18 +37,28 @@ const tasks = ref([])
 const pendingQuestions = ref([])
 
 function reply(question, answer) {
-  props.send('command_submit', { text: answer })
+  props.send('question_reply', {
+    message_id: question.message_id,
+    task_id: question.task_id,
+    answer: answer,
+  })
 }
 
 if (props.on) {
   props.on('task_list', (msg) => {
     tasks.value = msg.data?.tasks || []
+    pendingQuestions.value = msg.data?.pending_questions || pendingQuestions.value
   })
   props.on('task_update', (msg) => {
     const update = msg.data
     if (!update?.task_id) return
     const idx = tasks.value.findIndex(t => t.task_id === update.task_id)
     if (idx >= 0) Object.assign(tasks.value[idx], update)
+  })
+  props.on('world_snapshot', (msg) => {
+    if (msg.data?.pending_questions) {
+      pendingQuestions.value = msg.data.pending_questions
+    }
   })
 }
 </script>
