@@ -199,8 +199,15 @@ class WSServer:
     async def send_task_update(self, task_data: dict[str, Any]) -> None:
         await self.broadcast("task_update", task_data)
 
-    async def send_task_list(self, tasks: list[dict[str, Any]]) -> None:
-        await self.broadcast("task_list", {"tasks": tasks})
+    async def send_task_list(
+        self,
+        tasks: list[dict[str, Any]],
+        pending_questions: Optional[list[dict[str, Any]]] = None,
+    ) -> None:
+        payload: dict[str, Any] = {"tasks": tasks}
+        if pending_questions is not None:
+            payload["pending_questions"] = pending_questions
+        await self.broadcast("task_list", payload)
 
     async def send_log_entry(self, entry: dict[str, Any]) -> None:
         await self.broadcast("log_entry", entry)

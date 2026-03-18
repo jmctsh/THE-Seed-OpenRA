@@ -4,7 +4,7 @@
       <div v-for="msg in chatMessages" :key="msg.id" :class="['chat-msg', msg.from]">
         <span class="msg-label">{{ msg.label }}</span>
         <span class="msg-content">{{ msg.content }}</span>
-        <span class="msg-time">{{ formatTimeAgo(msg.timestamp) }}</span>
+        <span class="msg-time">{{ refreshTick.value >= 0 ? formatTimeAgo(msg.timestamp) : '' }}</span>
       </div>
     </div>
     <div class="chat-input">
@@ -15,8 +15,13 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, defineProps } from 'vue'
+import { ref, watch, nextTick, defineProps, onMounted, onUnmounted } from 'vue'
 import { formatTimeAgo } from '../composables/useTimeAgo.js'
+
+const refreshTick = ref(0)
+let refreshTimer = null
+onMounted(() => { refreshTimer = setInterval(() => refreshTick.value++, 1000) })
+onUnmounted(() => clearInterval(refreshTimer))
 
 const props = defineProps({
   connected: Boolean,

@@ -2,7 +2,7 @@
   <div class="diag-panel">
     <h3>Diagnostics</h3>
     <div class="log-stream" ref="logEl">
-      <div v-for="(entry, i) in logEntries" :key="i" :class="['log-entry', entry.level]">
+      <div v-for="(entry, i) in logEntries" :key="i" :class="['log-entry', entry.level?.toLowerCase()]">
         <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
         <span class="log-tag">[{{ entry.tag || 'log' }}]</span>
         <span class="log-msg">{{ entry.message }}</span>
@@ -83,7 +83,7 @@ if (props.on) {
 .log-stream { flex: 1; overflow-y: auto; font-family: monospace; font-size: 12px; background: #1e1e1e; color: #d4d4d4; padding: 8px; border-radius: 4px; min-height: 150px; }
 .log-entry { margin-bottom: 2px; }
 .log-entry.error { color: #f44336; }
-.log-entry.warning { color: #ff9800; }
+.log-entry.warn, .log-entry.warning { color: #ff9800; }
 .log-time { color: #888; margin-right: 6px; }
 .log-tag { color: #4fc3f7; margin-right: 6px; }
 .empty { color: #999; font-size: 13px; }

@@ -42,6 +42,7 @@ const mode = ref('user')
 
 function toggleMode() {
   mode.value = mode.value === 'user' ? 'debug' : 'user'
+  send('mode_switch', { mode: mode.value })
 }
 
 function setMode(m) {
