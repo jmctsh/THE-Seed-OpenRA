@@ -1,0 +1,5770 @@
+[
+  {
+    "tag": "job_tick",
+    "name": "DecisionExpert:j_6c36a810",
+    "started_at": "2026-03-30T20:33:01.032377+00:00",
+    "ended_at": "2026-03-30T20:33:01.032377+00:00",
+    "duration_ms": 0.0005420006345957518,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "DecisionExpert:j_a9b1d0ef",
+    "started_at": "2026-03-30T20:33:00.979061+00:00",
+    "ended_at": "2026-03-30T20:33:00.979061+00:00",
+    "duration_ms": 0.0007909839041531086,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.298793+00:00",
+    "ended_at": "2026-03-30T20:32:52.298794+00:00",
+    "duration_ms": 0.0009580107871443033,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.839428+00:00",
+    "ended_at": "2026-03-30T20:32:56.839429+00:00",
+    "duration_ms": 0.0009580107871443033,
+    "metadata": {}
+  },
+  {
+    "tag": "expert_logic",
+    "name": "economy:j_d268fd9b:produce",
+    "started_at": "2026-03-30T20:32:55.538631+00:00",
+    "ended_at": "2026-03-30T20:32:55.538632+00:00",
+    "duration_ms": 0.0010410149116069078,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:01.032356+00:00",
+    "ended_at": "2026-03-30T20:33:01.032357+00:00",
+    "duration_ms": 0.0010830117389559746,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.538598+00:00",
+    "ended_at": "2026-03-30T20:32:55.538599+00:00",
+    "duration_ms": 0.0011249794624745846,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:01.054359+00:00",
+    "ended_at": "2026-03-30T20:33:01.054360+00:00",
+    "duration_ms": 0.0011249794624745846,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.868378+00:00",
+    "ended_at": "2026-03-30T20:32:58.868379+00:00",
+    "duration_ms": 0.0011250085663050413,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.925457+00:00",
+    "ended_at": "2026-03-30T20:32:58.925458+00:00",
+    "duration_ms": 0.001166015863418579,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.891430+00:00",
+    "ended_at": "2026-03-30T20:32:56.891432+00:00",
+    "duration_ms": 0.0012080126907676458,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.117508+00:00",
+    "ended_at": "2026-03-30T20:33:00.117509+00:00",
+    "duration_ms": 0.0012500095181167126,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.979037+00:00",
+    "ended_at": "2026-03-30T20:33:00.979038+00:00",
+    "duration_ms": 0.0012500095181167126,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.796743+00:00",
+    "ended_at": "2026-03-30T20:32:56.796744+00:00",
+    "duration_ms": 0.0012920063454657793,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:01.076455+00:00",
+    "ended_at": "2026-03-30T20:33:01.076456+00:00",
+    "duration_ms": 0.0012920063454657793,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.743017+00:00",
+    "ended_at": "2026-03-30T20:32:56.743018+00:00",
+    "duration_ms": 0.001374981366097927,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.267384+00:00",
+    "ended_at": "2026-03-30T20:32:53.267385+00:00",
+    "duration_ms": 0.0014579854905605316,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:01.142728+00:00",
+    "ended_at": "2026-03-30T20:33:01.142730+00:00",
+    "duration_ms": 0.001500011421740055,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.152948+00:00",
+    "ended_at": "2026-03-30T20:33:00.152949+00:00",
+    "duration_ms": 0.001541979145258665,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.317968+00:00",
+    "ended_at": "2026-03-30T20:32:53.317969+00:00",
+    "duration_ms": 0.0015830155462026596,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.698515+00:00",
+    "ended_at": "2026-03-30T20:32:56.698516+00:00",
+    "duration_ms": 0.0015840050764381886,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.186738+00:00",
+    "ended_at": "2026-03-30T20:33:00.186740+00:00",
+    "duration_ms": 0.0016249832697212696,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:01.120550+00:00",
+    "ended_at": "2026-03-30T20:33:01.120552+00:00",
+    "duration_ms": 0.0016249832697212696,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.350454+00:00",
+    "ended_at": "2026-03-30T20:32:52.350456+00:00",
+    "duration_ms": 0.0016250123735517263,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.644668+00:00",
+    "ended_at": "2026-03-30T20:32:56.644669+00:00",
+    "duration_ms": 0.0016659905668348074,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.402601+00:00",
+    "ended_at": "2026-03-30T20:32:52.402602+00:00",
+    "duration_ms": 0.001667009200900793,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.995761+00:00",
+    "ended_at": "2026-03-30T20:32:58.995763+00:00",
+    "duration_ms": 0.0017499842215329409,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:01.098514+00:00",
+    "ended_at": "2026-03-30T20:33:01.098516+00:00",
+    "duration_ms": 0.0017500133253633976,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.960336+00:00",
+    "ended_at": "2026-03-30T20:32:58.960338+00:00",
+    "duration_ms": 0.0017909915186464787,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.298771+00:00",
+    "ended_at": "2026-03-30T20:32:52.298773+00:00",
+    "duration_ms": 0.0017920101527124643,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.256328+00:00",
+    "ended_at": "2026-03-30T20:33:00.256329+00:00",
+    "duration_ms": 0.0018339778762310743,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.452544+00:00",
+    "ended_at": "2026-03-30T20:32:52.452546+00:00",
+    "duration_ms": 0.0019579892978072166,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.369865+00:00",
+    "ended_at": "2026-03-30T20:32:53.369868+00:00",
+    "duration_ms": 0.002040993422269821,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.216839+00:00",
+    "ended_at": "2026-03-30T20:32:53.216841+00:00",
+    "duration_ms": 0.0020830193534493446,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:01.032335+00:00",
+    "ended_at": "2026-03-30T20:33:01.032337+00:00",
+    "duration_ms": 0.002166023477911949,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:01.054332+00:00",
+    "ended_at": "2026-03-30T20:33:01.054334+00:00",
+    "duration_ms": 0.0022500171326100826,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.222015+00:00",
+    "ended_at": "2026-03-30T20:33:00.222017+00:00",
+    "duration_ms": 0.0022920139599591494,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.868355+00:00",
+    "ended_at": "2026-03-30T20:32:58.868358+00:00",
+    "duration_ms": 0.0023329921532422304,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.815579+00:00",
+    "ended_at": "2026-03-30T20:32:55.815582+00:00",
+    "duration_ms": 0.002374988980591297,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.161348+00:00",
+    "ended_at": "2026-03-30T20:32:56.161351+00:00",
+    "duration_ms": 0.002374988980591297,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.979013+00:00",
+    "ended_at": "2026-03-30T20:33:00.979016+00:00",
+    "duration_ms": 0.002415996277704835,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.265863+00:00",
+    "ended_at": "2026-03-30T20:32:56.265866+00:00",
+    "duration_ms": 0.002416985807940364,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.954676+00:00",
+    "ended_at": "2026-03-30T20:32:55.954679+00:00",
+    "duration_ms": 0.0024999899324029684,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.674887+00:00",
+    "ended_at": "2026-03-30T20:32:55.674890+00:00",
+    "duration_ms": 0.002500019036233425,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.082363+00:00",
+    "ended_at": "2026-03-30T20:33:00.082366+00:00",
+    "duration_ms": 0.002500019036233425,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.538575+00:00",
+    "ended_at": "2026-03-30T20:32:55.538578+00:00",
+    "duration_ms": 0.002582994056865573,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.232123+00:00",
+    "ended_at": "2026-03-30T20:32:56.232125+00:00",
+    "duration_ms": 0.002582994056865573,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.802453+00:00",
+    "ended_at": "2026-03-30T20:32:58.802456+00:00",
+    "duration_ms": 0.0025830231606960297,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.988331+00:00",
+    "ended_at": "2026-03-30T20:32:55.988334+00:00",
+    "duration_ms": 0.0026249908842146397,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.925431+00:00",
+    "ended_at": "2026-03-30T20:32:58.925434+00:00",
+    "duration_ms": 0.0026249908842146397,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.851226+00:00",
+    "ended_at": "2026-03-30T20:32:55.851229+00:00",
+    "duration_ms": 0.002667016815394163,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.885423+00:00",
+    "ended_at": "2026-03-30T20:32:55.885426+00:00",
+    "duration_ms": 0.002667016815394163,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.943719+00:00",
+    "ended_at": "2026-03-30T20:32:56.943722+00:00",
+    "duration_ms": 0.002667016815394163,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.713761+00:00",
+    "ended_at": "2026-03-30T20:32:57.713764+00:00",
+    "duration_ms": 0.002707995008677244,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:01.120510+00:00",
+    "ended_at": "2026-03-30T20:33:01.120513+00:00",
+    "duration_ms": 0.0027500209398567677,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.780167+00:00",
+    "ended_at": "2026-03-30T20:32:55.780170+00:00",
+    "duration_ms": 0.0027919886633753777,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.606379+00:00",
+    "ended_at": "2026-03-30T20:32:55.606382+00:00",
+    "duration_ms": 0.0027920177672058344,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.742989+00:00",
+    "ended_at": "2026-03-30T20:32:56.742992+00:00",
+    "duration_ms": 0.0028329959604889154,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.196745+00:00",
+    "ended_at": "2026-03-30T20:32:56.196748+00:00",
+    "duration_ms": 0.0028339854907244444,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.796716+00:00",
+    "ended_at": "2026-03-30T20:32:56.796719+00:00",
+    "duration_ms": 0.002874992787837982,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.920881+00:00",
+    "ended_at": "2026-03-30T20:32:55.920884+00:00",
+    "duration_ms": 0.002916989615187049,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.729103+00:00",
+    "ended_at": "2026-03-30T20:32:53.729107+00:00",
+    "duration_ms": 0.0029999937396496534,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.503570+00:00",
+    "ended_at": "2026-03-30T20:33:00.503573+00:00",
+    "duration_ms": 0.0031249946914613247,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.038436+00:00",
+    "ended_at": "2026-03-30T20:32:54.038439+00:00",
+    "duration_ms": 0.0031669915188103914,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.572348+00:00",
+    "ended_at": "2026-03-30T20:32:55.572352+00:00",
+    "duration_ms": 0.0031669915188103914,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.365030+00:00",
+    "ended_at": "2026-03-30T20:32:55.365033+00:00",
+    "duration_ms": 0.003207998815923929,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.031634+00:00",
+    "ended_at": "2026-03-30T20:32:59.031638+00:00",
+    "duration_ms": 0.003208988346159458,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:01.076412+00:00",
+    "ended_at": "2026-03-30T20:33:01.076415+00:00",
+    "duration_ms": 0.0032919924706220627,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.641376+00:00",
+    "ended_at": "2026-03-30T20:32:55.641380+00:00",
+    "duration_ms": 0.003374996595084667,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.607601+00:00",
+    "ended_at": "2026-03-30T20:32:52.607605+00:00",
+    "duration_ms": 0.0034580007195472717,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.698482+00:00",
+    "ended_at": "2026-03-30T20:32:56.698486+00:00",
+    "duration_ms": 0.0034580007195472717,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.628780+00:00",
+    "ended_at": "2026-03-30T20:32:53.628784+00:00",
+    "duration_ms": 0.003541994374245405,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.504661+00:00",
+    "ended_at": "2026-03-30T20:32:52.504666+00:00",
+    "duration_ms": 0.0035840203054249287,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.610176+00:00",
+    "ended_at": "2026-03-30T20:33:00.610180+00:00",
+    "duration_ms": 0.0036249984987080097,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.467678+00:00",
+    "ended_at": "2026-03-30T20:32:55.467682+00:00",
+    "duration_ms": 0.0036660057958215475,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.353489+00:00",
+    "ended_at": "2026-03-30T20:32:57.353493+00:00",
+    "duration_ms": 0.003749999450519681,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.416650+00:00",
+    "ended_at": "2026-03-30T20:32:55.416654+00:00",
+    "duration_ms": 0.0038330035749822855,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.644631+00:00",
+    "ended_at": "2026-03-30T20:32:56.644635+00:00",
+    "duration_ms": 0.0038750004023313522,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.397944+00:00",
+    "ended_at": "2026-03-30T20:33:00.397949+00:00",
+    "duration_ms": 0.00391600769944489,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.139260+00:00",
+    "ended_at": "2026-03-30T20:32:54.139264+00:00",
+    "duration_ms": 0.0039579754229635,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.784979+00:00",
+    "ended_at": "2026-03-30T20:33:00.784983+00:00",
+    "duration_ms": 0.003958004526793957,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.870314+00:00",
+    "ended_at": "2026-03-30T20:32:57.870319+00:00",
+    "duration_ms": 0.0039590231608599424,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.511352+00:00",
+    "ended_at": "2026-03-30T20:32:56.511357+00:00",
+    "duration_ms": 0.0040000013541430235,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.538496+00:00",
+    "ended_at": "2026-03-30T20:33:00.538501+00:00",
+    "duration_ms": 0.0040000013541430235,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.935298+00:00",
+    "ended_at": "2026-03-30T20:32:53.935303+00:00",
+    "duration_ms": 0.004124973202124238,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.060397+00:00",
+    "ended_at": "2026-03-30T20:32:55.060401+00:00",
+    "duration_ms": 0.004125002305954695,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.960291+00:00",
+    "ended_at": "2026-03-30T20:32:58.960295+00:00",
+    "duration_ms": 0.004125002305954695,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.292274+00:00",
+    "ended_at": "2026-03-30T20:33:00.292279+00:00",
+    "duration_ms": 0.004125002305954695,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.832063+00:00",
+    "ended_at": "2026-03-30T20:32:53.832068+00:00",
+    "duration_ms": 0.004165980499237776,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.023038+00:00",
+    "ended_at": "2026-03-30T20:32:56.023043+00:00",
+    "duration_ms": 0.0041669991333037615,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.256270+00:00",
+    "ended_at": "2026-03-30T20:33:00.256275+00:00",
+    "duration_ms": 0.004209025064483285,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.047861+00:00",
+    "ended_at": "2026-03-30T20:33:00.047867+00:00",
+    "duration_ms": 0.004250003257766366,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.576347+00:00",
+    "ended_at": "2026-03-30T20:32:53.576352+00:00",
+    "duration_ms": 0.004415982402861118,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.180973+00:00",
+    "ended_at": "2026-03-30T20:32:58.180978+00:00",
+    "duration_ms": 0.004415982402861118,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.760768+00:00",
+    "ended_at": "2026-03-30T20:32:52.760773+00:00",
+    "duration_ms": 0.004417001036927104,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.078469+00:00",
+    "ended_at": "2026-03-30T20:32:58.078474+00:00",
+    "duration_ms": 0.004417001036927104,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.432251+00:00",
+    "ended_at": "2026-03-30T20:33:00.432256+00:00",
+    "duration_ms": 0.004417001036927104,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.781107+00:00",
+    "ended_at": "2026-03-30T20:32:53.781112+00:00",
+    "duration_ms": 0.0045000051613897085,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.888582+00:00",
+    "ended_at": "2026-03-30T20:33:00.888587+00:00",
+    "duration_ms": 0.004541012458503246,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.088393+00:00",
+    "ended_at": "2026-03-30T20:32:54.088398+00:00",
+    "duration_ms": 0.004583009285852313,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.009497+00:00",
+    "ended_at": "2026-03-30T20:32:55.009503+00:00",
+    "duration_ms": 0.004583009285852313,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.716184+00:00",
+    "ended_at": "2026-03-30T20:33:00.716189+00:00",
+    "duration_ms": 0.004583009285852313,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.525562+00:00",
+    "ended_at": "2026-03-30T20:32:53.525567+00:00",
+    "duration_ms": 0.004624977009370923,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.371835+00:00",
+    "ended_at": "2026-03-30T20:32:56.371840+00:00",
+    "duration_ms": 0.00462500611320138,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.595126+00:00",
+    "ended_at": "2026-03-30T20:32:58.595131+00:00",
+    "duration_ms": 0.00462500611320138,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.853042+00:00",
+    "ended_at": "2026-03-30T20:33:00.853047+00:00",
+    "duration_ms": 0.00462500611320138,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.452481+00:00",
+    "ended_at": "2026-03-30T20:32:52.452486+00:00",
+    "duration_ms": 0.0046660134103149176,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.657767+00:00",
+    "ended_at": "2026-03-30T20:32:52.657772+00:00",
+    "duration_ms": 0.0046660134103149176,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.284076+00:00",
+    "ended_at": "2026-03-30T20:32:58.284081+00:00",
+    "duration_ms": 0.0046660134103149176,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.818120+00:00",
+    "ended_at": "2026-03-30T20:32:57.818125+00:00",
+    "duration_ms": 0.0046670029405504465,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.101114+00:00",
+    "ended_at": "2026-03-30T20:32:59.101119+00:00",
+    "duration_ms": 0.0046670029405504465,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.957648+00:00",
+    "ended_at": "2026-03-30T20:32:54.957654+00:00",
+    "duration_ms": 0.0047079811338335276,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.905750+00:00",
+    "ended_at": "2026-03-30T20:32:59.905755+00:00",
+    "duration_ms": 0.0047079811338335276,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.467779+00:00",
+    "ended_at": "2026-03-30T20:33:00.467784+00:00",
+    "duration_ms": 0.004708010237663984,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.162703+00:00",
+    "ended_at": "2026-03-30T20:32:55.162709+00:00",
+    "duration_ms": 0.004708999767899513,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.387530+00:00",
+    "ended_at": "2026-03-30T20:32:58.387535+00:00",
+    "duration_ms": 0.004708999767899513,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.507816+00:00",
+    "ended_at": "2026-03-30T20:32:57.507822+00:00",
+    "duration_ms": 0.004791974788531661,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.751026+00:00",
+    "ended_at": "2026-03-30T20:32:58.751031+00:00",
+    "duration_ms": 0.004791974788531661,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.699730+00:00",
+    "ended_at": "2026-03-30T20:32:58.699735+00:00",
+    "duration_ms": 0.004792003892362118,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.421468+00:00",
+    "ended_at": "2026-03-30T20:32:53.421473+00:00",
+    "duration_ms": 0.004832982085645199,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.995697+00:00",
+    "ended_at": "2026-03-30T20:32:58.995702+00:00",
+    "duration_ms": 0.004832982085645199,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.986420+00:00",
+    "ended_at": "2026-03-30T20:32:53.986426+00:00",
+    "duration_ms": 0.0048330111894756556,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.301298+00:00",
+    "ended_at": "2026-03-30T20:32:56.301304+00:00",
+    "duration_ms": 0.0048340007197111845,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.542899+00:00",
+    "ended_at": "2026-03-30T20:32:58.542904+00:00",
+    "duration_ms": 0.0048340007197111845,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.111350+00:00",
+    "ended_at": "2026-03-30T20:32:55.111355+00:00",
+    "duration_ms": 0.0048749789129942656,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.517777+00:00",
+    "ended_at": "2026-03-30T20:32:59.517783+00:00",
+    "duration_ms": 0.0048749789129942656,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.201052+00:00",
+    "ended_at": "2026-03-30T20:32:57.201057+00:00",
+    "duration_ms": 0.004875008016824722,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.439703+00:00",
+    "ended_at": "2026-03-30T20:32:58.439709+00:00",
+    "duration_ms": 0.004875008016824722,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.335926+00:00",
+    "ended_at": "2026-03-30T20:32:56.335931+00:00",
+    "duration_ms": 0.004916975740343332,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.545557+00:00",
+    "ended_at": "2026-03-30T20:32:56.545562+00:00",
+    "duration_ms": 0.004917004844173789,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.170276+00:00",
+    "ended_at": "2026-03-30T20:32:59.170281+00:00",
+    "duration_ms": 0.0050000089686363935,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.871873+00:00",
+    "ended_at": "2026-03-30T20:32:59.871879+00:00",
+    "duration_ms": 0.0050000089686363935,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.413523+00:00",
+    "ended_at": "2026-03-30T20:32:59.413529+00:00",
+    "duration_ms": 0.005040987161919475,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.498326+00:00",
+    "ended_at": "2026-03-30T20:32:54.498332+00:00",
+    "duration_ms": 0.005084002623334527,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.362748+00:00",
+    "ended_at": "2026-03-30T20:33:00.362754+00:00",
+    "duration_ms": 0.005124980816617608,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.751163+00:00",
+    "ended_at": "2026-03-30T20:33:00.751170+00:00",
+    "duration_ms": 0.005124980816617608,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.396777+00:00",
+    "ended_at": "2026-03-30T20:32:54.396783+00:00",
+    "duration_ms": 0.005125009920448065,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.314667+00:00",
+    "ended_at": "2026-03-30T20:32:55.314672+00:00",
+    "duration_ms": 0.005125009920448065,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.092361+00:00",
+    "ended_at": "2026-03-30T20:32:56.092368+00:00",
+    "duration_ms": 0.005125009920448065,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.491859+00:00",
+    "ended_at": "2026-03-30T20:32:58.491865+00:00",
+    "duration_ms": 0.005125009920448065,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.336174+00:00",
+    "ended_at": "2026-03-30T20:32:58.336180+00:00",
+    "duration_ms": 0.005166017217561603,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.264706+00:00",
+    "ended_at": "2026-03-30T20:32:55.264712+00:00",
+    "duration_ms": 0.005166977643966675,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.581598+00:00",
+    "ended_at": "2026-03-30T20:32:56.581604+00:00",
+    "duration_ms": 0.005207984941080213,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.476474+00:00",
+    "ended_at": "2026-03-30T20:32:56.476479+00:00",
+    "duration_ms": 0.005209003575146198,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.800325+00:00",
+    "ended_at": "2026-03-30T20:32:59.800331+00:00",
+    "duration_ms": 0.005290989065542817,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.152894+00:00",
+    "ended_at": "2026-03-30T20:33:00.152900+00:00",
+    "duration_ms": 0.005291978595778346,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.678730+00:00",
+    "ended_at": "2026-03-30T20:32:53.678736+00:00",
+    "duration_ms": 0.005292007699608803,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.647441+00:00",
+    "ended_at": "2026-03-30T20:32:58.647447+00:00",
+    "duration_ms": 0.005292007699608803,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.746224+00:00",
+    "ended_at": "2026-03-30T20:32:55.746230+00:00",
+    "duration_ms": 0.005332985892891884,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.066336+00:00",
+    "ended_at": "2026-03-30T20:32:59.066343+00:00",
+    "duration_ms": 0.005333014996722341,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.191131+00:00",
+    "ended_at": "2026-03-30T20:32:54.191137+00:00",
+    "duration_ms": 0.005374982720240951,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.855923+00:00",
+    "ended_at": "2026-03-30T20:32:54.855929+00:00",
+    "duration_ms": 0.005416979547590017,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.753914+00:00",
+    "ended_at": "2026-03-30T20:32:54.753921+00:00",
+    "duration_ms": 0.005457986844703555,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.924457+00:00",
+    "ended_at": "2026-03-30T20:33:00.924463+00:00",
+    "duration_ms": 0.005458015948534012,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.327189+00:00",
+    "ended_at": "2026-03-30T20:33:00.327195+00:00",
+    "duration_ms": 0.00554099096916616,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.907031+00:00",
+    "ended_at": "2026-03-30T20:32:54.907038+00:00",
+    "duration_ms": 0.005582987796515226,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.127048+00:00",
+    "ended_at": "2026-03-30T20:32:56.127055+00:00",
+    "duration_ms": 0.005583977326750755,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.559110+00:00",
+    "ended_at": "2026-03-30T20:32:57.559116+00:00",
+    "duration_ms": 0.00562501372769475,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.710473+00:00",
+    "ended_at": "2026-03-30T20:32:55.710480+00:00",
+    "duration_ms": 0.005667010555043817,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.710328+00:00",
+    "ended_at": "2026-03-30T20:32:52.710335+00:00",
+    "duration_ms": 0.005708017852157354,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.058661+00:00",
+    "ended_at": "2026-03-30T20:32:56.058668+00:00",
+    "duration_ms": 0.005708017852157354,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.680295+00:00",
+    "ended_at": "2026-03-30T20:33:00.680301+00:00",
+    "duration_ms": 0.005791982403025031,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.663471+00:00",
+    "ended_at": "2026-03-30T20:32:57.663477+00:00",
+    "duration_ms": 0.005875015631318092,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.065922+00:00",
+    "ended_at": "2026-03-30T20:32:53.065929+00:00",
+    "duration_ms": 0.005915993824601173,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.345973+00:00",
+    "ended_at": "2026-03-30T20:32:54.345979+00:00",
+    "duration_ms": 0.005915993824601173,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.275326+00:00",
+    "ended_at": "2026-03-30T20:32:59.275333+00:00",
+    "duration_ms": 0.005916983354836702,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.242257+00:00",
+    "ended_at": "2026-03-30T20:32:54.242264+00:00",
+    "duration_ms": 0.005917012458667159,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.835928+00:00",
+    "ended_at": "2026-03-30T20:32:59.835935+00:00",
+    "duration_ms": 0.005917012458667159,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.026353+00:00",
+    "ended_at": "2026-03-30T20:32:58.026360+00:00",
+    "duration_ms": 0.00595799065195024,
+    "metadata": {}
+  },
+  {
+    "tag": "expert_logic",
+    "name": "recon:j_bc2a05cd:move",
+    "started_at": "2026-03-30T20:32:52.402726+00:00",
+    "ended_at": "2026-03-30T20:32:52.402732+00:00",
+    "duration_ms": 0.005958980182185769,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.550080+00:00",
+    "ended_at": "2026-03-30T20:32:54.550087+00:00",
+    "duration_ms": 0.005959009286016226,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.231773+00:00",
+    "ended_at": "2026-03-30T20:32:58.231780+00:00",
+    "duration_ms": 0.006000016583129764,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.811986+00:00",
+    "ended_at": "2026-03-30T20:32:52.811993+00:00",
+    "duration_ms": 0.006041984306648374,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.765996+00:00",
+    "ended_at": "2026-03-30T20:32:57.766003+00:00",
+    "duration_ms": 0.006082991603761911,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.645447+00:00",
+    "ended_at": "2026-03-30T20:33:00.645454+00:00",
+    "duration_ms": 0.006082991603761911,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.693731+00:00",
+    "ended_at": "2026-03-30T20:32:59.693738+00:00",
+    "duration_ms": 0.006084010237827897,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.014969+00:00",
+    "ended_at": "2026-03-30T20:32:53.014977+00:00",
+    "duration_ms": 0.006124988431110978,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.309419+00:00",
+    "ended_at": "2026-03-30T20:32:59.309426+00:00",
+    "duration_ms": 0.006124988431110978,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:58.129182+00:00",
+    "ended_at": "2026-03-30T20:32:58.129189+00:00",
+    "duration_ms": 0.006166985258460045,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.701180+00:00",
+    "ended_at": "2026-03-30T20:32:54.701187+00:00",
+    "duration_ms": 0.006207992555573583,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.117446+00:00",
+    "ended_at": "2026-03-30T20:33:00.117453+00:00",
+    "duration_ms": 0.006207992555573583,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.135930+00:00",
+    "ended_at": "2026-03-30T20:32:59.135938+00:00",
+    "duration_ms": 0.006332993507385254,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.441581+00:00",
+    "ended_at": "2026-03-30T20:32:56.441588+00:00",
+    "duration_ms": 0.006333022611215711,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.047095+00:00",
+    "ended_at": "2026-03-30T20:32:57.047102+00:00",
+    "duration_ms": 0.006333022611215711,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.116585+00:00",
+    "ended_at": "2026-03-30T20:32:53.116592+00:00",
+    "duration_ms": 0.00633401214145124,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.658891+00:00",
+    "ended_at": "2026-03-30T20:32:59.658898+00:00",
+    "duration_ms": 0.006374990334734321,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.941872+00:00",
+    "ended_at": "2026-03-30T20:32:59.941879+00:00",
+    "duration_ms": 0.006374990334734321,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:01.098465+00:00",
+    "ended_at": "2026-03-30T20:33:01.098471+00:00",
+    "duration_ms": 0.006374990334734321,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.344607+00:00",
+    "ended_at": "2026-03-30T20:32:59.344614+00:00",
+    "duration_ms": 0.006416987162083387,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.974284+00:00",
+    "ended_at": "2026-03-30T20:32:57.974291+00:00",
+    "duration_ms": 0.006417016265913844,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.765560+00:00",
+    "ended_at": "2026-03-30T20:32:59.765567+00:00",
+    "duration_ms": 0.006417016265913844,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.862084+00:00",
+    "ended_at": "2026-03-30T20:32:52.862092+00:00",
+    "duration_ms": 0.006457994459196925,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.883000+00:00",
+    "ended_at": "2026-03-30T20:32:53.883008+00:00",
+    "duration_ms": 0.006459013093262911,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.012624+00:00",
+    "ended_at": "2026-03-30T20:33:00.012632+00:00",
+    "duration_ms": 0.006500020390376449,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.922561+00:00",
+    "ended_at": "2026-03-30T20:32:57.922568+00:00",
+    "duration_ms": 0.006583984941244125,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.448979+00:00",
+    "ended_at": "2026-03-30T20:32:59.448987+00:00",
+    "duration_ms": 0.006624992238357663,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.380005+00:00",
+    "ended_at": "2026-03-30T20:32:59.380014+00:00",
+    "duration_ms": 0.006708985893055797,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.556612+00:00",
+    "ended_at": "2026-03-30T20:32:52.556620+00:00",
+    "duration_ms": 0.006749993190169334,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.098047+00:00",
+    "ended_at": "2026-03-30T20:32:57.098055+00:00",
+    "duration_ms": 0.006749993190169334,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.587736+00:00",
+    "ended_at": "2026-03-30T20:32:59.587745+00:00",
+    "duration_ms": 0.006749993190169334,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.369775+00:00",
+    "ended_at": "2026-03-30T20:32:53.369782+00:00",
+    "duration_ms": 0.006958987796679139,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.818942+00:00",
+    "ended_at": "2026-03-30T20:33:00.818950+00:00",
+    "duration_ms": 0.007000024197623134,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.252178+00:00",
+    "ended_at": "2026-03-30T20:32:57.252186+00:00",
+    "duration_ms": 0.007041991921141744,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.623288+00:00",
+    "ended_at": "2026-03-30T20:32:59.623296+00:00",
+    "duration_ms": 0.007208000170066953,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.302764+00:00",
+    "ended_at": "2026-03-30T20:32:57.302772+00:00",
+    "duration_ms": 0.007291004294529557,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.448491+00:00",
+    "ended_at": "2026-03-30T20:32:54.448500+00:00",
+    "duration_ms": 0.007291993824765086,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.473685+00:00",
+    "ended_at": "2026-03-30T20:32:53.473693+00:00",
+    "duration_ms": 0.007374997949227691,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.293059+00:00",
+    "ended_at": "2026-03-30T20:32:54.293067+00:00",
+    "duration_ms": 0.007374997949227691,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.600286+00:00",
+    "ended_at": "2026-03-30T20:32:54.600294+00:00",
+    "duration_ms": 0.007374997949227691,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.994843+00:00",
+    "ended_at": "2026-03-30T20:32:56.994851+00:00",
+    "duration_ms": 0.0075410061981529,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.611332+00:00",
+    "ended_at": "2026-03-30T20:32:57.611340+00:00",
+    "duration_ms": 0.0075830030255019665,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.913153+00:00",
+    "ended_at": "2026-03-30T20:32:52.913162+00:00",
+    "duration_ms": 0.007874972652643919,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.803549+00:00",
+    "ended_at": "2026-03-30T20:32:54.803558+00:00",
+    "duration_ms": 0.008082977728918195,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.456791+00:00",
+    "ended_at": "2026-03-30T20:32:57.456800+00:00",
+    "duration_ms": 0.008124974556267262,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.977719+00:00",
+    "ended_at": "2026-03-30T20:32:59.977728+00:00",
+    "duration_ms": 0.008124974556267262,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:56.407168+00:00",
+    "ended_at": "2026-03-30T20:32:56.407177+00:00",
+    "duration_ms": 0.008333998266607523,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:53.166617+00:00",
+    "ended_at": "2026-03-30T20:32:53.166626+00:00",
+    "duration_ms": 0.00837500556372106,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.240747+00:00",
+    "ended_at": "2026-03-30T20:32:59.240756+00:00",
+    "duration_ms": 0.008416012860834599,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:submit_player_response",
+    "started_at": "2026-03-30T20:33:00.978912+00:00",
+    "ended_at": "2026-03-30T20:33:00.978920+00:00",
+    "duration_ms": 0.008540984708815813,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.729411+00:00",
+    "ended_at": "2026-03-30T20:32:59.729420+00:00",
+    "duration_ms": 0.008583010639995337,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.267306+00:00",
+    "ended_at": "2026-03-30T20:32:53.267314+00:00",
+    "duration_ms": 0.008584000170230865,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.406050+00:00",
+    "ended_at": "2026-03-30T20:32:57.406060+00:00",
+    "duration_ms": 0.008708011591807008,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:55.212617+00:00",
+    "ended_at": "2026-03-30T20:32:55.212627+00:00",
+    "duration_ms": 0.008832983439788222,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:patch_job",
+    "started_at": "2026-03-30T20:33:00.979346+00:00",
+    "ended_at": "2026-03-30T20:33:00.979355+00:00",
+    "duration_ms": 0.008833012543618679,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.483347+00:00",
+    "ended_at": "2026-03-30T20:32:59.483357+00:00",
+    "duration_ms": 0.00899998121894896,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:52.962918+00:00",
+    "ended_at": "2026-03-30T20:32:52.962928+00:00",
+    "duration_ms": 0.009167008101940155,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.885309+00:00",
+    "ended_at": "2026-03-30T20:32:55.885319+00:00",
+    "duration_ms": 0.009457988198846579,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:00.574282+00:00",
+    "ended_at": "2026-03-30T20:33:00.574293+00:00",
+    "duration_ms": 0.009624985978007317,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.815474+00:00",
+    "ended_at": "2026-03-30T20:32:55.815483+00:00",
+    "duration_ms": 0.009665993275120854,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.780049+00:00",
+    "ended_at": "2026-03-30T20:32:55.780059+00:00",
+    "duration_ms": 0.009957992006093264,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.232013+00:00",
+    "ended_at": "2026-03-30T20:32:56.232023+00:00",
+    "duration_ms": 0.010000017937272787,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.554024+00:00",
+    "ended_at": "2026-03-30T20:32:59.554035+00:00",
+    "duration_ms": 0.01016599708236754,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.674775+00:00",
+    "ended_at": "2026-03-30T20:32:55.674786+00:00",
+    "duration_ms": 0.01025001984089613,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:57.148904+00:00",
+    "ended_at": "2026-03-30T20:32:57.148915+00:00",
+    "duration_ms": 0.010332994861528277,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.988209+00:00",
+    "ended_at": "2026-03-30T20:32:55.988220+00:00",
+    "duration_ms": 0.010374991688877344,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.920745+00:00",
+    "ended_at": "2026-03-30T20:32:55.920756+00:00",
+    "duration_ms": 0.010415998985990882,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:54.651891+00:00",
+    "ended_at": "2026-03-30T20:32:54.651903+00:00",
+    "duration_ms": 0.01041698851622641,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.606255+00:00",
+    "ended_at": "2026-03-30T20:32:55.606266+00:00",
+    "duration_ms": 0.010749994544312358,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:32:59.205668+00:00",
+    "ended_at": "2026-03-30T20:32:59.205680+00:00",
+    "duration_ms": 0.010749994544312358,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:01.164754+00:00",
+    "ended_at": "2026-03-30T20:33:01.164766+00:00",
+    "duration_ms": 0.011665979400277138,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.196619+00:00",
+    "ended_at": "2026-03-30T20:32:56.196631+00:00",
+    "duration_ms": 0.012040982255712152,
+    "metadata": {}
+  },
+  {
+    "tag": "expert_logic",
+    "name": "recon:j_bc2a05cd:move",
+    "started_at": "2026-03-30T20:32:53.421723+00:00",
+    "ended_at": "2026-03-30T20:32:53.421736+00:00",
+    "duration_ms": 0.012167001841589808,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.022877+00:00",
+    "ended_at": "2026-03-30T20:32:56.022890+00:00",
+    "duration_ms": 0.012542004697024822,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:register_task_message:task_question",
+    "started_at": "2026-03-30T20:33:01.032129+00:00",
+    "ended_at": "2026-03-30T20:33:01.032143+00:00",
+    "duration_ms": 0.013834011042490602,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.416477+00:00",
+    "ended_at": "2026-03-30T20:32:55.416491+00:00",
+    "duration_ms": 0.014040997484698892,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.800150+00:00",
+    "ended_at": "2026-03-30T20:32:59.800164+00:00",
+    "duration_ms": 0.014124991139397025,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.905580+00:00",
+    "ended_at": "2026-03-30T20:32:59.905594+00:00",
+    "duration_ms": 0.014250021195039153,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.986240+00:00",
+    "ended_at": "2026-03-30T20:32:53.986255+00:00",
+    "duration_ms": 0.014457997167482972,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.221945+00:00",
+    "ended_at": "2026-03-30T20:33:00.221959+00:00",
+    "duration_ms": 0.014500023098662496,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.092146+00:00",
+    "ended_at": "2026-03-30T20:32:56.092161+00:00",
+    "duration_ms": 0.014542019926011562,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.511179+00:00",
+    "ended_at": "2026-03-30T20:32:56.511193+00:00",
+    "duration_ms": 0.014542019926011562,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "MovementExpert:j_e0b0a354",
+    "started_at": "2026-03-30T20:32:58.868401+00:00",
+    "ended_at": "2026-03-30T20:32:58.868416+00:00",
+    "duration_ms": 0.015124998753890395,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.047656+00:00",
+    "ended_at": "2026-03-30T20:33:00.047671+00:00",
+    "duration_ms": 0.015166995581239462,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.710269+00:00",
+    "ended_at": "2026-03-30T20:32:55.710285+00:00",
+    "duration_ms": 0.015291996533051133,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.350344+00:00",
+    "ended_at": "2026-03-30T20:32:52.350360+00:00",
+    "duration_ms": 0.01612497726455331,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.100891+00:00",
+    "ended_at": "2026-03-30T20:32:59.100907+00:00",
+    "duration_ms": 0.0162090000230819,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:register_task_message:task_question",
+    "started_at": "2026-03-30T20:33:00.978804+00:00",
+    "ended_at": "2026-03-30T20:33:00.978821+00:00",
+    "duration_ms": 0.016375008272007108,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.852863+00:00",
+    "ended_at": "2026-03-30T20:33:00.852880+00:00",
+    "duration_ms": 0.016416975995525718,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.538310+00:00",
+    "ended_at": "2026-03-30T20:33:00.538327+00:00",
+    "duration_ms": 0.016458012396469712,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.126831+00:00",
+    "ended_at": "2026-03-30T20:32:56.126848+00:00",
+    "duration_ms": 0.01683298614807427,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.498113+00:00",
+    "ended_at": "2026-03-30T20:32:54.498130+00:00",
+    "duration_ms": 0.017084006685763597,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.413342+00:00",
+    "ended_at": "2026-03-30T20:32:59.413360+00:00",
+    "duration_ms": 0.01783299376256764,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.780890+00:00",
+    "ended_at": "2026-03-30T20:32:53.780908+00:00",
+    "duration_ms": 0.01791701652109623,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.066121+00:00",
+    "ended_at": "2026-03-30T20:32:59.066139+00:00",
+    "duration_ms": 0.01808398519642651,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.693510+00:00",
+    "ended_at": "2026-03-30T20:32:59.693529+00:00",
+    "duration_ms": 0.018542021280154586,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "adjutant:query",
+    "started_at": "2026-03-30T20:32:58.925309+00:00",
+    "ended_at": "2026-03-30T20:32:58.925328+00:00",
+    "duration_ms": 0.018791004549711943,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.835689+00:00",
+    "ended_at": "2026-03-30T20:32:59.835709+00:00",
+    "duration_ms": 0.019875005818903446,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_event:ECONOMY_SURPLUS",
+    "started_at": "2026-03-30T20:32:56.839358+00:00",
+    "ended_at": "2026-03-30T20:32:56.839378+00:00",
+    "duration_ms": 0.020000006770715117,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.275022+00:00",
+    "ended_at": "2026-03-30T20:32:59.275042+00:00",
+    "duration_ms": 0.020042003598064184,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.012349+00:00",
+    "ended_at": "2026-03-30T20:33:00.012369+00:00",
+    "duration_ms": 0.020042003598064184,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.467540+00:00",
+    "ended_at": "2026-03-30T20:33:00.467561+00:00",
+    "duration_ms": 0.020249979570508003,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.379686+00:00",
+    "ended_at": "2026-03-30T20:32:59.379706+00:00",
+    "duration_ms": 0.020374980522319674,
+    "metadata": {}
+  },
+  {
+    "tag": "expert_logic",
+    "name": "recon:j_bc2a05cd:search_score",
+    "started_at": "2026-03-30T20:32:52.402666+00:00",
+    "ended_at": "2026-03-30T20:32:52.402686+00:00",
+    "duration_ms": 0.020499981474131346,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "MovementExpert:j_20310946",
+    "started_at": "2026-03-30T20:32:56.644705+00:00",
+    "ended_at": "2026-03-30T20:32:56.644726+00:00",
+    "duration_ms": 0.02083397703245282,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.111130+00:00",
+    "ended_at": "2026-03-30T20:32:55.111151+00:00",
+    "duration_ms": 0.02125001628883183,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.623012+00:00",
+    "ended_at": "2026-03-30T20:32:59.623034+00:00",
+    "duration_ms": 0.021333020413294435,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.309165+00:00",
+    "ended_at": "2026-03-30T20:32:59.309186+00:00",
+    "duration_ms": 0.021374988136813045,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.680038+00:00",
+    "ended_at": "2026-03-30T20:33:00.680060+00:00",
+    "duration_ms": 0.021374988136813045,
+    "metadata": {}
+  },
+  {
+    "tag": "expert_logic",
+    "name": "recon:j_bc2a05cd:move",
+    "started_at": "2026-03-30T20:32:54.449030+00:00",
+    "ended_at": "2026-03-30T20:32:54.449052+00:00",
+    "duration_ms": 0.0213750172406435,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.301079+00:00",
+    "ended_at": "2026-03-30T20:32:56.301101+00:00",
+    "duration_ms": 0.02145799226127565,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.432004+00:00",
+    "ended_at": "2026-03-30T20:33:00.432025+00:00",
+    "duration_ms": 0.021500018192455173,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.760538+00:00",
+    "ended_at": "2026-03-30T20:32:52.760559+00:00",
+    "duration_ms": 0.02158299321308732,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.009253+00:00",
+    "ended_at": "2026-03-30T20:32:55.009275+00:00",
+    "duration_ms": 0.02158299321308732,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.362508+00:00",
+    "ended_at": "2026-03-30T20:33:00.362530+00:00",
+    "duration_ms": 0.021666986867785454,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.170031+00:00",
+    "ended_at": "2026-03-30T20:32:59.170053+00:00",
+    "duration_ms": 0.02166701597161591,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.784750+00:00",
+    "ended_at": "2026-03-30T20:33:00.784772+00:00",
+    "duration_ms": 0.021875021047890186,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.088164+00:00",
+    "ended_at": "2026-03-30T20:32:54.088186+00:00",
+    "duration_ms": 0.022207997972145677,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.888366+00:00",
+    "ended_at": "2026-03-30T20:33:00.888389+00:00",
+    "duration_ms": 0.022249994799494743,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.657534+00:00",
+    "ended_at": "2026-03-30T20:32:52.657558+00:00",
+    "duration_ms": 0.022416003048419952,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.190889+00:00",
+    "ended_at": "2026-03-30T20:32:54.190912+00:00",
+    "duration_ms": 0.022417021682485938,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.906815+00:00",
+    "ended_at": "2026-03-30T20:32:54.906838+00:00",
+    "duration_ms": 0.02245799987576902,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.882700+00:00",
+    "ended_at": "2026-03-30T20:32:53.882724+00:00",
+    "duration_ms": 0.02274999860674143,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.205404+00:00",
+    "ended_at": "2026-03-30T20:32:59.205427+00:00",
+    "duration_ms": 0.023041997337713838,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.750910+00:00",
+    "ended_at": "2026-03-30T20:33:00.750933+00:00",
+    "duration_ms": 0.023083004634827375,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.861800+00:00",
+    "ended_at": "2026-03-30T20:32:52.861825+00:00",
+    "duration_ms": 0.023542001144960523,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.645197+00:00",
+    "ended_at": "2026-03-30T20:33:00.645220+00:00",
+    "duration_ms": 0.023542001144960523,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.212314+00:00",
+    "ended_at": "2026-03-30T20:32:55.212338+00:00",
+    "duration_ms": 0.023916014470160007,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.065668+00:00",
+    "ended_at": "2026-03-30T20:32:53.065693+00:00",
+    "duration_ms": 0.024084001779556274,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.335667+00:00",
+    "ended_at": "2026-03-30T20:32:56.335692+00:00",
+    "duration_ms": 0.024125009076669812,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.576098+00:00",
+    "ended_at": "2026-03-30T20:32:53.576123+00:00",
+    "duration_ms": 0.02429200685583055,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.678442+00:00",
+    "ended_at": "2026-03-30T20:32:53.678467+00:00",
+    "duration_ms": 0.02445801510475576,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.556317+00:00",
+    "ended_at": "2026-03-30T20:32:52.556341+00:00",
+    "duration_ms": 0.024625012883916497,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.314419+00:00",
+    "ended_at": "2026-03-30T20:32:55.314444+00:00",
+    "duration_ms": 0.024666020181030035,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.729096+00:00",
+    "ended_at": "2026-03-30T20:32:59.729122+00:00",
+    "duration_ms": 0.02508299075998366,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.517538+00:00",
+    "ended_at": "2026-03-30T20:32:59.517563+00:00",
+    "duration_ms": 0.025209010345861316,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.441307+00:00",
+    "ended_at": "2026-03-30T20:32:56.441333+00:00",
+    "duration_ms": 0.025249988539144397,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.483047+00:00",
+    "ended_at": "2026-03-30T20:32:59.483073+00:00",
+    "duration_ms": 0.025500019546598196,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.587459+00:00",
+    "ended_at": "2026-03-30T20:32:59.587485+00:00",
+    "duration_ms": 0.025582994567230344,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.396540+00:00",
+    "ended_at": "2026-03-30T20:32:54.396566+00:00",
+    "duration_ms": 0.025707995519042015,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.326932+00:00",
+    "ended_at": "2026-03-30T20:33:00.326959+00:00",
+    "duration_ms": 0.0262079993262887,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "EconomyExpert:j_d268fd9b",
+    "started_at": "2026-03-30T20:32:55.954730+00:00",
+    "ended_at": "2026-03-30T20:32:55.954758+00:00",
+    "duration_ms": 0.0272089964710176,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "CombatExpert:j_48a3ca99",
+    "started_at": "2026-03-30T20:32:56.698547+00:00",
+    "ended_at": "2026-03-30T20:32:56.698575+00:00",
+    "duration_ms": 0.027999980375170708,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.292794+00:00",
+    "ended_at": "2026-03-30T20:32:54.292822+00:00",
+    "duration_ms": 0.028291018679738045,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.599963+00:00",
+    "ended_at": "2026-03-30T20:32:54.599992+00:00",
+    "duration_ms": 0.028541020583361387,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.803224+00:00",
+    "ended_at": "2026-03-30T20:32:54.803254+00:00",
+    "duration_ms": 0.02937499084509909,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "EconomyExpert:j_d268fd9b",
+    "started_at": "2026-03-30T20:32:55.538621+00:00",
+    "ended_at": "2026-03-30T20:32:55.538650+00:00",
+    "duration_ms": 0.029499991796910763,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.700885+00:00",
+    "ended_at": "2026-03-30T20:32:54.700915+00:00",
+    "duration_ms": 0.029584014555439353,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "EconomyExpert:j_d268fd9b",
+    "started_at": "2026-03-30T20:32:56.161399+00:00",
+    "ended_at": "2026-03-30T20:32:56.161429+00:00",
+    "duration_ms": 0.029874994652345777,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.473149+00:00",
+    "ended_at": "2026-03-30T20:32:53.473180+00:00",
+    "duration_ms": 0.030166003853082657,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.166280+00:00",
+    "ended_at": "2026-03-30T20:32:53.166312+00:00",
+    "duration_ms": 0.03154200385324657,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.573930+00:00",
+    "ended_at": "2026-03-30T20:33:00.573962+00:00",
+    "duration_ms": 0.031625007977709174,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.962588+00:00",
+    "ended_at": "2026-03-30T20:32:52.962622+00:00",
+    "duration_ms": 0.03283302066847682,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.406823+00:00",
+    "ended_at": "2026-03-30T20:32:56.406856+00:00",
+    "duration_ms": 0.03341602860018611,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:create_constraint",
+    "started_at": "2026-03-30T20:32:56.839149+00:00",
+    "ended_at": "2026-03-30T20:32:56.839183+00:00",
+    "duration_ms": 0.033666990930214524,
+    "metadata": {
+      "tool": "create_constraint"
+    }
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:33:01.032213+00:00",
+    "ended_at": "2026-03-30T20:33:01.032250+00:00",
+    "duration_ms": 0.03700001980178058,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "CombatExpert:j_ba2c3dff",
+    "started_at": "2026-03-30T20:32:56.796770+00:00",
+    "ended_at": "2026-03-30T20:32:56.796807+00:00",
+    "duration_ms": 0.03749999450519681,
+    "metadata": {}
+  },
+  {
+    "tag": "expert_logic",
+    "name": "recon:j_bc2a05cd:search_score",
+    "started_at": "2026-03-30T20:32:53.421618+00:00",
+    "ended_at": "2026-03-30T20:32:53.421658+00:00",
+    "duration_ms": 0.03954098792746663,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:33:01.032059+00:00",
+    "ended_at": "2026-03-30T20:33:01.032101+00:00",
+    "duration_ms": 0.04104201798327267,
+    "metadata": {
+      "expert_type": "DecisionExpert"
+    }
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_events",
+    "started_at": "2026-03-30T20:32:56.839356+00:00",
+    "ended_at": "2026-03-30T20:32:56.839397+00:00",
+    "duration_ms": 0.04129100125283003,
+    "metadata": {
+      "count": 1
+    }
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:patch_job",
+    "started_at": "2026-03-30T20:33:01.165736+00:00",
+    "ended_at": "2026-03-30T20:33:01.165779+00:00",
+    "duration_ms": 0.042917003156617284,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:52.298770+00:00",
+    "ended_at": "2026-03-30T20:32:52.298814+00:00",
+    "duration_ms": 0.043625012040138245,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:patch_job",
+    "started_at": "2026-03-30T20:33:00.979328+00:00",
+    "ended_at": "2026-03-30T20:33:00.979374+00:00",
+    "duration_ms": 0.04650000482797623,
+    "metadata": {
+      "tool": "patch_job"
+    }
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.839287+00:00",
+    "ended_at": "2026-03-30T20:32:56.839334+00:00",
+    "duration_ms": 0.04754099063575268,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:56.796313+00:00",
+    "ended_at": "2026-03-30T20:32:56.796362+00:00",
+    "duration_ms": 0.048290996346622705,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:33:01.031992+00:00",
+    "ended_at": "2026-03-30T20:33:01.032041+00:00",
+    "duration_ms": 0.048874993808567524,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:56.839071+00:00",
+    "ended_at": "2026-03-30T20:32:56.839120+00:00",
+    "duration_ms": 0.04929097485728562,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:33:00.978717+00:00",
+    "ended_at": "2026-03-30T20:33:00.978768+00:00",
+    "duration_ms": 0.05029098247177899,
+    "metadata": {
+      "expert_type": "DecisionExpert"
+    }
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:52.298652+00:00",
+    "ended_at": "2026-03-30T20:32:52.298705+00:00",
+    "duration_ms": 0.0527920201420784,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:56.742633+00:00",
+    "ended_at": "2026-03-30T20:32:56.742686+00:00",
+    "duration_ms": 0.05312499706633389,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:58.925430+00:00",
+    "ended_at": "2026-03-30T20:32:58.925484+00:00",
+    "duration_ms": 0.054208998335525393,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_2",
+    "started_at": "2026-03-30T20:33:01.054330+00:00",
+    "ended_at": "2026-03-30T20:33:01.054386+00:00",
+    "duration_ms": 0.055333017371594906,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "EconomyExpert:j_d268fd9b",
+    "started_at": "2026-03-30T20:32:55.746342+00:00",
+    "ended_at": "2026-03-30T20:32:55.746398+00:00",
+    "duration_ms": 0.05645898636430502,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "DeployExpert:j_3a241ce9",
+    "started_at": "2026-03-30T20:32:56.743046+00:00",
+    "ended_at": "2026-03-30T20:32:56.743103+00:00",
+    "duration_ms": 0.0576250022277236,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.838954+00:00",
+    "ended_at": "2026-03-30T20:32:56.839013+00:00",
+    "duration_ms": 0.058083998737856746,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:58.868015+00:00",
+    "ended_at": "2026-03-30T20:32:58.868074+00:00",
+    "duration_ms": 0.05870801396667957,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:55.538250+00:00",
+    "ended_at": "2026-03-30T20:32:55.538309+00:00",
+    "duration_ms": 0.059874990256503224,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:58.925109+00:00",
+    "ended_at": "2026-03-30T20:32:58.925169+00:00",
+    "duration_ms": 0.06004099850542843,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_3fe38980",
+    "started_at": "2026-03-30T20:33:00.979414+00:00",
+    "ended_at": "2026-03-30T20:33:00.979476+00:00",
+    "duration_ms": 0.06145899533294141,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.572157+00:00",
+    "ended_at": "2026-03-30T20:32:55.572219+00:00",
+    "duration_ms": 0.06399999256245792,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:33:01.032334+00:00",
+    "ended_at": "2026-03-30T20:33:01.032399+00:00",
+    "duration_ms": 0.06554200081154704,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:33:00.978627+00:00",
+    "ended_at": "2026-03-30T20:33:00.978693+00:00",
+    "duration_ms": 0.06654200842604041,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.891339+00:00",
+    "ended_at": "2026-03-30T20:32:56.891406+00:00",
+    "duration_ms": 0.06666700937785208,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "EconomyExpert:j_d268fd9b",
+    "started_at": "2026-03-30T20:32:56.371941+00:00",
+    "ended_at": "2026-03-30T20:32:56.372011+00:00",
+    "duration_ms": 0.06945800851099193,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_event:ECONOMY_SURPLUS",
+    "started_at": "2026-03-30T20:32:55.641110+00:00",
+    "ended_at": "2026-03-30T20:32:55.641179+00:00",
+    "duration_ms": 0.06945899804122746,
+    "metadata": {}
+  },
+  {
+    "tag": "expert_logic",
+    "name": "recon:j_bc2a05cd:search_score",
+    "started_at": "2026-03-30T20:32:54.448839+00:00",
+    "ended_at": "2026-03-30T20:32:54.448910+00:00",
+    "duration_ms": 0.06983298226259649,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_784cb4ca",
+    "started_at": "2026-03-30T20:32:52.299177+00:00",
+    "ended_at": "2026-03-30T20:32:52.299248+00:00",
+    "duration_ms": 0.07104198448359966,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:33:00.979012+00:00",
+    "ended_at": "2026-03-30T20:33:00.979084+00:00",
+    "duration_ms": 0.07170799653977156,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:tick",
+    "started_at": "2026-03-30T20:33:01.164889+00:00",
+    "ended_at": "2026-03-30T20:33:01.164962+00:00",
+    "duration_ms": 0.07266699685715139,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:56.697970+00:00",
+    "ended_at": "2026-03-30T20:32:56.698044+00:00",
+    "duration_ms": 0.07387498044408858,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_3",
+    "started_at": "2026-03-30T20:33:01.076410+00:00",
+    "ended_at": "2026-03-30T20:33:01.076486+00:00",
+    "duration_ms": 0.07495799218304455,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_47235d96",
+    "started_at": "2026-03-30T20:33:01.165900+00:00",
+    "ended_at": "2026-03-30T20:33:01.165979+00:00",
+    "duration_ms": 0.07924999226815999,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_5",
+    "started_at": "2026-03-30T20:33:01.120508+00:00",
+    "ended_at": "2026-03-30T20:33:01.120588+00:00",
+    "duration_ms": 0.07987499702721834,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:01.031848+00:00",
+    "ended_at": "2026-03-30T20:33:01.031931+00:00",
+    "duration_ms": 0.08250001701526344,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:58.868354+00:00",
+    "ended_at": "2026-03-30T20:32:58.868438+00:00",
+    "duration_ms": 0.0838330015540123,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.742480+00:00",
+    "ended_at": "2026-03-30T20:32:56.742564+00:00",
+    "duration_ms": 0.08429100853390992,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_2",
+    "started_at": "2026-03-30T20:32:58.960288+00:00",
+    "ended_at": "2026-03-30T20:32:58.960374+00:00",
+    "duration_ms": 0.08529200567863882,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:create_task",
+    "started_at": "2026-03-30T20:32:56.644118+00:00",
+    "ended_at": "2026-03-30T20:32:56.644204+00:00",
+    "duration_ms": 0.0865840120241046,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:complete_task",
+    "started_at": "2026-03-30T20:32:55.469056+00:00",
+    "ended_at": "2026-03-30T20:32:55.469144+00:00",
+    "duration_ms": 0.08741699275560677,
+    "metadata": {
+      "result": "succeeded"
+    }
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_784cb4ca",
+    "started_at": "2026-03-30T20:32:52.298889+00:00",
+    "ended_at": "2026-03-30T20:32:52.298979+00:00",
+    "duration_ms": 0.08995900861918926,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_36",
+    "started_at": "2026-03-30T20:33:00.152889+00:00",
+    "ended_at": "2026-03-30T20:33:00.152982+00:00",
+    "duration_ms": 0.09087499347515404,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_9852a0c7",
+    "started_at": "2026-03-30T20:32:58.925582+00:00",
+    "ended_at": "2026-03-30T20:32:58.925674+00:00",
+    "duration_ms": 0.09241700172424316,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:32:55.538368+00:00",
+    "ended_at": "2026-03-30T20:32:55.538461+00:00",
+    "duration_ms": 0.09312501060776412,
+    "metadata": {
+      "expert_type": "EconomyExpert"
+    }
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:32:52.299034+00:00",
+    "ended_at": "2026-03-30T20:32:52.299128+00:00",
+    "duration_ms": 0.09391701314598322,
+    "metadata": {
+      "expert_type": "ReconExpert"
+    }
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_event:ENEMY_DISCOVERED",
+    "started_at": "2026-03-30T20:32:52.607374+00:00",
+    "ended_at": "2026-03-30T20:32:52.607469+00:00",
+    "duration_ms": 0.09458299609832466,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:55.538574+00:00",
+    "ended_at": "2026-03-30T20:32:55.538669+00:00",
+    "duration_ms": 0.09491699165664613,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.867835+00:00",
+    "ended_at": "2026-03-30T20:32:58.867931+00:00",
+    "duration_ms": 0.09533300180919468,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.538063+00:00",
+    "ended_at": "2026-03-30T20:32:55.538160+00:00",
+    "duration_ms": 0.09600000339560211,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_35",
+    "started_at": "2026-03-30T20:33:00.117441+00:00",
+    "ended_at": "2026-03-30T20:33:00.117542+00:00",
+    "duration_ms": 0.09816698729991913,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.978455+00:00",
+    "ended_at": "2026-03-30T20:33:00.978554+00:00",
+    "duration_ms": 0.09845898603089154,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_4",
+    "started_at": "2026-03-30T20:33:01.098461+00:00",
+    "ended_at": "2026-03-30T20:33:01.098563+00:00",
+    "duration_ms": 0.09970800601877272,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_3fe38980",
+    "started_at": "2026-03-30T20:33:00.979185+00:00",
+    "ended_at": "2026-03-30T20:33:00.979285+00:00",
+    "duration_ms": 0.099916011095047,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:32:58.868136+00:00",
+    "ended_at": "2026-03-30T20:32:58.868237+00:00",
+    "duration_ms": 0.10050000855699182,
+    "metadata": {
+      "expert_type": "MovementExpert"
+    }
+  },
+  {
+    "tag": "llm_call",
+    "name": "adjutant:handle_input",
+    "started_at": "2026-03-30T20:33:00.978841+00:00",
+    "ended_at": "2026-03-30T20:33:00.978944+00:00",
+    "duration_ms": 0.10229198960587382,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.796146+00:00",
+    "ended_at": "2026-03-30T20:32:56.796251+00:00",
+    "duration_ms": 0.10454101720824838,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_event:ECONOMY_SURPLUS",
+    "started_at": "2026-03-30T20:32:56.581252+00:00",
+    "ended_at": "2026-03-30T20:32:56.581355+00:00",
+    "duration_ms": 0.10537501657381654,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_39",
+    "started_at": "2026-03-30T20:33:00.256267+00:00",
+    "ended_at": "2026-03-30T20:33:00.256374+00:00",
+    "duration_ms": 0.10570802260190248,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "adjutant:handle_input",
+    "started_at": "2026-03-30T20:33:01.032160+00:00",
+    "ended_at": "2026-03-30T20:33:01.032269+00:00",
+    "duration_ms": 0.10862501221708953,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_3",
+    "started_at": "2026-03-30T20:32:58.995694+00:00",
+    "ended_at": "2026-03-30T20:32:58.995806+00:00",
+    "duration_ms": 0.11125000310130417,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.924916+00:00",
+    "ended_at": "2026-03-30T20:32:58.925029+00:00",
+    "duration_ms": 0.11287498637102544,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.697765+00:00",
+    "ended_at": "2026-03-30T20:32:56.697878+00:00",
+    "duration_ms": 0.11304201325401664,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:32:56.742749+00:00",
+    "ended_at": "2026-03-30T20:32:56.742865+00:00",
+    "duration_ms": 0.11599998106248677,
+    "metadata": {
+      "expert_type": "DeployExpert"
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:56.796715+00:00",
+    "ended_at": "2026-03-30T20:32:56.796833+00:00",
+    "duration_ms": 0.11804202222265303,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_4",
+    "started_at": "2026-03-30T20:32:52.452478+00:00",
+    "ended_at": "2026-03-30T20:32:52.452597+00:00",
+    "duration_ms": 0.11845800327137113,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "ReconExpert:j_bc2a05cd",
+    "started_at": "2026-03-30T20:32:52.402639+00:00",
+    "ended_at": "2026-03-30T20:32:52.402760+00:00",
+    "duration_ms": 0.12075001723133028,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_2",
+    "started_at": "2026-03-30T20:32:56.891335+00:00",
+    "ended_at": "2026-03-30T20:32:56.891458+00:00",
+    "duration_ms": 0.12208399130031466,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:patch_job",
+    "started_at": "2026-03-30T20:33:01.165694+00:00",
+    "ended_at": "2026-03-30T20:33:01.165817+00:00",
+    "duration_ms": 0.12241597869433463,
+    "metadata": {
+      "tool": "patch_job"
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_38",
+    "started_at": "2026-03-30T20:33:00.221940+00:00",
+    "ended_at": "2026-03-30T20:33:00.222065+00:00",
+    "duration_ms": 0.12370900367386639,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:56.698480+00:00",
+    "ended_at": "2026-03-30T20:32:56.698607+00:00",
+    "duration_ms": 0.12595899170264602,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_20",
+    "started_at": "2026-03-30T20:32:53.267297+00:00",
+    "ended_at": "2026-03-30T20:32:53.267431+00:00",
+    "duration_ms": 0.12974999845027924,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:start_job",
+    "started_at": "2026-03-30T20:32:52.299014+00:00",
+    "ended_at": "2026-03-30T20:32:52.299145+00:00",
+    "duration_ms": 0.13141697854734957,
+    "metadata": {
+      "tool": "start_job"
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:56.644629+00:00",
+    "ended_at": "2026-03-30T20:32:56.644762+00:00",
+    "duration_ms": 0.13337499694898725,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_fff6e9c1",
+    "started_at": "2026-03-30T20:33:01.032543+00:00",
+    "ended_at": "2026-03-30T20:33:01.032677+00:00",
+    "duration_ms": 0.13354199472814798,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:start_job",
+    "started_at": "2026-03-30T20:32:55.538346+00:00",
+    "ended_at": "2026-03-30T20:32:55.538480+00:00",
+    "duration_ms": 0.13437500456348062,
+    "metadata": {
+      "tool": "start_job"
+    }
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:01.142564+00:00",
+    "ended_at": "2026-03-30T20:33:01.142700+00:00",
+    "duration_ms": 0.1359160232823342,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.643864+00:00",
+    "ended_at": "2026-03-30T20:32:56.644001+00:00",
+    "duration_ms": 0.1360829919576645,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:56.742987+00:00",
+    "ended_at": "2026-03-30T20:32:56.743131+00:00",
+    "duration_ms": 0.14441600069403648,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_events",
+    "started_at": "2026-03-30T20:32:52.607366+00:00",
+    "ended_at": "2026-03-30T20:32:52.607513+00:00",
+    "duration_ms": 0.14579101116396487,
+    "metadata": {
+      "count": 1
+    }
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:start_job",
+    "started_at": "2026-03-30T20:32:58.868112+00:00",
+    "ended_at": "2026-03-30T20:32:58.868259+00:00",
+    "duration_ms": 0.14704099157825112,
+    "metadata": {
+      "tool": "start_job"
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_2",
+    "started_at": "2026-03-30T20:32:52.350335+00:00",
+    "ended_at": "2026-03-30T20:32:52.350488+00:00",
+    "duration_ms": 0.14733400894328952,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_22",
+    "started_at": "2026-03-30T20:32:53.369770+00:00",
+    "ended_at": "2026-03-30T20:32:53.369919+00:00",
+    "duration_ms": 0.1475420140195638,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_47235d96",
+    "started_at": "2026-03-30T20:33:01.032484+00:00",
+    "ended_at": "2026-03-30T20:33:01.032634+00:00",
+    "duration_ms": 0.14970899792388082,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_events",
+    "started_at": "2026-03-30T20:32:55.641100+00:00",
+    "ended_at": "2026-03-30T20:32:55.641254+00:00",
+    "duration_ms": 0.15304199769161642,
+    "metadata": {
+      "count": 1
+    }
+  },
+  {
+    "tag": "llm_call",
+    "name": "adjutant:handle_input",
+    "started_at": "2026-03-30T20:32:58.925201+00:00",
+    "ended_at": "2026-03-30T20:32:58.925356+00:00",
+    "duration_ms": 0.1547499850858003,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.402411+00:00",
+    "ended_at": "2026-03-30T20:32:52.402566+00:00",
+    "duration_ms": 0.15475001418963075,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.802232+00:00",
+    "ended_at": "2026-03-30T20:32:58.802397+00:00",
+    "duration_ms": 0.16500000492669642,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:32:56.644296+00:00",
+    "ended_at": "2026-03-30T20:32:56.644462+00:00",
+    "duration_ms": 0.16629198216833174,
+    "metadata": {
+      "expert_type": "MovementExpert"
+    }
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_event:ENEMY_DISCOVERED",
+    "started_at": "2026-03-30T20:32:54.651457+00:00",
+    "ended_at": "2026-03-30T20:32:54.651625+00:00",
+    "duration_ms": 0.16900000628083944,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_1",
+    "started_at": "2026-03-30T20:32:56.839285+00:00",
+    "ended_at": "2026-03-30T20:32:56.839455+00:00",
+    "duration_ms": 0.16958301421254873,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:start_job",
+    "started_at": "2026-03-30T20:32:56.742721+00:00",
+    "ended_at": "2026-03-30T20:32:56.742891+00:00",
+    "duration_ms": 0.17004201072268188,
+    "metadata": {
+      "tool": "start_job"
+    }
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.713265+00:00",
+    "ended_at": "2026-03-30T20:32:57.713436+00:00",
+    "duration_ms": 0.17104201833717525,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_9",
+    "started_at": "2026-03-30T20:32:55.815466+00:00",
+    "ended_at": "2026-03-30T20:32:55.815644+00:00",
+    "duration_ms": 0.17395897884853184,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:32:56.796422+00:00",
+    "ended_at": "2026-03-30T20:32:56.796600+00:00",
+    "duration_ms": 0.17841698718257248,
+    "metadata": {
+      "expert_type": "CombatExpert"
+    }
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.186518+00:00",
+    "ended_at": "2026-03-30T20:33:00.186700+00:00",
+    "duration_ms": 0.1815830182749778,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.943473+00:00",
+    "ended_at": "2026-03-30T20:32:56.943659+00:00",
+    "duration_ms": 0.18541599274612963,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_event:PRODUCTION_COMPLETE",
+    "started_at": "2026-03-30T20:32:56.580983+00:00",
+    "ended_at": "2026-03-30T20:32:56.581168+00:00",
+    "duration_ms": 0.18549998640082777,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_21",
+    "started_at": "2026-03-30T20:32:56.232003+00:00",
+    "ended_at": "2026-03-30T20:32:56.232196+00:00",
+    "duration_ms": 0.1880000054370612,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_11",
+    "started_at": "2026-03-30T20:32:55.885298+00:00",
+    "ended_at": "2026-03-30T20:32:55.885494+00:00",
+    "duration_ms": 0.1894999877549708,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_14",
+    "started_at": "2026-03-30T20:32:55.988199+00:00",
+    "ended_at": "2026-03-30T20:32:55.988396+00:00",
+    "duration_ms": 0.19137500203214586,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_5",
+    "started_at": "2026-03-30T20:32:55.674766+00:00",
+    "ended_at": "2026-03-30T20:32:55.674962+00:00",
+    "duration_ms": 0.19241697737015784,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_8",
+    "started_at": "2026-03-30T20:32:55.780040+00:00",
+    "ended_at": "2026-03-30T20:32:55.780237+00:00",
+    "duration_ms": 0.19245801377110183,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_47235d96",
+    "started_at": "2026-03-30T20:33:01.165394+00:00",
+    "ended_at": "2026-03-30T20:33:01.165587+00:00",
+    "duration_ms": 0.1928750134538859,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_6",
+    "started_at": "2026-03-30T20:33:01.142561+00:00",
+    "ended_at": "2026-03-30T20:33:01.142760+00:00",
+    "duration_ms": 0.19816699204966426,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_3",
+    "started_at": "2026-03-30T20:32:55.606244+00:00",
+    "ended_at": "2026-03-30T20:32:55.606452+00:00",
+    "duration_ms": 0.20149999181739986,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_20",
+    "started_at": "2026-03-30T20:32:56.196605+00:00",
+    "ended_at": "2026-03-30T20:32:56.196816+00:00",
+    "duration_ms": 0.2033339987974614,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:32:56.698126+00:00",
+    "ended_at": "2026-03-30T20:32:56.698332+00:00",
+    "duration_ms": 0.20641699666157365,
+    "metadata": {
+      "expert_type": "CombatExpert"
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_12",
+    "started_at": "2026-03-30T20:32:55.920735+00:00",
+    "ended_at": "2026-03-30T20:32:55.920951+00:00",
+    "duration_ms": 0.21120801102370024,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.317721+00:00",
+    "ended_at": "2026-03-30T20:32:53.317933+00:00",
+    "duration_ms": 0.2124579914379865,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.954412+00:00",
+    "ended_at": "2026-03-30T20:32:55.954625+00:00",
+    "duration_ms": 0.2127499901689589,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:complete_task",
+    "started_at": "2026-03-30T20:32:55.468998+00:00",
+    "ended_at": "2026-03-30T20:32:55.469212+00:00",
+    "duration_ms": 0.21312502212822437,
+    "metadata": {
+      "tool": "complete_task"
+    }
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.161075+00:00",
+    "ended_at": "2026-03-30T20:32:56.161297+00:00",
+    "duration_ms": 0.2219580055680126,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:start_job",
+    "started_at": "2026-03-30T20:32:56.796394+00:00",
+    "ended_at": "2026-03-30T20:32:56.796623+00:00",
+    "duration_ms": 0.22937500034458935,
+    "metadata": {
+      "tool": "start_job"
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "ReconExpert:j_bc2a05cd",
+    "started_at": "2026-03-30T20:32:53.421548+00:00",
+    "ended_at": "2026-03-30T20:32:53.421783+00:00",
+    "duration_ms": 0.2346669789403677,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:start_job",
+    "started_at": "2026-03-30T20:32:56.644257+00:00",
+    "ended_at": "2026-03-30T20:32:56.644495+00:00",
+    "duration_ms": 0.23779101320542395,
+    "metadata": {
+      "tool": "start_job"
+    }
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.216542+00:00",
+    "ended_at": "2026-03-30T20:32:53.216785+00:00",
+    "duration_ms": 0.24291599402204156,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:start_job",
+    "started_at": "2026-03-30T20:32:58.890529+00:00",
+    "ended_at": "2026-03-30T20:32:58.890782+00:00",
+    "duration_ms": 0.2529580087866634,
+    "metadata": {
+      "expert_type": "CombatExpert"
+    }
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_784cb4ca",
+    "started_at": "2026-03-30T20:32:54.652690+00:00",
+    "ended_at": "2026-03-30T20:32:54.652944+00:00",
+    "duration_ms": 0.2537920081522316,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.353137+00:00",
+    "ended_at": "2026-03-30T20:32:57.353394+00:00",
+    "duration_ms": 0.25666700094006956,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_37",
+    "started_at": "2026-03-30T20:33:00.186514+00:00",
+    "ended_at": "2026-03-30T20:33:00.186778+00:00",
+    "duration_ms": 0.2622499887365848,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.082046+00:00",
+    "ended_at": "2026-03-30T20:33:00.082315+00:00",
+    "duration_ms": 0.26912501198239625,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_2",
+    "started_at": "2026-03-30T20:32:55.572143+00:00",
+    "ended_at": "2026-03-30T20:32:55.572425+00:00",
+    "duration_ms": 0.2740829950198531,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_29",
+    "started_at": "2026-03-30T20:32:56.511164+00:00",
+    "ended_at": "2026-03-30T20:32:56.511448+00:00",
+    "duration_ms": 0.27679200866259634,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:start_job",
+    "started_at": "2026-03-30T20:32:56.698089+00:00",
+    "ended_at": "2026-03-30T20:32:56.698368+00:00",
+    "duration_ms": 0.2782499941531569,
+    "metadata": {
+      "tool": "start_job"
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_15",
+    "started_at": "2026-03-30T20:32:56.022865+00:00",
+    "ended_at": "2026-03-30T20:32:56.023148+00:00",
+    "duration_ms": 0.27829199098050594,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_29",
+    "started_at": "2026-03-30T20:32:59.905567+00:00",
+    "ended_at": "2026-03-30T20:32:59.905852+00:00",
+    "duration_ms": 0.2792919985949993,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_events",
+    "started_at": "2026-03-30T20:32:54.651444+00:00",
+    "ended_at": "2026-03-30T20:32:54.651726+00:00",
+    "duration_ms": 0.2813749888446182,
+    "metadata": {
+      "count": 1
+    }
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.298293+00:00",
+    "ended_at": "2026-03-30T20:32:52.298579+00:00",
+    "duration_ms": 0.2827499993145466,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_56",
+    "started_at": "2026-03-30T20:33:00.852845+00:00",
+    "ended_at": "2026-03-30T20:33:00.853138+00:00",
+    "duration_ms": 0.28308399487286806,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_21",
+    "started_at": "2026-03-30T20:32:53.317716+00:00",
+    "ended_at": "2026-03-30T20:32:53.318003+00:00",
+    "duration_ms": 0.2842920075636357,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.265526+00:00",
+    "ended_at": "2026-03-30T20:32:56.265812+00:00",
+    "duration_ms": 0.2858749940060079,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_7",
+    "started_at": "2026-03-30T20:33:01.164743+00:00",
+    "ended_at": "2026-03-30T20:33:01.165035+00:00",
+    "duration_ms": 0.28595898766070604,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_39",
+    "started_at": "2026-03-30T20:32:58.802222+00:00",
+    "ended_at": "2026-03-30T20:32:58.802513+00:00",
+    "duration_ms": 0.28654097695834935,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_47",
+    "started_at": "2026-03-30T20:33:00.538295+00:00",
+    "ended_at": "2026-03-30T20:33:00.538596+00:00",
+    "duration_ms": 0.29424999956972897,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.542491+00:00",
+    "ended_at": "2026-03-30T20:32:58.542787+00:00",
+    "duration_ms": 0.296416983474046,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_15",
+    "started_at": "2026-03-30T20:32:59.413324+00:00",
+    "ended_at": "2026-03-30T20:32:59.413628+00:00",
+    "duration_ms": 0.2966659958474338,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_784cb4ca",
+    "started_at": "2026-03-30T20:32:55.468524+00:00",
+    "ended_at": "2026-03-30T20:32:55.468822+00:00",
+    "duration_ms": 0.29945801361463964,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.728721+00:00",
+    "ended_at": "2026-03-30T20:32:53.729021+00:00",
+    "duration_ms": 0.2998340060003102,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.439289+00:00",
+    "ended_at": "2026-03-30T20:32:58.439589+00:00",
+    "duration_ms": 0.3003750171046704,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.078088+00:00",
+    "ended_at": "2026-03-30T20:32:58.078390+00:00",
+    "duration_ms": 0.3017919952981174,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.594736+00:00",
+    "ended_at": "2026-03-30T20:32:58.595041+00:00",
+    "duration_ms": 0.30499999411404133,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_62",
+    "started_at": "2026-03-30T20:32:55.416462+00:00",
+    "ended_at": "2026-03-30T20:32:55.416775+00:00",
+    "duration_ms": 0.30625000363215804,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.180586+00:00",
+    "ended_at": "2026-03-30T20:32:58.180893+00:00",
+    "duration_ms": 0.30741700902581215,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.491433+00:00",
+    "ended_at": "2026-03-30T20:32:58.491743+00:00",
+    "duration_ms": 0.3097500011790544,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "ReconExpert:j_bc2a05cd",
+    "started_at": "2026-03-30T20:32:55.467754+00:00",
+    "ended_at": "2026-03-30T20:32:55.468064+00:00",
+    "duration_ms": 0.30995800625532866,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_33",
+    "started_at": "2026-03-30T20:33:00.047639+00:00",
+    "ended_at": "2026-03-30T20:33:00.047961+00:00",
+    "duration_ms": 0.31266699079424143,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.663067+00:00",
+    "ended_at": "2026-03-30T20:32:57.663381+00:00",
+    "duration_ms": 0.3140420012641698,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_3",
+    "started_at": "2026-03-30T20:32:56.943463+00:00",
+    "ended_at": "2026-03-30T20:32:56.943783+00:00",
+    "duration_ms": 0.3150000120513141,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.850853+00:00",
+    "ended_at": "2026-03-30T20:32:55.851169+00:00",
+    "duration_ms": 0.315624987706542,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.817713+00:00",
+    "ended_at": "2026-03-30T20:32:57.818030+00:00",
+    "duration_ms": 0.317083002300933,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.335734+00:00",
+    "ended_at": "2026-03-30T20:32:58.336053+00:00",
+    "duration_ms": 0.32045799889601767,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_26",
+    "started_at": "2026-03-30T20:32:59.800137+00:00",
+    "ended_at": "2026-03-30T20:32:59.800462+00:00",
+    "duration_ms": 0.3205419925507158,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.387125+00:00",
+    "ended_at": "2026-03-30T20:32:58.387448+00:00",
+    "duration_ms": 0.32295897835865617,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.973874+00:00",
+    "ended_at": "2026-03-30T20:32:57.974197+00:00",
+    "duration_ms": 0.32333401031792164,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_34",
+    "started_at": "2026-03-30T20:32:53.986226+00:00",
+    "ended_at": "2026-03-30T20:32:53.986556+00:00",
+    "duration_ms": 0.3240420192014426,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_54",
+    "started_at": "2026-03-30T20:33:00.784730+00:00",
+    "ended_at": "2026-03-30T20:33:00.785066+00:00",
+    "duration_ms": 0.3247499989811331,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_57",
+    "started_at": "2026-03-30T20:33:00.888344+00:00",
+    "ended_at": "2026-03-30T20:33:00.888682+00:00",
+    "duration_ms": 0.3252500027883798,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.750598+00:00",
+    "ended_at": "2026-03-30T20:32:58.750934+00:00",
+    "duration_ms": 0.3357499954290688,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.558675+00:00",
+    "ended_at": "2026-03-30T20:32:57.559014+00:00",
+    "duration_ms": 0.3393749939277768,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_23",
+    "started_at": "2026-03-30T20:32:56.301056+00:00",
+    "ended_at": "2026-03-30T20:32:56.301410+00:00",
+    "duration_ms": 0.3400410059839487,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.922113+00:00",
+    "ended_at": "2026-03-30T20:32:57.922455+00:00",
+    "duration_ms": 0.3421250148676336,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.200609+00:00",
+    "ended_at": "2026-03-30T20:32:57.200954+00:00",
+    "duration_ms": 0.3436249971855432,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.025903+00:00",
+    "ended_at": "2026-03-30T20:32:58.026248+00:00",
+    "duration_ms": 0.34554197918623686,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_56",
+    "started_at": "2026-03-30T20:32:55.111112+00:00",
+    "ended_at": "2026-03-30T20:32:55.111469+00:00",
+    "duration_ms": 0.3476249985396862,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.699265+00:00",
+    "ended_at": "2026-03-30T20:32:58.699616+00:00",
+    "duration_ms": 0.35141699481755495,
+    "metadata": {}
+  },
+  {
+    "tag": "llm_call",
+    "name": "task_agent:t_784cb4ca",
+    "started_at": "2026-03-30T20:32:52.608085+00:00",
+    "ended_at": "2026-03-30T20:32:52.608435+00:00",
+    "duration_ms": 0.35258400021120906,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.610852+00:00",
+    "ended_at": "2026-03-30T20:32:57.611205+00:00",
+    "duration_ms": 0.3532499831635505,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.507367+00:00",
+    "ended_at": "2026-03-30T20:32:57.507721+00:00",
+    "duration_ms": 0.35337498411536217,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_30",
+    "started_at": "2026-03-30T20:32:53.780874+00:00",
+    "ended_at": "2026-03-30T20:32:53.781236+00:00",
+    "duration_ms": 0.35458398633636534,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_19",
+    "started_at": "2026-03-30T20:32:53.216531+00:00",
+    "ended_at": "2026-03-30T20:32:53.216894+00:00",
+    "duration_ms": 0.3552910056896508,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.869873+00:00",
+    "ended_at": "2026-03-30T20:32:57.870230+00:00",
+    "duration_ms": 0.3565840015653521,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.640646+00:00",
+    "ended_at": "2026-03-30T20:32:55.641004+00:00",
+    "duration_ms": 0.3586249949876219,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_36",
+    "started_at": "2026-03-30T20:32:54.088145+00:00",
+    "ended_at": "2026-03-30T20:32:54.088515+00:00",
+    "duration_ms": 0.3592080029193312,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_6",
+    "started_at": "2026-03-30T20:32:55.710252+00:00",
+    "ended_at": "2026-03-30T20:32:55.710620+00:00",
+    "duration_ms": 0.35995899816043675,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.646974+00:00",
+    "ended_at": "2026-03-30T20:32:58.647334+00:00",
+    "duration_ms": 0.35995899816043675,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_6",
+    "started_at": "2026-03-30T20:32:59.100875+00:00",
+    "ended_at": "2026-03-30T20:32:59.101242+00:00",
+    "duration_ms": 0.36004200228489935,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_45",
+    "started_at": "2026-03-30T20:33:00.467518+00:00",
+    "ended_at": "2026-03-30T20:33:00.467892+00:00",
+    "duration_ms": 0.36199999158270657,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_44",
+    "started_at": "2026-03-30T20:33:00.431982+00:00",
+    "ended_at": "2026-03-30T20:33:00.432358+00:00",
+    "duration_ms": 0.3627090191002935,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_42",
+    "started_at": "2026-03-30T20:33:00.362486+00:00",
+    "ended_at": "2026-03-30T20:33:00.362862+00:00",
+    "duration_ms": 0.3632910083979368,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_44",
+    "started_at": "2026-03-30T20:32:54.498098+00:00",
+    "ended_at": "2026-03-30T20:32:54.498469+00:00",
+    "duration_ms": 0.3642920055426657,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "tool:start_job",
+    "started_at": "2026-03-30T20:32:58.890455+00:00",
+    "ended_at": "2026-03-30T20:32:58.890823+00:00",
+    "duration_ms": 0.3658330242615193,
+    "metadata": {
+      "tool": "start_job"
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_10",
+    "started_at": "2026-03-30T20:32:52.760516+00:00",
+    "ended_at": "2026-03-30T20:32:52.760894+00:00",
+    "duration_ms": 0.3658749919850379,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.031199+00:00",
+    "ended_at": "2026-03-30T20:32:59.031565+00:00",
+    "duration_ms": 0.3664999967440963,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.231282+00:00",
+    "ended_at": "2026-03-30T20:32:58.231649+00:00",
+    "duration_ms": 0.36712500150315464,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_8",
+    "started_at": "2026-03-30T20:32:59.170011+00:00",
+    "ended_at": "2026-03-30T20:32:59.170389+00:00",
+    "duration_ms": 0.36766601260751486,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_5",
+    "started_at": "2026-03-30T20:32:59.066101+00:00",
+    "ended_at": "2026-03-30T20:32:59.066479+00:00",
+    "duration_ms": 0.3687499847728759,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.467228+00:00",
+    "ended_at": "2026-03-30T20:32:55.467598+00:00",
+    "duration_ms": 0.3699999942909926,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_34",
+    "started_at": "2026-03-30T20:33:00.082034+00:00",
+    "ended_at": "2026-03-30T20:33:00.082412+00:00",
+    "duration_ms": 0.3715000057127327,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_18",
+    "started_at": "2026-03-30T20:32:59.517518+00:00",
+    "ended_at": "2026-03-30T20:32:59.517901+00:00",
+    "duration_ms": 0.3718750085681677,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_17",
+    "started_at": "2026-03-30T20:32:56.092133+00:00",
+    "ended_at": "2026-03-30T20:32:56.092513+00:00",
+    "duration_ms": 0.3747090231627226,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_41",
+    "started_at": "2026-03-30T20:33:00.326909+00:00",
+    "ended_at": "2026-03-30T20:33:00.327296+00:00",
+    "duration_ms": 0.3750420000869781,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_52",
+    "started_at": "2026-03-30T20:32:54.906795+00:00",
+    "ended_at": "2026-03-30T20:32:54.907181+00:00",
+    "duration_ms": 0.37624998367391527,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.745736+00:00",
+    "ended_at": "2026-03-30T20:32:55.746114+00:00",
+    "duration_ms": 0.37833297392353415,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_42",
+    "started_at": "2026-03-30T20:32:54.396515+00:00",
+    "ended_at": "2026-03-30T20:32:54.396909+00:00",
+    "duration_ms": 0.3792500065173954,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_54",
+    "started_at": "2026-03-30T20:32:55.009233+00:00",
+    "ended_at": "2026-03-30T20:32:55.009625+00:00",
+    "duration_ms": 0.38104201667010784,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_3",
+    "started_at": "2026-03-30T20:32:52.402406+00:00",
+    "ended_at": "2026-03-30T20:32:52.402794+00:00",
+    "duration_ms": 0.3867080085910857,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.934818+00:00",
+    "ended_at": "2026-03-30T20:32:53.935205+00:00",
+    "duration_ms": 0.3873750101774931,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_26",
+    "started_at": "2026-03-30T20:32:53.576074+00:00",
+    "ended_at": "2026-03-30T20:32:53.576475+00:00",
+    "duration_ms": 0.38750001112930477,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.421003+00:00",
+    "ended_at": "2026-03-30T20:32:53.421391+00:00",
+    "duration_ms": 0.3877500130329281,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_60",
+    "started_at": "2026-03-30T20:32:55.314396+00:00",
+    "ended_at": "2026-03-30T20:32:55.314796+00:00",
+    "duration_ms": 0.38804099312983453,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.397463+00:00",
+    "ended_at": "2026-03-30T20:33:00.397851+00:00",
+    "duration_ms": 0.38862499059177935,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_8",
+    "started_at": "2026-03-30T20:32:52.657513+00:00",
+    "ended_at": "2026-03-30T20:32:52.657914+00:00",
+    "duration_ms": 0.38899999344721437,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_53",
+    "started_at": "2026-03-30T20:33:00.750885+00:00",
+    "ended_at": "2026-03-30T20:33:00.751290+00:00",
+    "duration_ms": 0.39066700264811516,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_24",
+    "started_at": "2026-03-30T20:32:56.335645+00:00",
+    "ended_at": "2026-03-30T20:32:56.336051+00:00",
+    "duration_ms": 0.3932089894078672,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_23",
+    "started_at": "2026-03-30T20:32:59.693492+00:00",
+    "ended_at": "2026-03-30T20:32:59.693895+00:00",
+    "duration_ms": 0.3943750052712858,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_50",
+    "started_at": "2026-03-30T20:33:00.645169+00:00",
+    "ended_at": "2026-03-30T20:33:00.645579+00:00",
+    "duration_ms": 0.3953330160584301,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_51",
+    "started_at": "2026-03-30T20:33:00.680017+00:00",
+    "ended_at": "2026-03-30T20:33:00.680425+00:00",
+    "duration_ms": 0.3957090084441006,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_38",
+    "started_at": "2026-03-30T20:32:54.190868+00:00",
+    "ended_at": "2026-03-30T20:32:54.191276+00:00",
+    "duration_ms": 0.3964999923482537,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_27",
+    "started_at": "2026-03-30T20:32:59.835669+00:00",
+    "ended_at": "2026-03-30T20:32:59.836076+00:00",
+    "duration_ms": 0.3975830040872097,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_22",
+    "started_at": "2026-03-30T20:32:56.265513+00:00",
+    "ended_at": "2026-03-30T20:32:56.265918+00:00",
+    "duration_ms": 0.39883400313556194,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.128644+00:00",
+    "ended_at": "2026-03-30T20:32:58.129045+00:00",
+    "duration_ms": 0.40087499655783176,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.765497+00:00",
+    "ended_at": "2026-03-30T20:32:57.765898+00:00",
+    "duration_ms": 0.4012080025859177,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "EconomyExpert:j_d268fd9b",
+    "started_at": "2026-03-30T20:32:56.581703+00:00",
+    "ended_at": "2026-03-30T20:32:56.582105+00:00",
+    "duration_ms": 0.4015419981442392,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_12",
+    "started_at": "2026-03-30T20:32:59.309142+00:00",
+    "ended_at": "2026-03-30T20:32:59.309557+00:00",
+    "duration_ms": 0.4032920114696026,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.302216+00:00",
+    "ended_at": "2026-03-30T20:32:57.302623+00:00",
+    "duration_ms": 0.4070000140927732,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.251629+00:00",
+    "ended_at": "2026-03-30T20:32:57.252037+00:00",
+    "duration_ms": 0.40874999831430614,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:58.283584+00:00",
+    "ended_at": "2026-03-30T20:32:58.283994+00:00",
+    "duration_ms": 0.410084001487121,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_13",
+    "started_at": "2026-03-30T20:32:55.954402+00:00",
+    "ended_at": "2026-03-30T20:32:55.954818+00:00",
+    "duration_ms": 0.41087501449510455,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.097500+00:00",
+    "ended_at": "2026-03-30T20:32:57.097911+00:00",
+    "duration_ms": 0.41137501830235124,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.628298+00:00",
+    "ended_at": "2026-03-30T20:32:53.628710+00:00",
+    "duration_ms": 0.4122499958612025,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_40",
+    "started_at": "2026-03-30T20:32:54.292770+00:00",
+    "ended_at": "2026-03-30T20:32:54.293200+00:00",
+    "duration_ms": 0.41729200165718794,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.503080+00:00",
+    "ended_at": "2026-03-30T20:33:00.503498+00:00",
+    "duration_ms": 0.41808298556134105,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.138754+00:00",
+    "ended_at": "2026-03-30T20:32:54.139177+00:00",
+    "duration_ms": 0.42112497612833977,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.291772+00:00",
+    "ended_at": "2026-03-30T20:33:00.292193+00:00",
+    "duration_ms": 0.4215410153847188,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_16",
+    "started_at": "2026-03-30T20:32:53.065644+00:00",
+    "ended_at": "2026-03-30T20:32:53.066082+00:00",
+    "duration_ms": 0.42550000944174826,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.994280+00:00",
+    "ended_at": "2026-03-30T20:32:56.994708+00:00",
+    "duration_ms": 0.428917002864182,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.046528+00:00",
+    "ended_at": "2026-03-30T20:32:57.046957+00:00",
+    "duration_ms": 0.4296249826438725,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_28",
+    "started_at": "2026-03-30T20:32:53.678420+00:00",
+    "ended_at": "2026-03-30T20:32:53.678864+00:00",
+    "duration_ms": 0.432166998507455,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "ReconExpert:j_bc2a05cd",
+    "started_at": "2026-03-30T20:32:54.448709+00:00",
+    "ended_at": "2026-03-30T20:32:54.449146+00:00",
+    "duration_ms": 0.4366670036688447,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.475933+00:00",
+    "ended_at": "2026-03-30T20:32:56.476372+00:00",
+    "duration_ms": 0.4396660078782588,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.831543+00:00",
+    "ended_at": "2026-03-30T20:32:53.831986+00:00",
+    "duration_ms": 0.4435419978108257,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_32",
+    "started_at": "2026-03-30T20:33:00.012329+00:00",
+    "ended_at": "2026-03-30T20:33:00.012782+00:00",
+    "duration_ms": 0.44429200352169573,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.504132+00:00",
+    "ended_at": "2026-03-30T20:32:52.504575+00:00",
+    "duration_ms": 0.44437500764615834,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_10",
+    "started_at": "2026-03-30T20:32:55.850836+00:00",
+    "ended_at": "2026-03-30T20:32:55.851289+00:00",
+    "duration_ms": 0.4447920073289424,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.364509+00:00",
+    "ended_at": "2026-03-30T20:32:55.364954+00:00",
+    "duration_ms": 0.44537498615682125,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_19",
+    "started_at": "2026-03-30T20:32:56.161067+00:00",
+    "ended_at": "2026-03-30T20:32:56.161518+00:00",
+    "duration_ms": 0.44758300646208227,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_20",
+    "started_at": "2026-03-30T20:32:59.587438+00:00",
+    "ended_at": "2026-03-30T20:32:59.587896+00:00",
+    "duration_ms": 0.44850000995211303,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.058004+00:00",
+    "ended_at": "2026-03-30T20:32:56.058453+00:00",
+    "duration_ms": 0.44879200868308544,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.456192+00:00",
+    "ended_at": "2026-03-30T20:32:57.456642+00:00",
+    "duration_ms": 0.44958401122130454,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_27",
+    "started_at": "2026-03-30T20:32:56.441284+00:00",
+    "ended_at": "2026-03-30T20:32:56.441747+00:00",
+    "duration_ms": 0.45008398592472076,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.544995+00:00",
+    "ended_at": "2026-03-30T20:32:56.545447+00:00",
+    "duration_ms": 0.4516670014709234,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_21",
+    "started_at": "2026-03-30T20:32:59.622988+00:00",
+    "ended_at": "2026-03-30T20:32:59.623451+00:00",
+    "duration_ms": 0.45195798156782985,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_32",
+    "started_at": "2026-03-30T20:32:53.882681+00:00",
+    "ended_at": "2026-03-30T20:32:53.883146+00:00",
+    "duration_ms": 0.4566249845083803,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_11",
+    "started_at": "2026-03-30T20:32:57.353121+00:00",
+    "ended_at": "2026-03-30T20:32:57.353588+00:00",
+    "duration_ms": 0.458958005765453,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.148285+00:00",
+    "ended_at": "2026-03-30T20:32:57.148748+00:00",
+    "duration_ms": 0.4625000001396984,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_11",
+    "started_at": "2026-03-30T20:32:59.275000+00:00",
+    "ended_at": "2026-03-30T20:32:59.275476+00:00",
+    "duration_ms": 0.46391700743697584,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.957067+00:00",
+    "ended_at": "2026-03-30T20:32:54.957532+00:00",
+    "duration_ms": 0.4661249986384064,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.162119+00:00",
+    "ended_at": "2026-03-30T20:32:55.162586+00:00",
+    "duration_ms": 0.46725000720471144,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_12",
+    "started_at": "2026-03-30T20:32:52.861775+00:00",
+    "ended_at": "2026-03-30T20:32:52.862258+00:00",
+    "duration_ms": 0.46900002053007483,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_29",
+    "started_at": "2026-03-30T20:32:53.728709+00:00",
+    "ended_at": "2026-03-30T20:32:53.729185+00:00",
+    "duration_ms": 0.4702500009443611,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.059824+00:00",
+    "ended_at": "2026-03-30T20:32:55.060295+00:00",
+    "duration_ms": 0.4709170025307685,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.715621+00:00",
+    "ended_at": "2026-03-30T20:33:00.716097+00:00",
+    "duration_ms": 0.47566700959578156,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.818367+00:00",
+    "ended_at": "2026-03-30T20:33:00.818846+00:00",
+    "duration_ms": 0.4782910109497607,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.371262+00:00",
+    "ended_at": "2026-03-30T20:32:56.371740+00:00",
+    "duration_ms": 0.479207985335961,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:57.405415+00:00",
+    "ended_at": "2026-03-30T20:32:57.405894+00:00",
+    "duration_ms": 0.4794579872395843,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_25",
+    "started_at": "2026-03-30T20:32:58.078067+00:00",
+    "ended_at": "2026-03-30T20:32:58.078559+00:00",
+    "duration_ms": 0.47970798914320767,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.344036+00:00",
+    "ended_at": "2026-03-30T20:32:59.344518+00:00",
+    "duration_ms": 0.48237500595860183,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_27",
+    "started_at": "2026-03-30T20:32:58.180564+00:00",
+    "ended_at": "2026-03-30T20:32:58.181065+00:00",
+    "duration_ms": 0.48841701936908066,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_6",
+    "started_at": "2026-03-30T20:32:52.556291+00:00",
+    "ended_at": "2026-03-30T20:32:52.556795+00:00",
+    "duration_ms": 0.49054098781198263,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_9",
+    "started_at": "2026-03-30T20:32:59.205380+00:00",
+    "ended_at": "2026-03-30T20:32:59.205886+00:00",
+    "duration_ms": 0.49220898654311895,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_58",
+    "started_at": "2026-03-30T20:32:55.212292+00:00",
+    "ended_at": "2026-03-30T20:32:55.212796+00:00",
+    "duration_ms": 0.49366700113750994,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_17",
+    "started_at": "2026-03-30T20:32:59.483021+00:00",
+    "ended_at": "2026-03-30T20:32:59.483529+00:00",
+    "duration_ms": 0.49524998757988214,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.037853+00:00",
+    "ended_at": "2026-03-30T20:32:54.038350+00:00",
+    "duration_ms": 0.49620799836702645,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_35",
+    "started_at": "2026-03-30T20:32:58.594716+00:00",
+    "ended_at": "2026-03-30T20:32:58.595224+00:00",
+    "duration_ms": 0.49708300502970815,
+    "metadata": {}
+  },
+  {
+    "tag": "tool_exec",
+    "name": "kernel:route_events",
+    "started_at": "2026-03-30T20:32:56.580969+00:00",
+    "ended_at": "2026-03-30T20:32:56.581471+00:00",
+    "duration_ms": 0.5019580130465329,
+    "metadata": {
+      "count": 2
+    }
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_24",
+    "started_at": "2026-03-30T20:32:59.729072+00:00",
+    "ended_at": "2026-03-30T20:32:59.729586+00:00",
+    "duration_ms": 0.5037499940954149,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.923855+00:00",
+    "ended_at": "2026-03-30T20:33:00.924360+00:00",
+    "duration_ms": 0.5057500093244016,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_14",
+    "started_at": "2026-03-30T20:32:59.379664+00:00",
+    "ended_at": "2026-03-30T20:32:59.380184+00:00",
+    "duration_ms": 0.5093750078231096,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_31",
+    "started_at": "2026-03-30T20:32:58.387105+00:00",
+    "ended_at": "2026-03-30T20:32:58.387626+00:00",
+    "duration_ms": 0.5099580157548189,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_23",
+    "started_at": "2026-03-30T20:32:57.973850+00:00",
+    "ended_at": "2026-03-30T20:32:57.974377+00:00",
+    "duration_ms": 0.5130420031491667,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:33:00.609565+00:00",
+    "ended_at": "2026-03-30T20:33:00.610076+00:00",
+    "duration_ms": 0.5139999848324805,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_17",
+    "started_at": "2026-03-30T20:32:57.663046+00:00",
+    "ended_at": "2026-03-30T20:32:57.663573+00:00",
+    "duration_ms": 0.5148340133018792,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_4",
+    "started_at": "2026-03-30T20:32:59.031184+00:00",
+    "ended_at": "2026-03-30T20:32:59.031709+00:00",
+    "duration_ms": 0.5171249795239419,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_20",
+    "started_at": "2026-03-30T20:32:57.817691+00:00",
+    "ended_at": "2026-03-30T20:32:57.818221+00:00",
+    "duration_ms": 0.517250009579584,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_46",
+    "started_at": "2026-03-30T20:32:54.599938+00:00",
+    "ended_at": "2026-03-30T20:32:54.600473+00:00",
+    "duration_ms": 0.5229579983279109,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_50",
+    "started_at": "2026-03-30T20:32:54.803199+00:00",
+    "ended_at": "2026-03-30T20:32:54.803742+00:00",
+    "duration_ms": 0.5309169937390834,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.855291+00:00",
+    "ended_at": "2026-03-30T20:32:54.855825+00:00",
+    "duration_ms": 0.5340839852578938,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_18",
+    "started_at": "2026-03-30T20:32:53.166251+00:00",
+    "ended_at": "2026-03-30T20:32:53.166802+00:00",
+    "duration_ms": 0.5363340023905039,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_34",
+    "started_at": "2026-03-30T20:32:58.542476+00:00",
+    "ended_at": "2026-03-30T20:32:58.543020+00:00",
+    "duration_ms": 0.537499989150092,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.941189+00:00",
+    "ended_at": "2026-03-30T20:32:59.941728+00:00",
+    "duration_ms": 0.5384579999372363,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:56.580318+00:00",
+    "ended_at": "2026-03-30T20:32:56.580856+00:00",
+    "duration_ms": 0.5385419935919344,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_21",
+    "started_at": "2026-03-30T20:32:57.869857+00:00",
+    "ended_at": "2026-03-30T20:32:57.870404+00:00",
+    "duration_ms": 0.5396250053308904,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_38",
+    "started_at": "2026-03-30T20:32:58.750572+00:00",
+    "ended_at": "2026-03-30T20:32:58.751127+00:00",
+    "duration_ms": 0.5402909882832319,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_32",
+    "started_at": "2026-03-30T20:32:58.439273+00:00",
+    "ended_at": "2026-03-30T20:32:58.439824+00:00",
+    "duration_ms": 0.5438749794848263,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_14",
+    "started_at": "2026-03-30T20:32:52.962561+00:00",
+    "ended_at": "2026-03-30T20:32:52.963122+00:00",
+    "duration_ms": 0.5467080045491457,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_15",
+    "started_at": "2026-03-30T20:32:57.558655+00:00",
+    "ended_at": "2026-03-30T20:32:57.559218+00:00",
+    "duration_ms": 0.5514590011443943,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_48",
+    "started_at": "2026-03-30T20:33:00.573900+00:00",
+    "ended_at": "2026-03-30T20:33:00.574467+00:00",
+    "duration_ms": 0.55233298917301,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.871212+00:00",
+    "ended_at": "2026-03-30T20:32:59.871768+00:00",
+    "duration_ms": 0.5549580091610551,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_26",
+    "started_at": "2026-03-30T20:32:56.406795+00:00",
+    "ended_at": "2026-03-30T20:32:56.407366+00:00",
+    "duration_ms": 0.5574999959208071,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_33",
+    "started_at": "2026-03-30T20:32:58.491418+00:00",
+    "ended_at": "2026-03-30T20:32:58.491984+00:00",
+    "duration_ms": 0.5592499801423401,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_18",
+    "started_at": "2026-03-30T20:32:57.713255+00:00",
+    "ended_at": "2026-03-30T20:32:57.713825+00:00",
+    "duration_ms": 0.5651249957736582,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.606707+00:00",
+    "ended_at": "2026-03-30T20:32:52.607272+00:00",
+    "duration_ms": 0.5658330046571791,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.448289+00:00",
+    "ended_at": "2026-03-30T20:32:59.448856+00:00",
+    "duration_ms": 0.5673750129062682,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_14",
+    "started_at": "2026-03-30T20:32:57.507345+00:00",
+    "ended_at": "2026-03-30T20:32:57.507926+00:00",
+    "duration_ms": 0.5683750205207616,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_46",
+    "started_at": "2026-03-30T20:33:00.503068+00:00",
+    "ended_at": "2026-03-30T20:33:00.503646+00:00",
+    "duration_ms": 0.5720840126741678,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_24",
+    "started_at": "2026-03-30T20:32:58.025882+00:00",
+    "ended_at": "2026-03-30T20:32:58.026471+00:00",
+    "duration_ms": 0.5786659894511104,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_22",
+    "started_at": "2026-03-30T20:32:57.922091+00:00",
+    "ended_at": "2026-03-30T20:32:57.922682+00:00",
+    "duration_ms": 0.5789579881820828,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_30",
+    "started_at": "2026-03-30T20:32:58.335717+00:00",
+    "ended_at": "2026-03-30T20:32:58.336304+00:00",
+    "duration_ms": 0.5791249859612435,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_37",
+    "started_at": "2026-03-30T20:32:58.699241+00:00",
+    "ended_at": "2026-03-30T20:32:58.699835+00:00",
+    "duration_ms": 0.5804579996038228,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:55.263973+00:00",
+    "ended_at": "2026-03-30T20:32:55.264554+00:00",
+    "duration_ms": 0.5810829752590507,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_18",
+    "started_at": "2026-03-30T20:32:56.126814+00:00",
+    "ended_at": "2026-03-30T20:32:56.127403+00:00",
+    "duration_ms": 0.5824580148328096,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_43",
+    "started_at": "2026-03-30T20:33:00.397449+00:00",
+    "ended_at": "2026-03-30T20:33:00.398042+00:00",
+    "duration_ms": 0.5863330152351409,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_8",
+    "started_at": "2026-03-30T20:32:57.200554+00:00",
+    "ended_at": "2026-03-30T20:32:57.201157+00:00",
+    "duration_ms": 0.5889160092920065,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_29",
+    "started_at": "2026-03-30T20:32:58.283553+00:00",
+    "ended_at": "2026-03-30T20:32:58.284164+00:00",
+    "duration_ms": 0.5892910121474415,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_27",
+    "started_at": "2026-03-30T20:32:53.628276+00:00",
+    "ended_at": "2026-03-30T20:32:53.628881+00:00",
+    "duration_ms": 0.5917920207139105,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_33",
+    "started_at": "2026-03-30T20:32:53.934803+00:00",
+    "ended_at": "2026-03-30T20:32:53.935404+00:00",
+    "duration_ms": 0.5939170077908784,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_40",
+    "started_at": "2026-03-30T20:33:00.291758+00:00",
+    "ended_at": "2026-03-30T20:33:00.292361+00:00",
+    "duration_ms": 0.5966669996269047,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_36",
+    "started_at": "2026-03-30T20:32:58.646950+00:00",
+    "ended_at": "2026-03-30T20:32:58.647560+00:00",
+    "duration_ms": 0.596875004703179,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.709619+00:00",
+    "ended_at": "2026-03-30T20:32:52.710221+00:00",
+    "duration_ms": 0.6025419861543924,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.811252+00:00",
+    "ended_at": "2026-03-30T20:32:52.811864+00:00",
+    "duration_ms": 0.612416013609618,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_61",
+    "started_at": "2026-03-30T20:32:55.364498+00:00",
+    "ended_at": "2026-03-30T20:32:55.365119+00:00",
+    "duration_ms": 0.6155000010039657,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.241503+00:00",
+    "ended_at": "2026-03-30T20:32:54.242119+00:00",
+    "duration_ms": 0.6161250057630241,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_19",
+    "started_at": "2026-03-30T20:32:57.765473+00:00",
+    "ended_at": "2026-03-30T20:32:57.766102+00:00",
+    "duration_ms": 0.6161659839563072,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_37",
+    "started_at": "2026-03-30T20:32:54.138722+00:00",
+    "ended_at": "2026-03-30T20:32:54.139358+00:00",
+    "duration_ms": 0.6245420081540942,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_48",
+    "started_at": "2026-03-30T20:32:54.700862+00:00",
+    "ended_at": "2026-03-30T20:32:54.701502+00:00",
+    "duration_ms": 0.6269169971346855,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.014193+00:00",
+    "ended_at": "2026-03-30T20:32:53.014825+00:00",
+    "duration_ms": 0.6328749877866358,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.239985+00:00",
+    "ended_at": "2026-03-30T20:32:59.240623+00:00",
+    "duration_ms": 0.6372080242726952,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_5",
+    "started_at": "2026-03-30T20:32:52.504116+00:00",
+    "ended_at": "2026-03-30T20:32:52.504764+00:00",
+    "duration_ms": 0.6403749866876751,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_16",
+    "started_at": "2026-03-30T20:32:57.610832+00:00",
+    "ended_at": "2026-03-30T20:32:57.611481+00:00",
+    "duration_ms": 0.6407500186469406,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_28",
+    "started_at": "2026-03-30T20:32:58.231259+00:00",
+    "ended_at": "2026-03-30T20:32:58.231913+00:00",
+    "duration_ms": 0.642083992715925,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_31",
+    "started_at": "2026-03-30T20:32:53.831525+00:00",
+    "ended_at": "2026-03-30T20:32:53.832180+00:00",
+    "duration_ms": 0.6439579883590341,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.524816+00:00",
+    "ended_at": "2026-03-30T20:32:53.525463+00:00",
+    "duration_ms": 0.6475829868577421,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.549272+00:00",
+    "ended_at": "2026-03-30T20:32:54.549935+00:00",
+    "duration_ms": 0.6635839818045497,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.135131+00:00",
+    "ended_at": "2026-03-30T20:32:59.135797+00:00",
+    "duration_ms": 0.6664580141659826,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_28",
+    "started_at": "2026-03-30T20:32:56.475912+00:00",
+    "ended_at": "2026-03-30T20:32:56.476594+00:00",
+    "duration_ms": 0.6699580117128789,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.447596+00:00",
+    "ended_at": "2026-03-30T20:32:54.448266+00:00",
+    "duration_ms": 0.670375011395663,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_13",
+    "started_at": "2026-03-30T20:32:59.344015+00:00",
+    "ended_at": "2026-03-30T20:32:59.344699+00:00",
+    "duration_ms": 0.6722079997416586,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_52",
+    "started_at": "2026-03-30T20:33:00.715598+00:00",
+    "ended_at": "2026-03-30T20:33:00.716289+00:00",
+    "duration_ms": 0.6770000036340207,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_35",
+    "started_at": "2026-03-30T20:32:54.037833+00:00",
+    "ended_at": "2026-03-30T20:32:54.038524+00:00",
+    "duration_ms": 0.6800410046707839,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.753082+00:00",
+    "ended_at": "2026-03-30T20:32:54.753762+00:00",
+    "duration_ms": 0.6804590229876339,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_30",
+    "started_at": "2026-03-30T20:32:56.544972+00:00",
+    "ended_at": "2026-03-30T20:32:56.545669+00:00",
+    "duration_ms": 0.6835829990450293,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_55",
+    "started_at": "2026-03-30T20:32:55.059802+00:00",
+    "ended_at": "2026-03-30T20:32:55.060503+00:00",
+    "duration_ms": 0.6882089946884662,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_26",
+    "started_at": "2026-03-30T20:32:58.128622+00:00",
+    "ended_at": "2026-03-30T20:32:58.129324+00:00",
+    "duration_ms": 0.6909169896971434,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:53.115754+00:00",
+    "ended_at": "2026-03-30T20:32:53.116449+00:00",
+    "duration_ms": 0.6955829740036279,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_49",
+    "started_at": "2026-03-30T20:33:00.609536+00:00",
+    "ended_at": "2026-03-30T20:33:00.610260+00:00",
+    "duration_ms": 0.7089579885359854,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_6",
+    "started_at": "2026-03-30T20:32:57.097474+00:00",
+    "ended_at": "2026-03-30T20:32:57.098201+00:00",
+    "duration_ms": 0.7128329889383167,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_9",
+    "started_at": "2026-03-30T20:32:57.251603+00:00",
+    "ended_at": "2026-03-30T20:32:57.252329+00:00",
+    "duration_ms": 0.7128329889383167,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_10",
+    "started_at": "2026-03-30T20:32:57.302190+00:00",
+    "ended_at": "2026-03-30T20:32:57.302918+00:00",
+    "duration_ms": 0.7142079994082451,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.764706+00:00",
+    "ended_at": "2026-03-30T20:32:59.765421+00:00",
+    "duration_ms": 0.7155000057537109,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_53",
+    "started_at": "2026-03-30T20:32:54.957052+00:00",
+    "ended_at": "2026-03-30T20:32:54.957775+00:00",
+    "duration_ms": 0.7169579912442714,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_58",
+    "started_at": "2026-03-30T20:33:00.923834+00:00",
+    "ended_at": "2026-03-30T20:33:00.924563+00:00",
+    "duration_ms": 0.7178749947343022,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_55",
+    "started_at": "2026-03-30T20:33:00.818350+00:00",
+    "ended_at": "2026-03-30T20:33:00.819079+00:00",
+    "duration_ms": 0.721415999578312,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_57",
+    "started_at": "2026-03-30T20:32:55.162104+00:00",
+    "ended_at": "2026-03-30T20:32:55.162834+00:00",
+    "duration_ms": 0.7239590049721301,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_5",
+    "started_at": "2026-03-30T20:32:57.046504+00:00",
+    "ended_at": "2026-03-30T20:32:57.047241+00:00",
+    "duration_ms": 0.7249579939525574,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_4",
+    "started_at": "2026-03-30T20:32:56.994253+00:00",
+    "ended_at": "2026-03-30T20:32:56.994993+00:00",
+    "duration_ms": 0.7268750050570816,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_24",
+    "started_at": "2026-03-30T20:32:53.473123+00:00",
+    "ended_at": "2026-03-30T20:32:53.473871+00:00",
+    "duration_ms": 0.7354580156970769,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.650588+00:00",
+    "ended_at": "2026-03-30T20:32:54.651327+00:00",
+    "duration_ms": 0.7393750129267573,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.657990+00:00",
+    "ended_at": "2026-03-30T20:32:59.658741+00:00",
+    "duration_ms": 0.7514999888371676,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.553122+00:00",
+    "ended_at": "2026-03-30T20:32:59.553878+00:00",
+    "duration_ms": 0.755416986066848,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:59.976811+00:00",
+    "ended_at": "2026-03-30T20:32:59.977571+00:00",
+    "duration_ms": 0.759749993449077,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_51",
+    "started_at": "2026-03-30T20:32:54.855268+00:00",
+    "ended_at": "2026-03-30T20:32:54.856052+00:00",
+    "duration_ms": 0.7712499937042594,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_28",
+    "started_at": "2026-03-30T20:32:59.871194+00:00",
+    "ended_at": "2026-03-30T20:32:59.871985+00:00",
+    "duration_ms": 0.781790993642062,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_13",
+    "started_at": "2026-03-30T20:32:57.456163+00:00",
+    "ended_at": "2026-03-30T20:32:57.456961+00:00",
+    "duration_ms": 0.7845000072848052,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:54.345048+00:00",
+    "ended_at": "2026-03-30T20:32:54.345846+00:00",
+    "duration_ms": 0.7983750256244093,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_7",
+    "started_at": "2026-03-30T20:32:57.148256+00:00",
+    "ended_at": "2026-03-30T20:32:57.149069+00:00",
+    "duration_ms": 0.7987089920789003,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_7",
+    "started_at": "2026-03-30T20:32:55.745722+00:00",
+    "ended_at": "2026-03-30T20:32:55.746527+00:00",
+    "duration_ms": 0.8003749826457351,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_16",
+    "started_at": "2026-03-30T20:32:56.057990+00:00",
+    "ended_at": "2026-03-30T20:32:56.058820+00:00",
+    "duration_ms": 0.8237499860115349,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_16",
+    "started_at": "2026-03-30T20:32:59.448269+00:00",
+    "ended_at": "2026-03-30T20:32:59.449111+00:00",
+    "duration_ms": 0.8317500178236514,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_12",
+    "started_at": "2026-03-30T20:32:57.405387+00:00",
+    "ended_at": "2026-03-30T20:32:57.406235+00:00",
+    "duration_ms": 0.8345840033143759,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_4",
+    "started_at": "2026-03-30T20:32:55.640631+00:00",
+    "ended_at": "2026-03-30T20:32:55.641476+00:00",
+    "duration_ms": 0.8377920021302998,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_9",
+    "started_at": "2026-03-30T20:32:52.709600+00:00",
+    "ended_at": "2026-03-30T20:32:52.710450+00:00",
+    "duration_ms": 0.8408339926972985,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_30",
+    "started_at": "2026-03-30T20:32:59.941164+00:00",
+    "ended_at": "2026-03-30T20:32:59.942023+00:00",
+    "duration_ms": 0.846249982714653,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_25",
+    "started_at": "2026-03-30T20:32:56.371235+00:00",
+    "ended_at": "2026-03-30T20:32:56.372103+00:00",
+    "duration_ms": 0.8513750217389315,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_23",
+    "started_at": "2026-03-30T20:32:53.420989+00:00",
+    "ended_at": "2026-03-30T20:32:53.421852+00:00",
+    "duration_ms": 0.8566250035073608,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_25",
+    "started_at": "2026-03-30T20:32:53.524772+00:00",
+    "ended_at": "2026-03-30T20:32:53.525672+00:00",
+    "duration_ms": 0.8683750056661665,
+    "metadata": {}
+  },
+  {
+    "tag": "world_refresh",
+    "name": "WorldModel.refresh",
+    "started_at": "2026-03-30T20:32:52.912118+00:00",
+    "ended_at": "2026-03-30T20:32:52.912993+00:00",
+    "duration_ms": 0.8763749792706221,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_59",
+    "started_at": "2026-03-30T20:32:55.263950+00:00",
+    "ended_at": "2026-03-30T20:32:55.264846+00:00",
+    "duration_ms": 0.8828330028336495,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_11",
+    "started_at": "2026-03-30T20:32:52.811227+00:00",
+    "ended_at": "2026-03-30T20:32:52.812126+00:00",
+    "duration_ms": 0.8846249838825315,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_63",
+    "started_at": "2026-03-30T20:32:55.467214+00:00",
+    "ended_at": "2026-03-30T20:32:55.468140+00:00",
+    "duration_ms": 0.9187500108964741,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_10",
+    "started_at": "2026-03-30T20:32:59.239967+00:00",
+    "ended_at": "2026-03-30T20:32:59.240893+00:00",
+    "duration_ms": 0.9188750118482858,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_39",
+    "started_at": "2026-03-30T20:32:54.241479+00:00",
+    "ended_at": "2026-03-30T20:32:54.242422+00:00",
+    "duration_ms": 0.9296670032199472,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_15",
+    "started_at": "2026-03-30T20:32:53.014168+00:00",
+    "ended_at": "2026-03-30T20:32:53.015134+00:00",
+    "duration_ms": 0.9517500002402812,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_7",
+    "started_at": "2026-03-30T20:32:52.606686+00:00",
+    "ended_at": "2026-03-30T20:32:52.607681+00:00",
+    "duration_ms": 0.9824169974308461,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_7",
+    "started_at": "2026-03-30T20:32:59.135105+00:00",
+    "ended_at": "2026-03-30T20:32:59.136108+00:00",
+    "duration_ms": 0.9901669982355088,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_17",
+    "started_at": "2026-03-30T20:32:53.115730+00:00",
+    "ended_at": "2026-03-30T20:32:53.116734+00:00",
+    "duration_ms": 0.9904170001391321,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_49",
+    "started_at": "2026-03-30T20:32:54.753058+00:00",
+    "ended_at": "2026-03-30T20:32:54.754064+00:00",
+    "duration_ms": 0.9941250027623028,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_25",
+    "started_at": "2026-03-30T20:32:59.764680+00:00",
+    "ended_at": "2026-03-30T20:32:59.765703+00:00",
+    "duration_ms": 1.0100000072270632,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_45",
+    "started_at": "2026-03-30T20:32:54.549244+00:00",
+    "ended_at": "2026-03-30T20:32:54.550269+00:00",
+    "duration_ms": 1.011709013255313,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_19",
+    "started_at": "2026-03-30T20:32:59.553093+00:00",
+    "ended_at": "2026-03-30T20:32:59.554178+00:00",
+    "duration_ms": 1.0697079997044057,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_31",
+    "started_at": "2026-03-30T20:32:59.976783+00:00",
+    "ended_at": "2026-03-30T20:32:59.977875+00:00",
+    "duration_ms": 1.0782919998746365,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_22",
+    "started_at": "2026-03-30T20:32:59.657963+00:00",
+    "ended_at": "2026-03-30T20:32:59.659062+00:00",
+    "duration_ms": 1.0863329807762057,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_41",
+    "started_at": "2026-03-30T20:32:54.345021+00:00",
+    "ended_at": "2026-03-30T20:32:54.346129+00:00",
+    "duration_ms": 1.0917499894276261,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_13",
+    "started_at": "2026-03-30T20:32:52.912090+00:00",
+    "ended_at": "2026-03-30T20:32:52.913335+00:00",
+    "duration_ms": 1.2315000058151782,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_47",
+    "started_at": "2026-03-30T20:32:54.650565+00:00",
+    "ended_at": "2026-03-30T20:32:54.652080+00:00",
+    "duration_ms": 1.5030409849714488,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_43",
+    "started_at": "2026-03-30T20:32:54.447573+00:00",
+    "ended_at": "2026-03-30T20:32:54.449273+00:00",
+    "duration_ms": 1.6897500026971102,
+    "metadata": {}
+  },
+  {
+    "tag": "job_tick",
+    "name": "game_loop:tick_31",
+    "started_at": "2026-03-30T20:32:56.580294+00:00",
+    "ended_at": "2026-03-30T20:32:56.582202+00:00",
+    "duration_ms": 1.8945000192616135,
+    "metadata": {}
+  }
+]

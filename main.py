@@ -1,895 +1,563 @@
-"""
-THE-Seed OpenRA - 简化版主入口
+"""Phase 7 application entrypoint and runtime assembly.
 
-单一流程：玩家输入 → 观测 → 代码生成 → 执行
+Start order (design.md §2):
+    GameAPI -> WorldModel -> Kernel -> Dashboard(WS) -> GameLoop
 """
+
 from __future__ import annotations
 
-import signal
-import subprocess
-import sys
-import threading
-import time
+import argparse
+import asyncio
+from dataclasses import dataclass
+import logging
 import os
 from pathlib import Path
+import signal
+import sys
+from typing import Any, Optional
 
-import yaml
+import benchmark
 
-from agents.enemy_agent import EnemyAgent
-from agents.nlu_gateway import Phase2NLUGateway
-from nlu_pipeline.interaction_logger import append_interaction_event
-from adapter.openra_env import OpenRAEnv
-from openra_api.game_api import GameAPI
-from openra_api.jobs import JobManager, ExploreJob, AttackJob
-from openra_api.models import (
-    Location,
-    TargetsQueryParam,
-    Actor,
-    MapQueryResult,
-    FrozenActor,
-    ControlPoint,
-    ControlPointQueryResult,
-    MatchInfoQueryResult,
-    PlayerBaseInfo,
-    ScreenInfoResult,
+from adjutant import Adjutant, AdjutantConfig
+from experts.base import ExecutionExpert
+from experts.combat import CombatExpert
+from experts.deploy import DeployExpert
+from experts.economy import EconomyExpert
+from experts.movement import MovementExpert
+from experts.recon import ReconExpert
+from game_loop import GameLoop, GameLoopConfig
+from kernel import Kernel, KernelConfig, TaskAgentFactory
+from llm import AnthropicProvider, LLMProvider, MockProvider, QwenProvider
+from logging_system import (
+    export_benchmark_report_json,
+    export_json as export_log_json,
+    get_logger,
+    records as log_records,
 )
-from openra_api.rts_middle_layer import RTSMiddleLayer
-
-from the_seed.core import CodeGenNode, SimpleExecutor, ExecutorContext, ExecutionResult
-from the_seed.model import ModelFactory
-from the_seed.config import load_config
-from the_seed.utils import LogManager, build_def_style_prompt, DashboardBridge
-
-from event_feed import append_event
-
-logger = LogManager.get_logger()
-
-# Console Bridge 端口 (与 nginx 反代配置一致)
-DASHBOARD_PORT = 8092
-
-# 玩家标识
-HUMAN_PLAYER_ID = "Multi0"
-ENEMY_PLAYER_ID = "Multi1"
-
-# 敌方 AI 配置
-ENEMY_TICK_INTERVAL = 45.0  # 敌方决策间隔（秒）
+from models import PlayerResponse, TaskMessageType, TaskStatus
+from openra_api.game_api import GameAPI
+from task_agent import AgentConfig
+from world_model import GameAPIWorldSource, RefreshPolicy, WorldModel, WorldModelSource
+from ws_server import InboundHandler, WSServer, WSServerConfig
 
 
-def _env_flag(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
+slog = get_logger("main")
+
+
+@dataclass(slots=True)
+class RuntimeConfig:
+    game_host: str = "localhost"
+    game_port: int = 7445
+    game_language: str = "zh"
+    ws_host: str = "0.0.0.0"
+    ws_port: int = 8765
+    tick_hz: float = 10.0
+    actors_refresh_s: float = 0.1
+    economy_refresh_s: float = 0.5
+    map_refresh_s: float = 1.0
+    review_interval: float = 10.0
+    llm_provider: str = "qwen"
+    llm_model: str = "qwen-plus"
+    adjutant_llm_provider: Optional[str] = None
+    adjutant_llm_model: Optional[str] = None
+    benchmark_records_path: str = "docs/wang/phase7_e2e_benchmark_records.json"
+    benchmark_summary_path: str = "docs/wang/phase7_e2e_benchmark_summary.json"
+    log_export_path: str = "docs/wang/phase7_runtime_logs.json"
+    enable_ws: bool = True
+    verify_game_api: bool = True
+
+
+def _load_env_file(path: str = ".env") -> None:
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
     if raw is None:
         return default
-    return str(raw).strip().lower() in {"1", "true", "yes", "on", "y"}
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def resolve_model_config():
-    cfg = load_config()
-    template_name = getattr(cfg.node_models, "action", "default")
-    model_cfg = cfg.model_templates.get(template_name) or cfg.model_templates.get("default")
-    if model_cfg is None:
-        raise RuntimeError("model_templates is empty in the-seed config")
-    return model_cfg
+def _build_provider(provider_name: str, model: str) -> LLMProvider:
+    normalized = provider_name.strip().lower()
+    if normalized == "qwen":
+        return QwenProvider(model=model)
+    if normalized == "anthropic":
+        return AnthropicProvider(model=model)
+    if normalized == "mock":
+        return MockProvider([])
+    raise ValueError(f"Unsupported LLM provider: {provider_name}")
 
 
-def _sync_default_runtime() -> None:
-    """Copy files from default_runtime/ to runtime/ if they don't exist."""
-    src = Path(__file__).resolve().parent / "default_runtime"
-    dst = Path(__file__).resolve().parent / "runtime"
-    if not src.exists():
-        return
-    for root, _dirs, files in os.walk(src):
-        rel = Path(root).relative_to(src)
-        target_dir = dst / rel
-        target_dir.mkdir(parents=True, exist_ok=True)
-        for fname in files:
-            if fname == ".gitkeep":
-                continue
-            target_file = target_dir / fname
-            if not target_file.exists():
-                import shutil
-                shutil.copy2(Path(root) / fname, target_file)
-                logger.info("Synced default_runtime/%s → runtime/%s", rel / fname, rel / fname)
-
-
-def setup_jobs(api: GameAPI, mid: RTSMiddleLayer) -> JobManager:
-    """为 MacroActions 设置 JobManager"""
-    mgr = JobManager(api=api, intel=mid.intel_service)
-    mgr.add_job(ExploreJob(job_id="explore", base_radius=28))
-    mgr.add_job(AttackJob(job_id="attack", step=8))
-    mid.skills.jobs = mgr
-    return mgr
-
-
-def create_executor(api: GameAPI, mid: RTSMiddleLayer) -> SimpleExecutor:
-    """创建执行器"""
-    model_cfg = resolve_model_config()
-    model = ModelFactory.build("codegen", model_cfg)
-    logger.info("使用模型: %s @ %s", model_cfg.model, model_cfg.base_url)
-    
-    codegen = CodeGenNode(model)
-    
-    # 创建环境
-    env = OpenRAEnv(api)
-    
-    # 构建 API 文档
-    api_rules = build_def_style_prompt(
-        mid.skills,
-        [
-            "produce_wait",
-            "ensure_can_produce_unit",
-            "deploy_mcv_and_wait",
-            "harvester_mine",
-            "dispatch_explore",
-            "dispatch_attack",
-            "form_group",
-            "select_units",
-            "query_actor",
-            "query_combat_units",
-            "query_actor_with_frozen",
-            "unit_attribute_query",
-            "query_production_queue",
-            "place_building",
-            "manage_production",
-            "move_units",
-            "attack_move",
-            "attack_target",
-            "stop_units",
-            "repair",
-            "set_rally_point",
-            "player_base_info",
-        ],
-        title="Available functions on OpenRA midlayer API (MacroActions):",
-        include_doc_first_line=True,
-        include_doc_block=False,
-    )
-    
-    # 运行时全局变量
-    runtime_globals = {
-        "api": mid.skills,
-        "gameapi": mid.skills,
-        "raw_api": api,
-        "Location": Location,
-        "TargetsQueryParam": TargetsQueryParam,
-        "Actor": Actor,
-        "MapQueryResult": MapQueryResult,
-        "FrozenActor": FrozenActor,
-        "ControlPoint": ControlPoint,
-        "ControlPointQueryResult": ControlPointQueryResult,
-        "MatchInfoQueryResult": MatchInfoQueryResult,
-        "PlayerBaseInfo": PlayerBaseInfo,
-        "ScreenInfoResult": ScreenInfoResult,
+def build_default_expert_registry(game_api: Any, world_model: WorldModel) -> dict[str, ExecutionExpert]:
+    return {
+        "ReconExpert": ReconExpert(game_api=game_api, world_model=world_model),
+        "MovementExpert": MovementExpert(game_api=game_api, world_model=world_model),
+        "DeployExpert": DeployExpert(game_api=game_api),
+        "CombatExpert": CombatExpert(game_api=game_api, world_model=world_model),
+        "EconomyExpert": EconomyExpert(game_api=game_api, world_model=world_model),
     }
-    
-    ctx = ExecutorContext(
-        api=mid.skills,
-        raw_api=api,
-        api_rules=api_rules,
-        runtime_globals=runtime_globals,
-        observe_fn=env.observe,
-    )
-    
-    return SimpleExecutor(codegen, ctx)
 
 
-def handle_command(
-    executor: SimpleExecutor,
-    command: str,
-    nlu_gateway: Phase2NLUGateway | None = None,
-    *,
-    actor: str = "human",
-) -> dict:
-    """处理单条命令"""
-    logger.info(f"[{actor}] Processing command: {command}")
+class RuntimeBridge(InboundHandler):
+    """Thin integration bridge for GameLoop registration and dashboard fanout."""
 
-    nlu_meta = None
-    if nlu_gateway is not None:
-        result, nlu_meta = nlu_gateway.run(executor, command, rollout_key=actor)
-    else:
-        result = executor.run(command)
-
-    logger.info(
-        "[%s] Command result: success=%s, message=%s%s",
-        actor,
-        result.success,
-        result.message,
-        f", source={nlu_meta.get('source')}, reason={nlu_meta.get('reason')}" if nlu_meta else "",
-    )
-
-    payload = result.to_dict()
-    if nlu_meta:
-        payload["nlu"] = nlu_meta
-    return payload
-
-
-def main() -> None:
-    """主函数"""
-    _sync_default_runtime()
-
-    # ========== 人类玩家 (Multi0) ==========
-    api = GameAPI(host="localhost", port=7445, language="zh", player_id=HUMAN_PLAYER_ID)
-    mid = RTSMiddleLayer(api)
-    human_jobs = setup_jobs(api, mid)
-    executor = create_executor(api, mid)
-
-    # Disable DeepSeek LLM for human side — NLU misses get forwarded to copilot agent
-    def _human_run_stub(command: str, **kw) -> ExecutionResult:
-        return ExecutionResult(
-            success=False,
-            message="NLU未匹配，已转发给copilot agent",
-            error="nlu_miss_forwarded",
-        )
-    executor.run = _human_run_stub
-
-    human_nlu_gateway = Phase2NLUGateway(name="human")
-    logger.info("Human NLU status: %s", human_nlu_gateway.status())
-    logger.info(f"Human player initialized: {HUMAN_PLAYER_ID}")
-    human_status_callback_lock = threading.Lock()
-    human_status_callback_by_thread: dict[int, callable] = {}
-
-    def human_status_dispatch(stage: str, detail: str) -> None:
-        callback = None
-        thread_id = threading.get_ident()
-        with human_status_callback_lock:
-            callback = human_status_callback_by_thread.get(thread_id)
-        if callback is None:
-            return
-        try:
-            callback(stage, detail)
-        except Exception:
-            pass
-
-    executor.ctx.status_callback = human_status_dispatch
-
-    # ========== 敌方 AI (Multi1) ==========
-    enemy_api = GameAPI(host="localhost", port=7445, language="zh", player_id=ENEMY_PLAYER_ID)
-    enemy_mid = RTSMiddleLayer(enemy_api)
-    enemy_jobs = setup_jobs(enemy_api, enemy_mid)
-    enemy_executor = create_executor(enemy_api, enemy_mid)
-    enemy_nlu_gateway = Phase2NLUGateway(name="enemy")
-    logger.info("Enemy NLU status: %s", enemy_nlu_gateway.status())
-    runtime_gateway_cfg_path = Path("nlu_pipeline/configs/runtime_gateway.yaml")
-    project_root = Path(__file__).resolve().parent
-
-    def enemy_command_runner(command: str):
-        if not _is_game_online():
-            return ExecutionResult(
-                success=False,
-                message="OpenRA 未运行，Enemy指令已跳过（未调用LLM）",
-                error="openra_offline",
-            )
-        result, _ = enemy_nlu_gateway.run(enemy_executor, command, rollout_key="enemy_agent")
-        return result
-
-    def mutate_runtime_gateway_config(mutator) -> dict:
-        cfg = {}
-        if runtime_gateway_cfg_path.exists():
-            with runtime_gateway_cfg_path.open("r", encoding="utf-8") as f:
-                cfg = yaml.safe_load(f) or {}
-        mutator(cfg)
-        runtime_gateway_cfg_path.write_text(
-            yaml.safe_dump(cfg, allow_unicode=True, sort_keys=False),
-            encoding="utf-8",
-        )
-        return cfg
-
-    def broadcast_nlu_status() -> None:
-        bridge = DashboardBridge()
-        bridge.broadcast(
-            "nlu_status",
-            {
-                "human": human_nlu_gateway.status(),
-                "enemy": enemy_nlu_gateway.status(),
-            },
-        )
-
-    def run_nlu_job(
+    def __init__(
+        self,
         *,
-        action: str,
-        script: str,
-        report_path: str,
-        extra_args: list[str] | None = None,
+        kernel: Kernel,
+        world_model: WorldModel,
+        game_loop: GameLoop,
+        adjutant: Optional[Adjutant] = None,
     ) -> None:
-        bridge = DashboardBridge()
-        extra_args = extra_args or []
-        cmd = [sys.executable, script, *extra_args]
-        bridge.broadcast(
-            "nlu_job_status",
-            {
-                "action": action,
-                "stage": "start",
-                "cmd": cmd,
-                "timestamp": int(time.time() * 1000),
-            },
-        )
-        try:
-            proc = subprocess.run(
-                cmd,
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            payload = {
-                "action": action,
-                "stage": "done",
-                "returncode": int(proc.returncode),
-                "stdout_tail": (proc.stdout or "")[-4000:],
-                "stderr_tail": (proc.stderr or "")[-4000:],
-                "report_path": report_path,
-                "timestamp": int(time.time() * 1000),
-            }
-            report_file = project_root / report_path
-            if report_file.exists():
-                try:
-                    payload["report"] = yaml.safe_load(report_file.read_text(encoding="utf-8"))
-                except Exception:
-                    payload["report_raw"] = report_file.read_text(encoding="utf-8", errors="ignore")[-4000:]
-            bridge.broadcast("nlu_job_status", payload)
-        except Exception as e:
-            bridge.broadcast(
-                "nlu_job_status",
+        self.kernel = kernel
+        self.world_model = world_model
+        self.game_loop = game_loop
+        self.adjutant = adjutant
+        self.ws_server: Optional[WSServer] = None
+        self.mode = "user"
+
+        self._registered_agents: set[str] = set()
+        self._registered_jobs: set[str] = set()
+        self._task_fingerprints: dict[str, tuple[Any, ...]] = {}
+        self._task_message_offset = 0
+        self._notification_offset = 0
+        self._log_offset = 0
+        self._publish_lock = asyncio.Lock()
+        self._publish_task: Optional[asyncio.Task[Any]] = None
+
+    def attach_ws_server(self, ws_server: Optional[WSServer]) -> None:
+        self.ws_server = ws_server
+
+    def sync_runtime(self) -> None:
+        active_agent_ids: set[str] = set()
+        for task_id, runtime in self.kernel._task_runtimes.items():  # type: ignore[attr-defined]
+            task = runtime.task
+            if task.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.ABORTED, TaskStatus.PARTIAL}:
+                continue
+            active_agent_ids.add(task_id)
+            if task_id not in self._registered_agents:
+                review_interval = getattr(getattr(runtime.agent, "config", None), "review_interval", 10.0)
+                self.game_loop.register_agent(task_id, runtime.agent.queue, review_interval=review_interval)
+                self._registered_agents.add(task_id)
+
+        for task_id in list(self._registered_agents):
+            if task_id not in active_agent_ids:
+                self.game_loop.unregister_agent(task_id)
+                self._registered_agents.discard(task_id)
+
+        active_job_ids: set[str] = set()
+        for job_id, controller in self.kernel._jobs.items():  # type: ignore[attr-defined]
+            if controller.status.value in {"succeeded", "failed", "aborted"}:
+                continue
+            active_job_ids.add(job_id)
+            if job_id not in self._registered_jobs:
+                self.game_loop.register_job(controller)
+                self._registered_jobs.add(job_id)
+
+        for job_id in list(self._registered_jobs):
+            if job_id not in active_job_ids:
+                self.game_loop.unregister_job(job_id)
+                self._registered_jobs.discard(job_id)
+
+    async def publish_dashboard(self) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        async with self._publish_lock:
+            pending_questions = self.kernel.list_pending_questions()
+            await self.ws_server.send_world_snapshot(
                 {
-                    "action": action,
-                    "stage": "error",
-                    "error": str(e),
-                    "timestamp": int(time.time() * 1000),
-                },
-            )
-
-    runtime_model_cfg = resolve_model_config()
-    dialogue_model = ModelFactory.build("enemy_dialogue", runtime_model_cfg)
-    enemy_agent = EnemyAgent(
-        executor=enemy_executor,
-        dialogue_model=dialogue_model,
-        bridge=DashboardBridge(),
-        interval=ENEMY_TICK_INTERVAL,
-        command_runner=enemy_command_runner,
-    )
-    logger.info(f"Enemy AI initialized: {ENEMY_PLAYER_ID}, interval={ENEMY_TICK_INTERVAL}s")
-
-    # ========== Game Runtime State ==========
-    game_runtime_lock = threading.RLock()
-    game_runtime_online = False
-    game_runtime_last_reason = "init"
-    game_runtime_last_change_ms = int(time.time() * 1000)
-
-    def _probe_game_online() -> bool:
-        try:
-            return bool(GameAPI.is_server_running(host="localhost", port=7445, timeout=0.6))
-        except Exception:
-            return False
-
-    def _is_game_online() -> bool:
-        with game_runtime_lock:
-            return bool(game_runtime_online)
-
-    def _broadcast_game_runtime_state(reason: str = "") -> None:
-        with game_runtime_lock:
-            payload = {
-                "online": bool(game_runtime_online),
-                "reason": str(reason or game_runtime_last_reason),
-                "changed_at": int(game_runtime_last_change_ms),
-                "timestamp": int(time.time() * 1000),
-            }
-        DashboardBridge().broadcast("game_runtime_state", payload)
-
-    def _refresh_game_runtime_state(*, reason: str = "periodic_probe", force_broadcast: bool = False) -> bool:
-        nonlocal game_runtime_online, game_runtime_last_reason, game_runtime_last_change_ms
-
-        online = _probe_game_online()
-        changed = False
-        with game_runtime_lock:
-            prev = bool(game_runtime_online)
-            changed = online != prev
-            if changed:
-                game_runtime_online = online
-                game_runtime_last_change_ms = int(time.time() * 1000)
-            game_runtime_last_reason = str(reason or game_runtime_last_reason)
-
-        if changed:
-            if online:
-                logger.info("OpenRA 连接已恢复，系统解除离线闸门")
-            else:
-                logger.warning("OpenRA 未运行/不可达，系统进入离线闸门（停止后台代理与任务）")
-                if bool(getattr(enemy_agent, "running", False)):
-                    enemy_agent.stop()
-
-        if changed or force_broadcast:
-            _broadcast_game_runtime_state(reason=reason)
-
-        return online
-
-    # ========== Jobs State ==========
-    _last_jobs_state_key = ""
-
-    def _serialize_job_manager_state(mgr: JobManager, side: str) -> dict:
-        jobs_payload: list[dict] = []
-        for job in mgr.jobs:
-            actor_ids = mgr.get_actor_ids_for_job(job.job_id, alive_only=True)
-            jobs_payload.append(
-                {
-                    "job_id": str(job.job_id),
-                    "name": str(getattr(job, "NAME", job.job_id)),
-                    "status": str(getattr(job, "status", "")),
-                    "actor_count": len(actor_ids),
-                    "actor_ids": actor_ids[:256],
-                    "last_summary": str(getattr(job, "last_summary", "") or ""),
-                    "last_error": str(getattr(job, "last_error", "") or ""),
+                    **self.world_model.world_summary(),
+                    "runtime_state": self.world_model.runtime_state(),
+                    "pending_questions": pending_questions,
+                    "mode": self.mode,
                 }
             )
-        return {
-            "side": side,
-            "jobs": jobs_payload,
-            "actor_job": {str(k): v for k, v in sorted(mgr.actor_job.items())},
-        }
+            await self.ws_server.send_task_list(
+                [self._task_to_dict(task) for task in self.kernel.list_tasks()],
+                pending_questions=pending_questions,
+            )
+            await self._publish_task_updates()
+            await self._publish_task_messages()
+            await self._publish_notifications()
+            await self._publish_logs()
+            await self._publish_benchmarks()
 
-    def broadcast_jobs_state(*, force: bool = False) -> None:
-        nonlocal _last_jobs_state_key
-        payload = {
-            "timestamp": int(time.time() * 1000),
-            "human": _serialize_job_manager_state(human_jobs, "human"),
-            "enemy": _serialize_job_manager_state(enemy_jobs, "enemy"),
-        }
-        state_key = str(payload.get("human")) + "|" + str(payload.get("enemy"))
-        if not force and state_key == _last_jobs_state_key:
+    def on_tick(self, tick_number: int, now: float) -> None:
+        self.sync_runtime()
+        if self.ws_server is None or not self.ws_server.is_running:
             return
-        _last_jobs_state_key = state_key
-        DashboardBridge().broadcast("jobs_state", payload)
-
-    # ========== Agent 转发 ==========
-    COPILOT_AGENT_TMUX = "openra-copilot"
-
-    def _forward_to_agent(command: str) -> None:
-        """Forward a web player command to the copilot agent tmux session."""
-        try:
-            # Check if the agent session exists
-            check = subprocess.run(
-                ["tmux", "has-session", "-t", COPILOT_AGENT_TMUX],
-                capture_output=True, timeout=2,
-            )
-            if check.returncode != 0:
-                logger.debug("Agent session '%s' not found, skip forward", COPILOT_AGENT_TMUX)
-                return
-
-            # Send with [WEB_PLAYER] header so the agent knows the source
-            text = f"[WEB_PLAYER] {command}"
-            subprocess.run(
-                ["tmux", "send-keys", "-t", COPILOT_AGENT_TMUX, "-l", text],
-                capture_output=True, timeout=2,
-            )
-            subprocess.run(
-                ["tmux", "send-keys", "-t", COPILOT_AGENT_TMUX, "Enter"],
-                capture_output=True, timeout=2,
-            )
-            logger.info("Forwarded to agent: %s", text)
-        except Exception as e:
-            logger.warning("Agent forward failed: %s", e)
-
-    # ========== Console 命令处理器 ==========
-    def copilot_command_handler(command: str, meta: dict | None = None) -> None:
-        bridge = DashboardBridge()
-        start_ts = int(time.time() * 1000)
-        thread_id = threading.get_ident()
-        payload_meta = meta or {}
-        command_id = str(payload_meta.get("command_id") or f"cmd_{start_ts}_{thread_id}")
-
-        def status_callback(stage: str, detail: str):
-            bridge.broadcast("status", {
-                "stage": stage,
-                "detail": detail,
-                "command_id": command_id,
-                "timestamp": int(time.time() * 1000)
-            })
-
-        with human_status_callback_lock:
-            human_status_callback_by_thread[thread_id] = status_callback
-
-        # Record player command in event feed
-        append_event("player_command", {"command": command}, cid=command_id)
-
-        status_callback("received", f"收到指令: {command[:50]}...")
-
-        try:
-            if not _refresh_game_runtime_state(reason="human_command_precheck"):
-                blocked_msg = "OpenRA 未运行，指令已拦截（未执行、未调用LLM）"
-                status_callback("error", blocked_msg)
-                append_interaction_event(
-                    "dashboard_command_blocked",
-                    {
-                        "actor": "human",
-                        "channel": "dashboard_command",
-                        "command_id": command_id,
-                        "utterance": command,
-                        "response_message": blocked_msg,
-                        "success": False,
-                    },
-                    timestamp_ms=start_ts,
-                )
-                bridge.broadcast(
-                    "result",
-                    {
-                        "success": False,
-                        "message": blocked_msg,
-                        "code": "",
-                        "observations": "",
-                        "nlu": {"source": "game_gate", "reason": "openra_offline"},
-                        "command_id": command_id,
-                    },
-                )
-                bridge.send_log("warning", blocked_msg)
-                return
-
-            result = handle_command(
-                executor,
-                command,
-                nlu_gateway=human_nlu_gateway,
-                actor="human",
-            )
-
-            nlu_meta = result.get("nlu", {}) or {}
-            nlu_source = nlu_meta.get("source", "")
-
-            append_interaction_event(
-                "dashboard_command",
-                {
-                    "actor": "human",
-                    "channel": "dashboard_command",
-                    "command_id": command_id,
-                    "utterance": command,
-                    "response_message": result.get("message", ""),
-                    "success": bool(result.get("success", False)),
-                    "observations": result.get("observations", ""),
-                    "nlu": nlu_meta,
-                },
-                timestamp_ms=start_ts,
-            )
-
-            if nlu_source == "nlu_route":
-                # NLU handled it — record in feed, do NOT forward to agent
-                append_event("nlu_route", {
-                    "command": command,
-                    "intent": nlu_meta.get("intent", ""),
-                    "confidence": nlu_meta.get("confidence", 0),
-                    "message": result.get("message", ""),
-                    "success": bool(result.get("success", False)),
-                }, cid=command_id)
-            else:
-                # NLU missed — record in feed and forward to copilot agent
-                append_event("nlu_miss", {
-                    "command": command,
-                    "reason": nlu_meta.get("reason", ""),
-                }, cid=command_id)
-                append_event("agent_forward", {"command": command}, cid=command_id)
-                threading.Thread(
-                    target=_forward_to_agent, args=(command,), daemon=True
-                ).start()
-
-            bridge.broadcast("result", {
-                "success": result.get("success"),
-                "message": result.get("message", ""),
-                "code": result.get("code", ""),
-                "observations": result.get("observations", ""),
-                "nlu": nlu_meta,
-                "command_id": command_id,
-            })
-
-            bridge.send_log(
-                "info" if result.get("success") else "error",
-                result.get("message", "")
-            )
-        except Exception as e:
-            logger.error(f"Command failed: {e}", exc_info=True)
-            append_interaction_event(
-                "dashboard_command_error",
-                {
-                    "actor": "human",
-                    "channel": "dashboard_command",
-                    "command_id": command_id,
-                    "utterance": command,
-                    "error": str(e),
-                },
-                timestamp_ms=start_ts,
-            )
-            bridge.broadcast("status", {"stage": "error", "detail": str(e), "command_id": command_id})
-            bridge.broadcast(
-                "result",
-                {
-                    "success": False,
-                    "message": f"执行失败: {e}",
-                    "code": "",
-                    "observations": "",
-                    "nlu": {},
-                    "command_id": command_id,
-                },
-            )
-            bridge.send_log("error", f"Command failed: {str(e)}")
-        finally:
-            with human_status_callback_lock:
-                human_status_callback_by_thread.pop(thread_id, None)
-
-    # ========== 敌方控制处理器 ==========
-    def enemy_control_handler(action: str, params: dict) -> None:
-        if action == "start":
-            if not _refresh_game_runtime_state(reason="enemy_start_precheck"):
-                msg = "OpenRA 未运行，已阻止启动敌方AI"
-                DashboardBridge().broadcast(
-                    "enemy_status",
-                    {"stage": "offline", "detail": msg, "timestamp": int(time.time() * 1000)},
-                )
-                DashboardBridge().broadcast("enemy_agent_state", enemy_agent.get_state())
-                logger.warning(msg)
-                return
-            enemy_agent.start()
-        elif action == "stop":
-            enemy_agent.stop()
-        elif action == "status":
-            DashboardBridge().broadcast("enemy_agent_state", enemy_agent.get_state())
-        elif action == "set_interval":
-            interval = params.get("interval", 45.0)
-            try:
-                enemy_agent.set_interval(float(interval))
-            except (ValueError, TypeError):
-                logger.warning(f"Invalid interval value: {interval}")
-        elif action == "reset_all":
-            logger.info("Reset all: clearing context and restarting enemy agent")
-            enemy_agent.stop()
-            enemy_agent.reset()
-            enemy_executor.ctx.history.clear()
-            bridge = DashboardBridge()
-            bridge.clear_chat_history()
-            bridge.broadcast("reset_done", {"message": "上下文已清空"})
-            if _refresh_game_runtime_state(reason="reset_all_postcheck"):
-                enemy_agent.start()
-            else:
-                DashboardBridge().broadcast(
-                    "enemy_status",
-                    {"stage": "offline", "detail": "OpenRA 未运行，已跳过敌方重启", "timestamp": int(time.time() * 1000)},
-                )
-        elif action == "nlu_reload":
-            human_nlu_gateway.reload()
-            enemy_nlu_gateway.reload()
-            broadcast_nlu_status()
-        elif action == "nlu_set_rollout":
-            try:
-                target_agent = str(params.get("agent", "")).strip()
-                percentage_raw = params.get("percentage")
-                enabled_raw = params.get("enabled")
-                bucket_key = params.get("bucket_key")
-
-                def _mutator(cfg: dict) -> None:
-                    rollout = cfg.setdefault("rollout", {})
-                    if enabled_raw is not None:
-                        rollout["enabled"] = bool(enabled_raw)
-                    if percentage_raw is not None:
-                        pct = max(0.0, min(100.0, float(percentage_raw)))
-                        if target_agent:
-                            by_agent = rollout.setdefault("percentages_by_agent", {})
-                            if isinstance(by_agent, dict):
-                                by_agent[target_agent] = pct
-                        else:
-                            rollout["default_percentage"] = pct
-                    if bucket_key is not None:
-                        rollout["bucket_key"] = str(bucket_key)
-
-                cfg = mutate_runtime_gateway_config(_mutator)
-                human_nlu_gateway.reload()
-                enemy_nlu_gateway.reload()
-                DashboardBridge().broadcast(
-                    "nlu_rollout_updated",
-                    {
-                        "agent": target_agent,
-                        "runtime_config_path": str(runtime_gateway_cfg_path),
-                        "rollout": cfg.get("rollout", {}),
-                    },
-                )
-                broadcast_nlu_status()
-            except Exception as e:
-                logger.error("nlu_set_rollout failed: %s", e, exc_info=True)
-                DashboardBridge().broadcast("nlu_rollout_updated", {"error": str(e)})
-        elif action == "nlu_set_shadow":
-            try:
-                shadow_mode = bool(params.get("shadow_mode", True))
-                enabled_raw = params.get("enabled")
-
-                def _mutator(cfg: dict) -> None:
-                    cfg["shadow_mode"] = shadow_mode
-                    if enabled_raw is not None:
-                        cfg["enabled"] = bool(enabled_raw)
-
-                mutate_runtime_gateway_config(_mutator)
-                human_nlu_gateway.reload()
-                enemy_nlu_gateway.reload()
-                broadcast_nlu_status()
-            except Exception as e:
-                logger.error("nlu_set_shadow failed: %s", e, exc_info=True)
-                DashboardBridge().broadcast("nlu_status", {"error": str(e)})
-        elif action == "nlu_emergency_rollback":
-            try:
-                def _mutator(cfg: dict) -> None:
-                    cfg["enabled"] = False
-                    cfg["shadow_mode"] = False
-                    cfg["phase"] = "phase4_manual_rollback"
-                    rollout = cfg.setdefault("rollout", {})
-                    rollout["enabled"] = True
-                    rollout["default_percentage"] = 0
-                    by_agent = rollout.get("percentages_by_agent", {})
-                    if isinstance(by_agent, dict):
-                        for k in list(by_agent.keys()):
-                            by_agent[k] = 0
-                        rollout["percentages_by_agent"] = by_agent
-
-                mutate_runtime_gateway_config(_mutator)
-                human_nlu_gateway.reload()
-                enemy_nlu_gateway.reload()
-                DashboardBridge().broadcast(
-                    "nlu_rollback_done",
-                    {
-                        "phase": "phase4_manual_rollback",
-                        "runtime_config_path": str(runtime_gateway_cfg_path),
-                    },
-                )
-                broadcast_nlu_status()
-            except Exception as e:
-                logger.error("nlu_emergency_rollback failed: %s", e, exc_info=True)
-                DashboardBridge().broadcast("nlu_rollback_done", {"error": str(e)})
-        elif action == "nlu_status":
-            broadcast_nlu_status()
-        elif action == "nlu_phase6_runtest":
-            run_nlu_job(
-                action=action,
-                script="nlu_pipeline/scripts/runtime_runtest.py",
-                report_path="nlu_pipeline/reports/phase6_runtest_report.json",
-            )
-        elif action == "nlu_release_bundle":
-            run_nlu_job(
-                action=action,
-                script="nlu_pipeline/scripts/release_bundle.py",
-                report_path="nlu_pipeline/reports/phase5_release_report.json",
-            )
-        elif action == "nlu_smoke":
-            run_nlu_job(
-                action=action,
-                script="nlu_pipeline/scripts/run_smoke.py",
-                report_path="nlu_pipeline/reports/smoke_report.json",
-            )
-        elif action == "jobs_status":
-            broadcast_jobs_state(force=True)
-
-    # ========== 启动服务 ==========
-    def enemy_chat_handler(message: str) -> None:
-        if not _refresh_game_runtime_state(reason="enemy_chat_precheck"):
-            DashboardBridge().broadcast(
-                "enemy_chat",
-                {"message": "OpenRA 未运行，敌方聊天已禁用（未调用LLM）", "type": "system"},
-            )
+        if self._publish_task is not None and not self._publish_task.done():
             return
-        enemy_agent.receive_player_message(message)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._publish_task = loop.create_task(self.publish_dashboard())
 
-    DashboardBridge().start(
-        port=DASHBOARD_PORT,
-        command_handler=copilot_command_handler,
-        enemy_chat_handler=enemy_chat_handler,
-        enemy_control_handler=enemy_control_handler,
-    )
-    # 敌方代理不自动启动，通过 Web 控制台手动启动
-    _refresh_game_runtime_state(reason="startup_probe", force_broadcast=True)
-    broadcast_jobs_state(force=True)
+    async def on_command_submit(self, text: str, client_id: str) -> None:
+        del client_id
+        if self.adjutant is None:
+            task = self.kernel.create_task(text, kind="managed", priority=50)
+            await self._emit_notification("command_ack", f"收到指令，已创建任务 {task.task_id}")
+            self.sync_runtime()
+            await self.publish_dashboard()
+            return
 
-    # ========== Job tick 后台线程 ==========
-    _jobs_running = True
-    _last_human_explore_summary = ""
+        result = await self.adjutant.handle_player_input(text)
+        response_text = result.get("response_text")
+        if result.get("type") == "query" and response_text and self.ws_server is not None:
+            await self.ws_server.send_query_response(
+                {
+                    "answer": response_text,
+                    "ok": result.get("ok", True),
+                    "timestamp": result.get("timestamp"),
+                }
+            )
+        elif response_text:
+            await self._emit_notification(result.get("type", "info"), response_text)
+        self.sync_runtime()
+        await self.publish_dashboard()
 
-    def _job_tick_loop():
-        nonlocal _last_human_explore_summary
-        while _jobs_running:
-            if not _refresh_game_runtime_state(reason="job_tick_probe"):
-                try:
-                    broadcast_jobs_state(force=True)
-                except Exception:
-                    pass
-                time.sleep(1.0)
+    async def on_command_cancel(self, task_id: str, client_id: str) -> None:
+        del client_id
+        ok = self.kernel.cancel_task(task_id)
+        content = "任务已取消" if ok else "取消失败：任务不存在或已结束"
+        await self._emit_notification("command_cancel", content, data={"task_id": task_id, "ok": ok})
+        self.sync_runtime()
+        await self.publish_dashboard()
+
+    async def on_mode_switch(self, mode: str, client_id: str) -> None:
+        del client_id
+        if mode:
+            self.mode = mode
+        await self.publish_dashboard()
+
+    async def on_question_reply(self, message_id: str, task_id: str, answer: str, client_id: str) -> None:
+        del client_id
+        result = self.kernel.submit_player_response(
+            PlayerResponse(message_id=message_id, task_id=task_id, answer=answer)
+        )
+        if not result.get("ok", False):
+            await self._emit_notification(
+                "question_reply_error",
+                result.get("message", "回复失败"),
+                data={"task_id": task_id, "message_id": message_id, "status": result.get("status")},
+            )
+        self.sync_runtime()
+        await self.publish_dashboard()
+
+    async def _publish_task_updates(self) -> None:
+        assert self.ws_server is not None
+        for task in self.kernel.list_tasks():
+            payload = self._task_to_dict(task)
+            fingerprint = tuple(payload.get(key) for key in ("task_id", "status", "priority", "timestamp", "raw_text"))
+            if self._task_fingerprints.get(task.task_id) == fingerprint:
                 continue
+            self._task_fingerprints[task.task_id] = fingerprint
+            await self.ws_server.send_task_update(payload)
+
+    async def _publish_task_messages(self) -> None:
+        assert self.ws_server is not None
+        task_messages = self.kernel.list_task_messages()
+        new_messages = task_messages[self._task_message_offset :]
+        self._task_message_offset = len(task_messages)
+        for message in new_messages:
+            if message.type == TaskMessageType.TASK_QUESTION:
+                continue
+            icon = {
+                TaskMessageType.TASK_INFO: "ℹ",
+                TaskMessageType.TASK_WARNING: "⚠",
+                TaskMessageType.TASK_COMPLETE_REPORT: "✓",
+            }.get(message.type, "ℹ")
+            await self.ws_server.send_player_notification(
+                {
+                    "type": message.type.value,
+                    "content": message.content,
+                    "icon": icon,
+                    "task_id": message.task_id,
+                    "message_id": message.message_id,
+                    "timestamp": message.timestamp,
+                }
+            )
+
+    async def _publish_notifications(self) -> None:
+        assert self.ws_server is not None
+        notifications = self.kernel.list_player_notifications()
+        new_notifications = notifications[self._notification_offset :]
+        self._notification_offset = len(notifications)
+        for notification in new_notifications:
+            await self.ws_server.send_player_notification(notification)
+
+    async def _publish_logs(self) -> None:
+        assert self.ws_server is not None
+        new_records = log_records()[self._log_offset :]
+        self._log_offset += len(new_records)
+        for record in new_records:
+            await self.ws_server.send_log_entry(record.to_dict())
+
+    async def _publish_benchmarks(self) -> None:
+        assert self.ws_server is not None
+        benchmark_records = [
+            record.to_dict()
+            for record in benchmark.query(slowest_first=False)
+        ]
+        await self.ws_server.send_benchmark(benchmark_records)
+
+    async def _emit_notification(
+        self,
+        notification_type: str,
+        content: str,
+        *,
+        data: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        await self.ws_server.send_player_notification(
+            {
+                "type": notification_type,
+                "content": content,
+                "icon": "ℹ",
+                "data": dict(data or {}),
+            }
+        )
+
+    @staticmethod
+    def _task_to_dict(task: Any) -> dict[str, Any]:
+        return {
+            "task_id": task.task_id,
+            "raw_text": task.raw_text,
+            "kind": task.kind.value,
+            "priority": task.priority,
+            "status": task.status.value,
+            "timestamp": task.timestamp,
+            "created_at": task.created_at,
+        }
+
+
+class ApplicationRuntime:
+    """Owns and runs the assembled Phase 7 runtime."""
+
+    def __init__(
+        self,
+        *,
+        config: RuntimeConfig,
+        task_llm: Optional[LLMProvider] = None,
+        adjutant_llm: Optional[LLMProvider] = None,
+        api: Optional[Any] = None,
+        world_source: Optional[WorldModelSource] = None,
+        expert_registry: Optional[dict[str, ExecutionExpert]] = None,
+        kernel_config: Optional[KernelConfig] = None,
+        task_agent_factory: Optional[TaskAgentFactory] = None,
+    ) -> None:
+        self.config = config
+        self.api = api or GameAPI(config.game_host, port=config.game_port, language=config.game_language)
+        self.world_source = world_source or GameAPIWorldSource(self.api)
+
+        refresh_policy = RefreshPolicy(
+            actors_s=config.actors_refresh_s,
+            economy_s=config.economy_refresh_s,
+            map_s=config.map_refresh_s,
+        )
+        self.world_model = WorldModel(self.world_source, refresh_policy=refresh_policy)
+        self.world_model.refresh(force=True)
+
+        self.task_llm = task_llm or _build_provider(config.llm_provider, config.llm_model)
+        adjutant_provider = config.adjutant_llm_provider or config.llm_provider
+        adjutant_model = config.adjutant_llm_model or config.llm_model
+        self.adjutant_llm = adjutant_llm or _build_provider(adjutant_provider, adjutant_model)
+
+        kernel_cfg = kernel_config or KernelConfig(
+            auto_start_agents=True,
+            default_agent_config=AgentConfig(review_interval=config.review_interval),
+        )
+        self.kernel = Kernel(
+            world_model=self.world_model,
+            llm=self.task_llm,
+            expert_registry=expert_registry or build_default_expert_registry(self.api, self.world_model),
+            task_agent_factory=task_agent_factory,
+            config=kernel_cfg,
+        )
+        self.adjutant = Adjutant(
+            llm=self.adjutant_llm,
+            kernel=self.kernel,
+            world_model=self.world_model,
+            config=AdjutantConfig(default_task_kind="managed", default_task_priority=50),
+        )
+        self.game_loop = GameLoop(
+            self.world_model,
+            self.kernel,
+            config=GameLoopConfig(tick_hz=config.tick_hz),
+        )
+        self.bridge = RuntimeBridge(
+            kernel=self.kernel,
+            world_model=self.world_model,
+            game_loop=self.game_loop,
+            adjutant=self.adjutant,
+        )
+        self.game_loop._dashboard_callback = self.bridge.on_tick  # type: ignore[attr-defined]
+        self.ws_server = (
+            WSServer(
+                config=WSServerConfig(host=config.ws_host, port=config.ws_port),
+                inbound_handler=self.bridge,
+            )
+            if config.enable_ws
+            else None
+        )
+        self.bridge.attach_ws_server(self.ws_server)
+        self._loop_task: Optional[asyncio.Task[Any]] = None
+        self._shutdown_event = asyncio.Event()
+
+    async def start(self) -> None:
+        if self.ws_server is not None:
+            await self.ws_server.start()
+        self.bridge.sync_runtime()
+        if self.ws_server is not None:
+            await self.bridge.publish_dashboard()
+        self._loop_task = asyncio.create_task(self.game_loop.start())
+        slog.info("ApplicationRuntime started", event="runtime_started", ws_enabled=bool(self.ws_server))
+
+    async def stop(self) -> None:
+        self.game_loop.stop()
+        if self._loop_task is not None:
             try:
-                human_jobs.tick_jobs()
-                explore_job = human_jobs.get_job("explore")
-                if explore_job is not None:
-                    summary = str(getattr(explore_job, "last_summary", "") or "")
-                    if summary and summary != _last_human_explore_summary:
-                        logger.info("ExploreJob[h] %s", summary)
-                        _last_human_explore_summary = summary
-            except Exception as e:
-                logger.warning("human_jobs.tick_jobs failed: %s", e, exc_info=True)
-            try:
-                enemy_jobs.tick_jobs()
-            except Exception as e:
-                logger.warning("enemy_jobs.tick_jobs failed: %s", e, exc_info=True)
-            try:
-                broadcast_jobs_state()
-            except Exception:
-                pass
-            time.sleep(1.0)
+                await asyncio.wait_for(self._loop_task, timeout=2.0)
+            except asyncio.TimeoutError:
+                self._loop_task.cancel()
+                try:
+                    await self._loop_task
+                except asyncio.CancelledError:
+                    pass
+            self._loop_task = None
+        if self.ws_server is not None and self.ws_server.is_running:
+            await self.ws_server.stop()
+        self.export_runtime_reports()
+        self._shutdown_event.set()
+        slog.info("ApplicationRuntime stopped", event="runtime_stopped")
 
-    job_thread = threading.Thread(target=_job_tick_loop, daemon=True)
-    job_thread.start()
+    async def wait_until_stopped(self) -> None:
+        await self._shutdown_event.wait()
 
-    logger.info("=" * 50)
-    logger.info("System ready")
-    logger.info(f"  Console WebSocket: ws://localhost:{DASHBOARD_PORT}")
-    logger.info("  Model: %s", runtime_model_cfg.model)
-    logger.info(f"  Human: {HUMAN_PLAYER_ID}")
-    logger.info(f"  Enemy: {ENEMY_PLAYER_ID} (interval={ENEMY_TICK_INTERVAL}s)")
-    logger.info("  Press Ctrl+C to stop")
-    logger.info("=" * 50)
+    def request_shutdown(self) -> None:
+        if not self._shutdown_event.is_set():
+            asyncio.create_task(self.stop())
 
-    # 保持运行
-    def signal_handler(sig, frame):
-        logger.info("Shutting down...")
-        enemy_agent.stop()
-        raise SystemExit(0)
+    def export_runtime_reports(
+        self,
+        *,
+        benchmark_records_path: Optional[str] = None,
+        benchmark_summary_path: Optional[str] = None,
+        log_export_path: Optional[str] = None,
+    ) -> None:
+        records_path = benchmark_records_path or self.config.benchmark_records_path
+        summary_path = benchmark_summary_path or self.config.benchmark_summary_path
+        logs_path = log_export_path or self.config.log_export_path
+        Path(records_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(summary_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(logs_path).parent.mkdir(parents=True, exist_ok=True)
+        benchmark.export_json(records_path, slowest_first=False)
+        export_benchmark_report_json(summary_path)
+        export_log_json(logs_path)
 
-    signal.signal(signal.SIGINT, signal_handler)
+
+def parse_args(argv: Optional[list[str]] = None) -> RuntimeConfig:
+    _load_env_file()
+    parser = argparse.ArgumentParser(description="THE Seed OpenRA runtime")
+    parser.add_argument("--game-host", default=os.environ.get("OPENRA_HOST", "localhost"))
+    parser.add_argument("--game-port", type=int, default=int(os.environ.get("OPENRA_PORT", "7445")))
+    parser.add_argument("--game-language", default=os.environ.get("OPENRA_LANGUAGE", "zh"))
+    parser.add_argument("--ws-host", default=os.environ.get("WS_HOST", "0.0.0.0"))
+    parser.add_argument("--ws-port", type=int, default=int(os.environ.get("WS_PORT", "8765")))
+    parser.add_argument("--tick-hz", type=float, default=float(os.environ.get("TICK_HZ", "10.0")))
+    parser.add_argument("--actors-refresh-s", type=float, default=float(os.environ.get("WORLD_ACTORS_REFRESH_S", "0.1")))
+    parser.add_argument("--economy-refresh-s", type=float, default=float(os.environ.get("WORLD_ECONOMY_REFRESH_S", "0.5")))
+    parser.add_argument("--map-refresh-s", type=float, default=float(os.environ.get("WORLD_MAP_REFRESH_S", "1.0")))
+    parser.add_argument("--review-interval", type=float, default=float(os.environ.get("TASK_REVIEW_INTERVAL", "10.0")))
+    parser.add_argument("--llm-provider", default=os.environ.get("LLM_PROVIDER", "qwen"))
+    parser.add_argument("--llm-model", default=os.environ.get("LLM_MODEL", "qwen-plus"))
+    parser.add_argument("--adjutant-llm-provider", default=os.environ.get("ADJUTANT_LLM_PROVIDER"))
+    parser.add_argument("--adjutant-llm-model", default=os.environ.get("ADJUTANT_LLM_MODEL"))
+    parser.add_argument("--benchmark-records-path", default=os.environ.get("BENCHMARK_RECORDS_PATH", "docs/wang/phase7_e2e_benchmark_records.json"))
+    parser.add_argument("--benchmark-summary-path", default=os.environ.get("BENCHMARK_SUMMARY_PATH", "docs/wang/phase7_e2e_benchmark_summary.json"))
+    parser.add_argument("--log-export-path", default=os.environ.get("LOG_EXPORT_PATH", "docs/wang/phase7_runtime_logs.json"))
+    parser.add_argument("--disable-ws", action="store_true")
+    parser.add_argument("--skip-game-api-check", action="store_true")
+    args = parser.parse_args(argv)
+    return RuntimeConfig(
+        game_host=args.game_host,
+        game_port=args.game_port,
+        game_language=args.game_language,
+        ws_host=args.ws_host,
+        ws_port=args.ws_port,
+        tick_hz=args.tick_hz,
+        actors_refresh_s=args.actors_refresh_s,
+        economy_refresh_s=args.economy_refresh_s,
+        map_refresh_s=args.map_refresh_s,
+        review_interval=args.review_interval,
+        llm_provider=args.llm_provider,
+        llm_model=args.llm_model,
+        adjutant_llm_provider=args.adjutant_llm_provider,
+        adjutant_llm_model=args.adjutant_llm_model,
+        benchmark_records_path=args.benchmark_records_path,
+        benchmark_summary_path=args.benchmark_summary_path,
+        log_export_path=args.log_export_path,
+        enable_ws=not args.disable_ws,
+        verify_game_api=not args.skip_game_api_check,
+    )
+
+
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+
+
+async def run_runtime(config: RuntimeConfig) -> int:
+    configure_logging()
+    if config.verify_game_api and not GameAPI.is_server_running(config.game_host, config.game_port):
+        print(
+            f"OpenRA server is not reachable at {config.game_host}:{config.game_port}. "
+            "Use --skip-game-api-check to bypass the preflight.",
+            file=sys.stderr,
+        )
+        return 2
+
+    runtime = ApplicationRuntime(config=config)
+    await runtime.start()
+
+    loop = asyncio.get_running_loop()
+
+    def _request_shutdown() -> None:
+        slog.warn("Shutdown requested", event="runtime_shutdown_requested")
+        runtime.request_shutdown()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _request_shutdown)
+        except NotImplementedError:
+            signal.signal(sig, lambda *_: _request_shutdown())
 
     try:
-        while True:
-            time.sleep(1)
-    except (KeyboardInterrupt, SystemExit):
-        enemy_agent.stop()
-        logger.info("Backend stopped.")
+        await runtime.wait_until_stopped()
+    finally:
+        if not runtime._shutdown_event.is_set():
+            await runtime.stop()
+    return 0
 
 
-def main_cli() -> None:
-    """CLI 模式 - 用于测试"""
-    api = GameAPI(host="localhost", port=7445, language="zh")
-    mid = RTSMiddleLayer(api)
-    executor = create_executor(api, mid)
-    human_nlu_gateway = Phase2NLUGateway(name="human_cli")
-    
-    logger.info("✓ CLI mode ready. Type commands or 'quit' to exit.")
-    
-    while True:
-        try:
-            command = input("\n> ").strip()
-            
-            if not command:
-                continue
-            
-            if command.lower() in ("quit", "exit", "q"):
-                break
-
-            if not GameAPI.is_server_running(host="localhost", port=7445, timeout=0.6):
-                print("\n✗ OpenRA 未运行，指令已拦截（未执行、未调用LLM）")
-                continue
-            
-            result = handle_command(executor, command, nlu_gateway=human_nlu_gateway, actor="human")
-            
-            print(f"\n{'✓' if result.get('success') else '✗'} {result.get('message', '')}")
-            
-            if result.get("observations"):
-                print(f"观测: {result.get('observations')}")
-
-            nlu_meta = result.get("nlu", {})
-            if nlu_meta:
-                print(
-                    f"NLU: {nlu_meta.get('source')} / {nlu_meta.get('reason')} "
-                    f"(intent={nlu_meta.get('intent')}, conf={nlu_meta.get('confidence', 0):.3f})"
-                )
-            
-            if not result.get("success") and result.get("error"):
-                print(f"错误: {result.get('error')}")
-        
-        except EOFError:
-            break
-        except KeyboardInterrupt:
-            print("\n")
-            break
-    
-    logger.info("CLI stopped.")
+def main(argv: Optional[list[str]] = None) -> int:
+    config = parse_args(argv)
+    return asyncio.run(run_runtime(config))
 
 
 if __name__ == "__main__":
-    import sys
-    
-    if len(sys.argv) > 1 and sys.argv[1] == "--cli":
-        main_cli()
-    else:
-        main()
+    raise SystemExit(main())

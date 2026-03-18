@@ -113,6 +113,20 @@ class TaskAgent:
         """Deliver a WorldModel Event to this agent."""
         self.queue.push(event)
 
+    def push_player_response(self, response: Any) -> None:
+        """Deliver a PlayerResponse through the normal event intake path."""
+        self.push_event(
+            Event(
+                type="player_response",  # type: ignore[arg-type]
+                data={
+                    "message_id": response.message_id,
+                    "task_id": response.task_id,
+                    "answer": response.answer,
+                },
+                timestamp=response.timestamp,
+            )
+        )
+
     async def run(self) -> None:
         """Main loop — runs until task is completed or cancelled."""
         self._running = True
