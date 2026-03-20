@@ -2,7 +2,11 @@
   <div class="ops-panel">
     <h3>Operations</h3>
     <div class="vnc-container">
-      <iframe :src="vncUrl" class="vnc-frame" allowfullscreen></iframe>
+      <div v-if="!vncAvailable" class="vnc-placeholder">
+        <span>VNC 未连接</span>
+        <small>启动游戏后自动显示</small>
+      </div>
+      <iframe v-else :src="vncUrl" class="vnc-frame" allowfullscreen></iframe>
     </div>
 
     <h3>Game Control</h3>
@@ -42,9 +46,9 @@ const props = defineProps({
 })
 const emit = defineEmits(['mode-switch'])
 
-const vncUrl = ref(
-  new URLSearchParams(window.location.search).get('vnc_url') || '/vnc/vnc.html'
-)
+const vncUrlParam = new URLSearchParams(window.location.search).get('vnc_url')
+const vncUrl = ref(vncUrlParam || '')
+const vncAvailable = ref(!!vncUrlParam)
 const gameStale = ref(false)
 
 function switchMode(mode) {
@@ -69,6 +73,8 @@ if (props.on) {
 .ops-panel h3:first-child { margin-top: 0; }
 .vnc-container { flex: 1; min-height: 200px; }
 .vnc-frame { width: 100%; height: 100%; border: 1px solid #ddd; border-radius: 4px; }
+.vnc-placeholder { width: 100%; height: 100%; min-height: 120px; border: 1px dashed #ccc; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #999; background: #fafafa; }
+.vnc-placeholder small { font-size: 11px; margin-top: 4px; }
 .game-controls { display: flex; gap: 6px; }
 .game-controls button { padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; font-size: 12px; }
 .btn-start { background: #e8f5e9; border-color: #4caf50; }
