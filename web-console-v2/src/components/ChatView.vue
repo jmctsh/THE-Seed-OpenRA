@@ -57,9 +57,7 @@ if (props.on) {
     const icon = msg.data?.icon || 'ℹ'
     addMessage('notification', icon, msg.data?.content || JSON.stringify(msg.data), msg.timestamp)
   })
-  props.on('task_update', (msg) => {
-    addMessage('system', '系统', `任务更新: ${JSON.stringify(msg.data)}`, msg.timestamp)
-  })
+  // task_update is handled by TaskPanel, not ChatView
 }
 </script>
 
