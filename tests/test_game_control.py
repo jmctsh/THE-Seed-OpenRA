@@ -1,0 +1,169 @@
+"""Tests for game lifecycle control and runtime restart wiring."""
+
+from __future__ import annotations
+
+import asyncio
+import os
+from pathlib import Path
+import sys
+import tempfile
+from typing import Any
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import game_control
+import main as main_module
+from llm import MockProvider
+from main import ApplicationRuntime, RuntimeConfig
+from models import Event
+from tests.test_world_model import MockWorldSource, make_frames
+
+
+class _FakeCompletedProcess:
+    def __init__(self, returncode: int) -> None:
+        self.returncode = returncode
+        self.stdout = ""
+        self.stderr = ""
+
+
+class _FakePopen:
+    def __init__(self, args: list[str], **kwargs: Any) -> None:
+        self.args = args
+        self.kwargs = kwargs
+        self.pid = 43210
+
+
+def test_start_game_passes_baseline_save() -> None:
+    captured: dict[str, Any] = {}
+    original_popen = game_control.subprocess.Popen
+    try:
+        def fake_popen(args, **kwargs):
+            captured["args"] = list(args)
+            captured["kwargs"] = dict(kwargs)
+            return _FakePopen(list(args), **kwargs)
+
+        game_control.subprocess.Popen = fake_popen  # type: ignore[assignment]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = game_control.GameControlConfig(
+                openra_dir=Path(tmpdir),
+                log_path=Path(tmpdir) / "openra.log",
+            )
+            pid = game_control.start_game(save_path="baseline.orasav", config=cfg)
+
+        assert pid == 43210
+        assert "Game.LoadSave=baseline.orasav" in captured["args"]
+        assert captured["kwargs"]["cwd"] == Path(tmpdir)
+        assert captured["kwargs"]["env"]["DISPLAY"] == cfg.display
+        print("  PASS: start_game_passes_baseline_save")
+    finally:
+        game_control.subprocess.Popen = original_popen  # type: ignore[assignment]
+
+
+def test_wait_for_api_polls_until_ready() -> None:
+    calls = {"count": 0}
+    original_check = game_control.GameAPI.is_server_running
+    original_sleep = game_control.time.sleep
+    try:
+        def fake_check(host="localhost", port=7445, timeout=2.0):
+            del host, port, timeout
+            calls["count"] += 1
+            return calls["count"] >= 3
+
+        game_control.GameAPI.is_server_running = staticmethod(fake_check)  # type: ignore[assignment]
+        game_control.time.sleep = lambda _: None  # type: ignore[assignment]
+        assert game_control.wait_for_api(timeout=0.1, poll_interval=0.01)
+        assert calls["count"] == 3
+        print("  PASS: wait_for_api_polls_until_ready")
+    finally:
+        game_control.GameAPI.is_server_running = original_check  # type: ignore[assignment]
+        game_control.time.sleep = original_sleep  # type: ignore[assignment]
+
+
+def test_cli_restart_forwards_save_path() -> None:
+    captured: dict[str, Any] = {}
+    original_restart = game_control.restart_game
+    original_wait = game_control.wait_for_api
+    try:
+        def fake_restart(save_path=None, config=None):
+            captured["save_path"] = save_path
+            captured["config"] = config
+            return 123
+
+        def fake_wait(timeout=30.0, *, host=None, port=None, language="zh", poll_interval=0.5):
+            captured["wait"] = {
+                "timeout": timeout,
+                "host": host,
+                "port": port,
+                "language": language,
+                "poll_interval": poll_interval,
+            }
+            return True
+
+        game_control.restart_game = fake_restart  # type: ignore[assignment]
+        game_control.wait_for_api = fake_wait  # type: ignore[assignment]
+        rc = game_control.main(["restart", "--save", "baseline.orasav", "--wait-timeout", "0"])
+        assert rc == 0
+        assert captured["save_path"] == "baseline.orasav"
+        assert captured["config"].port == 7445
+        print("  PASS: cli_restart_forwards_save_path")
+    finally:
+        game_control.restart_game = original_restart  # type: ignore[assignment]
+        game_control.wait_for_api = original_wait  # type: ignore[assignment]
+
+
+def test_application_runtime_restart_game() -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    original_restart = main_module.game_control.restart_game
+    original_wait = main_module.game_control.wait_for_api
+    original_is_running = main_module.game_control.GameAPI.is_server_running
+    calls: dict[str, Any] = {}
+
+    async def run() -> None:
+        runtime = ApplicationRuntime(
+            config=RuntimeConfig(enable_ws=False, verify_game_api=False, llm_provider="mock", llm_model="mock"),
+            task_llm=provider,
+            adjutant_llm=provider,
+            world_source=source,
+        )
+        try:
+            await runtime.start()
+            await asyncio.sleep(0.05)
+            assert runtime.game_loop.is_running
+            result = await runtime.restart_game(save_path="baseline.orasav")
+            await asyncio.sleep(0.05)
+            assert result["ok"] is True
+            assert calls["save_path"] == "baseline.orasav"
+            assert runtime.game_loop.is_running
+            assert source.actor_fetches >= 2
+        finally:
+            await runtime.stop()
+
+    try:
+        def fake_restart(save_path=None, config=None):
+            calls["save_path"] = save_path
+            calls["config"] = config
+            return 222
+
+        def fake_wait(timeout=30.0, *, host=None, port=None, language="zh", poll_interval=0.5):
+            calls["wait"] = (timeout, host, port, language, poll_interval)
+            return True
+
+        main_module.game_control.restart_game = fake_restart  # type: ignore[assignment]
+        main_module.game_control.wait_for_api = fake_wait  # type: ignore[assignment]
+        main_module.game_control.GameAPI.is_server_running = staticmethod(lambda *args, **kwargs: True)  # type: ignore[assignment]
+        asyncio.run(run())
+        print("  PASS: application_runtime_restart_game")
+    finally:
+        main_module.game_control.restart_game = original_restart  # type: ignore[assignment]
+        main_module.game_control.wait_for_api = original_wait  # type: ignore[assignment]
+        main_module.game_control.GameAPI.is_server_running = original_is_running  # type: ignore[assignment]
+
+
+if __name__ == "__main__":
+    print("Running game control tests...\n")
+    test_start_game_passes_baseline_save()
+    test_wait_for_api_polls_until_ready()
+    test_cli_restart_forwards_save_path()
+    test_application_runtime_restart_game()
+    print("\nAll 4 tests passed!")

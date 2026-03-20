@@ -189,6 +189,12 @@ def test_ws_client_connect_and_inbound():
         async def on_mode_switch(self, mode, client_id):
             received_commands.append(f"mode:{mode}")
 
+        async def on_question_reply(self, message_id, task_id, answer, client_id):
+            received_commands.append(f"reply:{message_id}:{task_id}:{answer}")
+
+        async def on_game_restart(self, save_path, client_id):
+            received_commands.append(f"restart:{save_path}")
+
     server = WSServer(
         config=WSServerConfig(host="127.0.0.1", port=18766),
         inbound_handler=TestHandler(),
@@ -210,6 +216,9 @@ def test_ws_client_connect_and_inbound():
                 await ws.send_str(json.dumps({"type": "mode_switch", "mode": "debug"}))
                 await asyncio.sleep(0.05)
 
+                await ws.send_str(json.dumps({"type": "game_restart", "save_path": "baseline.orasav"}))
+                await asyncio.sleep(0.05)
+
         await server.stop()
 
     asyncio.run(run())
@@ -217,6 +226,7 @@ def test_ws_client_connect_and_inbound():
     assert "探索地图" in received_commands
     assert "cancel:t1" in received_commands
     assert "mode:debug" in received_commands
+    assert "restart:baseline.orasav" in received_commands
     print("  PASS: ws_client_connect_and_inbound")
 
 

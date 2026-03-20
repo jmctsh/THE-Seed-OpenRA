@@ -25,6 +25,7 @@ from experts.deploy import DeployExpert
 from experts.economy import EconomyExpert
 from experts.movement import MovementExpert
 from experts.recon import ReconExpert
+import game_control
 from game_loop import GameLoop, GameLoopConfig
 from kernel import Kernel, KernelConfig, TaskAgentFactory
 from llm import AnthropicProvider, LLMProvider, MockProvider, QwenProvider
@@ -123,6 +124,7 @@ class RuntimeBridge(InboundHandler):
         self.world_model = world_model
         self.game_loop = game_loop
         self.adjutant = adjutant
+        self.runtime: Optional[ApplicationRuntime] = None
         self.ws_server: Optional[WSServer] = None
         self.mode = "user"
 
@@ -137,6 +139,9 @@ class RuntimeBridge(InboundHandler):
 
     def attach_ws_server(self, ws_server: Optional[WSServer]) -> None:
         self.ws_server = ws_server
+
+    def attach_runtime(self, runtime: ApplicationRuntime) -> None:
+        self.runtime = runtime
 
     def sync_runtime(self) -> None:
         active_agent_ids: set[str] = set()
@@ -259,6 +264,13 @@ class RuntimeBridge(InboundHandler):
             )
         self.sync_runtime()
         await self.publish_dashboard()
+
+    async def on_game_restart(self, save_path: Optional[str], client_id: str) -> None:
+        del client_id
+        if self.runtime is None:
+            await self._emit_notification("error", "游戏重启失败：runtime 未挂载")
+            return
+        await self.runtime.restart_game(save_path=save_path)
 
     async def _publish_task_updates(self) -> None:
         assert self.ws_server is not None
@@ -408,6 +420,7 @@ class ApplicationRuntime:
             game_loop=self.game_loop,
             adjutant=self.adjutant,
         )
+        self.bridge.attach_runtime(self)
         self.game_loop._dashboard_callback = self.bridge.on_tick  # type: ignore[attr-defined]
         self.ws_server = (
             WSServer(
@@ -419,6 +432,7 @@ class ApplicationRuntime:
         )
         self.bridge.attach_ws_server(self.ws_server)
         self._loop_task: Optional[asyncio.Task[Any]] = None
+        self._restart_lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
 
     async def start(self) -> None:
@@ -431,17 +445,7 @@ class ApplicationRuntime:
         slog.info("ApplicationRuntime started", event="runtime_started", ws_enabled=bool(self.ws_server))
 
     async def stop(self) -> None:
-        self.game_loop.stop()
-        if self._loop_task is not None:
-            try:
-                await asyncio.wait_for(self._loop_task, timeout=2.0)
-            except asyncio.TimeoutError:
-                self._loop_task.cancel()
-                try:
-                    await self._loop_task
-                except asyncio.CancelledError:
-                    pass
-            self._loop_task = None
+        await self._stop_loop_task()
         if self.ws_server is not None and self.ws_server.is_running:
             await self.ws_server.stop()
         self.export_runtime_reports()
@@ -454,6 +458,93 @@ class ApplicationRuntime:
     def request_shutdown(self) -> None:
         if not self._shutdown_event.is_set():
             asyncio.create_task(self.stop())
+
+    async def restart_game(self, save_path: Optional[str] = None) -> dict[str, Any]:
+        async with self._restart_lock:
+            self.kernel.push_player_notification(
+                "game_restart",
+                "正在重启 OpenRA 对局",
+                data={"save_path": save_path},
+            )
+            await self._stop_loop_task()
+            cancelled = self.kernel.cancel_tasks({})
+            self.bridge.sync_runtime()
+            if self.ws_server is not None and self.ws_server.is_running:
+                await self.bridge.publish_dashboard()
+
+            control_config = game_control.GameControlConfig(
+                host=self.config.game_host,
+                port=self.config.game_port,
+                language=self.config.game_language,
+            )
+            try:
+                await asyncio.to_thread(
+                    game_control.restart_game,
+                    save_path,
+                    control_config,
+                )
+                ready = await asyncio.to_thread(
+                    game_control.wait_for_api,
+                    30.0,
+                    host=self.config.game_host,
+                    port=self.config.game_port,
+                    language=self.config.game_language,
+                )
+            except Exception as exc:
+                self.kernel.push_player_notification(
+                    "game_restart_failed",
+                    f"游戏重启失败: {exc}",
+                    data={"save_path": save_path, "cancelled_tasks": cancelled},
+                )
+                if self.ws_server is not None and self.ws_server.is_running:
+                    await self.bridge.publish_dashboard()
+                return {"ok": False, "message": str(exc), "cancelled_tasks": cancelled}
+
+            if not ready:
+                self.kernel.push_player_notification(
+                    "game_restart_failed",
+                    "游戏已重启，但 Copilot API 未在超时内恢复",
+                    data={"save_path": save_path, "cancelled_tasks": cancelled},
+                )
+                if self.ws_server is not None and self.ws_server.is_running:
+                    await self.bridge.publish_dashboard()
+                return {
+                    "ok": False,
+                    "message": "Game API did not recover in time.",
+                    "cancelled_tasks": cancelled,
+                }
+
+            self.world_model.reset_snapshot()
+            self.world_model.refresh(force=True)
+            self.bridge.sync_runtime()
+            await self._start_loop_task()
+            self.kernel.push_player_notification(
+                "game_restart_complete",
+                "OpenRA 对局已重启并完成重新连接",
+                data={"save_path": save_path, "cancelled_tasks": cancelled},
+            )
+            if self.ws_server is not None and self.ws_server.is_running:
+                await self.bridge.publish_dashboard()
+            return {"ok": True, "cancelled_tasks": cancelled, "save_path": save_path}
+
+    async def _start_loop_task(self) -> None:
+        if self._loop_task is not None and not self._loop_task.done():
+            return
+        self._loop_task = asyncio.create_task(self.game_loop.start())
+
+    async def _stop_loop_task(self) -> None:
+        self.game_loop.stop()
+        if self._loop_task is None:
+            return
+        try:
+            await asyncio.wait_for(self._loop_task, timeout=2.0)
+        except asyncio.TimeoutError:
+            self._loop_task.cancel()
+            try:
+                await self._loop_task
+            except asyncio.CancelledError:
+                pass
+        self._loop_task = None
 
     def export_runtime_reports(
         self,

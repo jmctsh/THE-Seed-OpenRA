@@ -466,6 +466,21 @@ class WorldModel:
             "timestamp": self.state.timestamp,
         }
 
+    def reset_snapshot(self, *, clear_history: bool = True) -> None:
+        self.state = WorldState(timestamp=0.0)
+        self._last_actor_refresh = 0.0
+        self._last_economy_refresh = 0.0
+        self._last_map_refresh = 0.0
+        self._pending_events = []
+        self._last_refresh_layers = []
+        self._frontline_weak_active = False
+        self._economy_surplus_active = False
+        self._consecutive_refresh_failures = 0
+        self._total_refresh_failures = 0
+        self._last_refresh_error = None
+        if clear_history:
+            self._event_history = []
+
     def _due_layers(self, now: float, force: bool) -> list[str]:
         layers: list[str] = []
         if force or not self.state.actors or now - self._last_actor_refresh >= self.refresh_policy.actors_s:
