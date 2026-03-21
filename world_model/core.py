@@ -250,7 +250,7 @@ class WorldModel:
         if len(self._event_history) > self.event_history_limit:
             self._event_history = self._event_history[-self.event_history_limit :]
         self._last_refresh_layers = layers
-        slog.info(
+        slog.debug(
             "WorldModel refresh completed",
             event="world_refresh_completed",
             layers=layers,
