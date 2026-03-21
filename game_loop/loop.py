@@ -200,7 +200,7 @@ class GameLoop:
 
         with bm_span("job_tick", name=f"game_loop:tick_{self._tick_count}"):
             # 1. WorldModel refresh (layered refresh + internal event detection)
-            self.world_model.refresh(now=now)
+            await asyncio.to_thread(self.world_model.refresh, now=now)
 
             # 2. Collect events (single source — avoids double-counting)
             events = self.world_model.detect_events(clear=True)
@@ -217,7 +217,7 @@ class GameLoop:
             self._handle_world_model_health(now)
 
             # 4. Tick due Jobs
-            self._tick_jobs(now)
+            await self._tick_jobs(now)
 
             # 5. Check review_interval for Task Agents (1.8)
             self._check_agent_reviews(now)
@@ -226,7 +226,7 @@ class GameLoop:
             if self._dashboard_callback:
                 self._dashboard_callback(self._tick_count, now)
 
-    def _tick_jobs(self, now: float) -> None:
+    async def _tick_jobs(self, now: float) -> None:
         """Tick all registered Jobs that are due."""
         for reg in list(self._jobs.values()):
             job = reg.job
@@ -239,7 +239,7 @@ class GameLoop:
 
             reg.last_tick_at = now
             try:
-                job.do_tick()
+                await asyncio.to_thread(job.do_tick)
             except Exception as exc:
                 logger.exception("Job tick error: %s", job.job_id)
                 slog.error("Job tick raised exception", event="job_tick_failed", job_id=job.job_id, error=str(exc))

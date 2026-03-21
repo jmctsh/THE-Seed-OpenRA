@@ -11,7 +11,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Any, Optional
 
+from adjutant.adjutant import Adjutant
 from experts.base import BaseJob
+from llm import LLMResponse
 from models import (
     Event,
     EventType,
@@ -67,6 +69,7 @@ class MockKernel:
         self.routed_events: list[Event] = []
         self.tick_calls = 0
         self.player_notifications: list[dict[str, Any]] = []
+        self.tasks: list[Any] = []
 
     def route_events(self, events: list[Event]) -> None:
         self.routed_events.extend(events)
@@ -84,6 +87,21 @@ class MockKernel:
                 "timestamp": timestamp,
             }
         )
+
+    def create_task(self, raw_text: str, kind: str, priority: int) -> Any:
+        task = type("Task", (), {"task_id": "t1", "raw_text": raw_text, "kind": kind, "priority": priority})()
+        self.tasks.append(task)
+        return task
+
+    def submit_player_response(self, response, *, now=None) -> dict[str, Any]:
+        del response, now
+        return {"ok": True, "message": "ok"}
+
+    def list_pending_questions(self) -> list[dict[str, Any]]:
+        return []
+
+    def list_tasks(self) -> list[Any]:
+        return list(self.tasks)
 
 
 class MockTickJob(BaseJob):
@@ -125,6 +143,42 @@ class FaultyJob(BaseJob):
 
     def tick(self) -> None:
         raise RuntimeError("boom")
+
+
+class BlockingWorldModel(MockWorldModel):
+    def __init__(self, block_s: float = 0.3):
+        super().__init__()
+        self.block_s = block_s
+
+    def refresh(self, *, now=None, force=False) -> list[Event]:
+        time.sleep(self.block_s)
+        return super().refresh(now=now, force=force)
+
+    def world_summary(self) -> dict[str, Any]:
+        return {
+            "economy": {},
+            "military": {},
+            "map": {},
+            "known_enemy": {},
+            "timestamp": time.time(),
+        }
+
+    def query(self, query_type: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        del query_type, params
+        return {}
+
+
+class SleepLLM:
+    async def chat(
+        self,
+        messages: list[dict[str, Any]],
+        tools: Optional[list[dict[str, Any]]] = None,
+        max_tokens: int = 800,
+        temperature: float = 0.7,
+    ) -> LLMResponse:
+        del messages, tools, max_tokens, temperature
+        await asyncio.sleep(0.05)
+        return LLMResponse(text='{"type":"query","confidence":1.0}')
 
 
 # --- Tests ---
@@ -383,6 +437,31 @@ def test_job_exception_emits_failed_signal():
     print("  PASS: job_exception_emits_failed_signal")
 
 
+def test_blocking_world_refresh_does_not_starve_adjutant_llm():
+    wm = BlockingWorldModel(block_s=0.3)
+    kernel = MockKernel()
+    loop = GameLoop(wm, kernel, config=GameLoopConfig(tick_hz=10))
+    adjutant = Adjutant(llm=SleepLLM(), kernel=kernel, world_model=wm)
+
+    async def run():
+        task = asyncio.create_task(loop.start())
+        await asyncio.sleep(0.05)
+        start = time.perf_counter()
+        try:
+            result = await asyncio.wait_for(adjutant.handle_player_input("战况如何？"), timeout=0.5)
+            elapsed = time.perf_counter() - start
+            return result, elapsed
+        finally:
+            loop.stop()
+            await asyncio.wait_for(task, timeout=2.0)
+
+    result, elapsed = asyncio.run(run())
+
+    assert result["type"] == "query"
+    assert elapsed < 0.25
+    print(f"  PASS: blocking_world_refresh_does_not_starve_adjutant_llm (elapsed={elapsed:.3f}s)")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -397,5 +476,6 @@ if __name__ == "__main__":
     test_configurable_tick_rate()
     test_worldmodel_stale_pauses_jobs_notifies_and_recovers()
     test_job_exception_emits_failed_signal()
+    test_blocking_world_refresh_does_not_starve_adjutant_llm()
 
-    print(f"\nAll 9 tests passed!")
+    print(f"\nAll 10 tests passed!")
