@@ -45,3 +45,6 @@ runtime/
 
 # Local browser automation state
 .playwright-mcp/
+
+# Runtime generated data (too large for git)
+docs/wang/phase7_runtime_logs.json
