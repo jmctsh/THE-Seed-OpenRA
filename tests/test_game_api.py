@@ -171,9 +171,50 @@ def test_game_api_serializes_concurrent_requests() -> None:
         server.close()
 
 
+def test_game_api_normalizes_camel_case_can_produce_aliases() -> None:
+    api = GameAPI("127.0.0.1", port=1)
+    calls: list[str] = []
+
+    def fake_send(command: str, params: dict) -> dict:
+        assert command == "query_can_produce"
+        candidate = params["units"][0]["unit_type"]
+        calls.append(candidate)
+        return {"status": 1, "data": {"canProduce": candidate == "power plant"}}
+
+    api._send_request = fake_send  # type: ignore[method-assign]
+    api._handle_response = lambda response, _error: response["data"]  # type: ignore[method-assign]
+
+    assert api.can_produce("PowerPlant") is True
+    assert calls == ["PowerPlant", "power plant"]
+    print("  PASS: game_api_normalizes_camel_case_can_produce_aliases")
+
+
+def test_game_api_normalizes_camel_case_produce_aliases() -> None:
+    api = GameAPI("127.0.0.1", port=1)
+    calls: list[str] = []
+
+    def fake_send(command: str, params: dict) -> dict:
+        assert command == "start_production"
+        candidate = params["units"][0]["unit_type"]
+        calls.append(candidate)
+        wait_id = None
+        if candidate == "war factory":
+            wait_id = 42
+        return {"status": 1, "data": {"waitId": wait_id}}
+
+    api._send_request = fake_send  # type: ignore[method-assign]
+    api._handle_response = lambda response, _error: response["data"]  # type: ignore[method-assign]
+
+    assert api.produce("WarFactory", 1) == 42
+    assert calls == ["WarFactory", "war factory"]
+    print("  PASS: game_api_normalizes_camel_case_produce_aliases")
+
+
 if __name__ == "__main__":
     print("Running GameAPI tests...\n")
     test_game_api_reuses_single_connection()
     test_game_api_reconnects_after_server_side_close()
     test_game_api_serializes_concurrent_requests()
-    print("\nAll 3 tests passed!")
+    test_game_api_normalizes_camel_case_can_produce_aliases()
+    test_game_api_normalizes_camel_case_produce_aliases()
+    print("\nAll 5 tests passed!")

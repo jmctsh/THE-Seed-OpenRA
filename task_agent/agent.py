@@ -73,7 +73,8 @@ DeployExpert — deploy a unit (e.g. MCV):
   config: {actor_id: <int>, target_position: [x, y]}
 
 EconomyExpert — produce units:
-  config: {unit_type: "<unit_code>", count: <int>, queue_type: "Vehicle"|"Infantry"|"Building", repeat: false}
+  config: {unit_type: "<unit alias>", count: <int>, queue_type: "Vehicle"|"Infantry"|"Building", repeat: false}
+  unit_type should use an OpenRA-recognized alias such as an internal code ("powr", "2tnk"), a Chinese name ("发电厂", "重坦"), or a lowercase English alias ("power plant", "war factory"). Avoid CamelCase like "PowerPlant".
 
 Common command → Expert mapping (IMPORTANT — choose the right Expert):
 - "部署基地车" / "deploy MCV" → DeployExpert (first query_world to find MCV actor_id)

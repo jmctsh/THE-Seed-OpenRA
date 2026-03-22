@@ -5,6 +5,7 @@ import threading
 import uuid
 from typing import List, Optional, Tuple, Dict, Any
 from .models import *
+from .production_names import production_name_variants
 
 # API版本常量
 API_VERSION = "1.0"
@@ -313,11 +314,14 @@ class GameAPI:
             GameAPIError: 当查询生产能力失败时
         '''
         try:
-            response = self._send_request('query_can_produce', {
-                "units": [{"unit_type": unit_type}]
-            })
-            result = self._handle_response(response, "查询生产能力失败")
-            return result.get("canProduce", False)
+            for candidate in production_name_variants(unit_type):
+                response = self._send_request('query_can_produce', {
+                    "units": [{"unit_type": candidate}]
+                })
+                result = self._handle_response(response, "查询生产能力失败")
+                if result.get("canProduce", False):
+                    return True
+            return False
         except GameAPIError:
             raise
         except Exception as e:
@@ -339,12 +343,17 @@ class GameAPI:
             GameAPIError: 当生产命令执行失败时
         '''
         try:
-            response = self._send_request('start_production', {
-                "units": [{"unit_type": unit_type, "quantity": quantity}],
-                "autoPlaceBuilding": auto_place_building
-            })
-            result = self._handle_response(response, "生产命令执行失败")
-            return result.get("waitId")
+            last_wait_id = None
+            for candidate in production_name_variants(unit_type):
+                response = self._send_request('start_production', {
+                    "units": [{"unit_type": candidate, "quantity": quantity}],
+                    "autoPlaceBuilding": auto_place_building
+                })
+                result = self._handle_response(response, "生产命令执行失败")
+                last_wait_id = result.get("waitId")
+                if last_wait_id is not None and last_wait_id >= 0:
+                    return last_wait_id
+            return last_wait_id
         except GameAPIError as e:
             if e.code == "COMMAND_EXECUTION_ERROR":
                 return None
