@@ -33,6 +33,14 @@ class _FakePopen:
         self.pid = 43210
 
 
+class _CloseTrackingAPI:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
 def test_start_game_passes_baseline_save() -> None:
     captured: dict[str, Any] = {}
     original_popen = game_control.subprocess.Popen
@@ -114,6 +122,7 @@ def test_cli_restart_forwards_save_path() -> None:
 def test_application_runtime_restart_game() -> None:
     provider = MockProvider([])
     source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
     original_restart = main_module.game_control.restart_game
     original_wait = main_module.game_control.wait_for_api
     original_is_running = main_module.game_control.GameAPI.is_server_running
@@ -124,7 +133,9 @@ def test_application_runtime_restart_game() -> None:
             config=RuntimeConfig(enable_ws=False, verify_game_api=False, llm_provider="mock", llm_model="mock"),
             task_llm=provider,
             adjutant_llm=provider,
+            api=api,
             world_source=source,
+            expert_registry={},
         )
         try:
             await runtime.start()
@@ -135,9 +146,11 @@ def test_application_runtime_restart_game() -> None:
             assert result["ok"] is True
             assert calls["save_path"] == "baseline.orasav"
             assert runtime.game_loop.is_running
+            assert api.close_calls == 1
             assert source.actor_fetches >= 2
         finally:
             await runtime.stop()
+        assert api.close_calls == 2
 
     try:
         def fake_restart(save_path=None, config=None):

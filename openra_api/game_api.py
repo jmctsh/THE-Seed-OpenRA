@@ -1,6 +1,7 @@
 import socket
 import json
 import time
+import threading
 import uuid
 from typing import List, Optional, Tuple, Dict, Any
 from .models import *
@@ -24,6 +25,7 @@ class GameAPI:
 
     MAX_RETRIES = 3
     RETRY_DELAY = 0.5
+    SOCKET_TIMEOUT = 10.0
 
     @staticmethod
     def is_server_running(host="localhost", port=7445, timeout=2.0) -> bool:
@@ -51,23 +53,11 @@ class GameAPI:
                 sock.connect((host, port))
 
                 # 发送请求
-                json_data = json.dumps(request_data)
+                json_data = json.dumps(request_data) + "\n"
                 sock.sendall(json_data.encode('utf-8'))
 
                 # 接收响应
-                chunks = []
-                while True:
-                    try:
-                        chunk = sock.recv(4096)
-                        if not chunk:
-                            break
-                        chunks.append(chunk)
-                    except socket.timeout:
-                        if chunks:
-                            break
-                        return False
-
-                data = b''.join(chunks).decode('utf-8')
+                data = GameAPI._receive_payload(sock)
 
                 try:
                     response = json.loads(data)
@@ -86,6 +76,8 @@ class GameAPI:
     def __init__(self, host, port=7445, language="zh"):
         self.server_address = (host, port)
         self.language = language
+        self._socket: Optional[socket.socket] = None
+        self._socket_lock = threading.RLock()
         '''初始化 GameAPI 类
 
         Args:
@@ -97,6 +89,80 @@ class GameAPI:
     def _generate_request_id(self) -> str:
         """生成唯一的请求ID"""
         return str(uuid.uuid4())
+
+    def close(self) -> None:
+        """关闭当前持久连接。"""
+        with self._socket_lock:
+            self._close_socket_locked()
+
+    def _close_socket_locked(self) -> None:
+        if self._socket is None:
+            return
+        try:
+            self._socket.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        try:
+            self._socket.close()
+        finally:
+            self._socket = None
+
+    def _ensure_connection_locked(self) -> socket.socket:
+        if self._socket is not None:
+            return self._socket
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(self.SOCKET_TIMEOUT)
+        try:
+            sock.connect(self.server_address)
+        except Exception:
+            sock.close()
+            raise
+
+        self._socket = sock
+        return sock
+
+    @staticmethod
+    def _parse_complete_json(payload: str) -> Optional[str]:
+        candidate = payload.strip()
+        if not candidate:
+            return None
+        try:
+            json.loads(candidate)
+        except json.JSONDecodeError:
+            return None
+        return candidate
+
+    @staticmethod
+    def _receive_payload(sock: socket.socket) -> str:
+        chunks: list[str] = []
+        while True:
+            try:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    candidate = GameAPI._parse_complete_json("".join(chunks))
+                    if candidate is None:
+                        raise ConnectionError("连接在收到完整响应前关闭")
+                    return candidate
+
+                decoded = chunk.decode('utf-8')
+                chunks.append(decoded)
+                payload = "".join(chunks)
+
+                newline_index = payload.find("\n")
+                if newline_index >= 0:
+                    candidate = payload[:newline_index].rstrip("\r")
+                    if candidate:
+                        return candidate
+
+                candidate = GameAPI._parse_complete_json(payload)
+                if candidate is not None:
+                    return candidate
+            except socket.timeout:
+                candidate = GameAPI._parse_complete_json("".join(chunks))
+                if candidate is not None:
+                    return candidate
+                raise
 
     def _send_request(self, command: str, params: dict) -> dict:
         '''通过socket和Game交互，发送信息并接收响应
@@ -124,12 +190,11 @@ class GameAPI:
         retries = 0
         while retries < self.MAX_RETRIES:
             try:
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.settimeout(10)  # 设置超时时间
-                    sock.connect(self.server_address)
+                with self._socket_lock:
+                    sock = self._ensure_connection_locked()
 
                     # 发送请求
-                    json_data = json.dumps(request_data)
+                    json_data = json.dumps(request_data) + "\n"
                     sock.sendall(json_data.encode('utf-8'))
 
                     # 接收响应
@@ -163,7 +228,9 @@ class GameAPI:
                         raise GameAPIError("INVALID_JSON",
                                          "服务器返回的不是有效的JSON格式")
 
-            except (socket.timeout, ConnectionError) as e:
+            except (socket.timeout, ConnectionError, OSError) as e:
+                with self._socket_lock:
+                    self._close_socket_locked()
                 retries += 1
                 if retries >= self.MAX_RETRIES:
                     raise GameAPIError("CONNECTION_ERROR",
@@ -178,20 +245,14 @@ class GameAPI:
                                  "发生未预期的错误: {0}".format(str(e)))
 
     def _receive_data(self, sock: socket.socket) -> str:
-        """从socket接收完整的响应数据"""
-        chunks = []
-        while True:
-            try:
-                chunk = sock.recv(4096)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-            except socket.timeout:
-                if not chunks:
-                    raise GameAPIError("TIMEOUT",
-                                     "接收响应超时")
-                break
-        return b''.join(chunks).decode('utf-8')
+        """从socket接收完整的响应数据。优先使用换行定界，同时兼容单个完整JSON包。"""
+        return self._receive_payload(sock)
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def _handle_response(self, response: dict, error_msg: str) -> Any:
         """处理API响应，提取所需数据或抛出异常"""

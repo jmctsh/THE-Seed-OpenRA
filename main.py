@@ -458,6 +458,9 @@ class ApplicationRuntime:
 
     async def stop(self) -> None:
         await self._stop_loop_task()
+        api_close = getattr(self.api, "close", None)
+        if callable(api_close):
+            api_close()
         if self.ws_server is not None and self.ws_server.is_running:
             await self.ws_server.stop()
         self.export_runtime_reports()
@@ -479,6 +482,9 @@ class ApplicationRuntime:
                 data={"save_path": save_path},
             )
             await self._stop_loop_task()
+            api_close = getattr(self.api, "close", None)
+            if callable(api_close):
+                api_close()
             cancelled = self.kernel.cancel_tasks({})
             self.bridge.sync_runtime()
             if self.ws_server is not None and self.ws_server.is_running:
