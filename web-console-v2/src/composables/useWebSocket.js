@@ -38,12 +38,20 @@ export function useWebSocket(url = 'ws://localhost:8765/ws') {
   function send(type, data = {}) {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type, ...data, timestamp: Date.now() / 1000 }))
+      return true
     }
+    return false
   }
 
   function on(type, fn) {
     if (!handlers[type]) handlers[type] = []
     handlers[type].push(fn)
+    return () => {
+      handlers[type] = (handlers[type] || []).filter(item => item !== fn)
+      if (handlers[type] && handlers[type].length === 0) {
+        delete handlers[type]
+      }
+    }
   }
 
   let intentionalDisconnect = false

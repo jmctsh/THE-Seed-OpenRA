@@ -15,7 +15,7 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick, defineProps, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, defineProps, onMounted, onUnmounted } from 'vue'
 import { formatTimeAgo } from '../composables/useTimeAgo.js'
 
 const refreshTick = ref(0)
@@ -29,7 +29,7 @@ const props = defineProps({
   on: Function,
 })
 
-const STORAGE_KEY = 'theseed_chat_history'
+const STORAGE_KEY = 'theseed_chat_history_session'
 const MAX_STORED = 100
 
 const inputText = ref('')
@@ -39,7 +39,7 @@ let msgId = 0
 // Restore from localStorage
 function loadHistory() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = sessionStorage.getItem(STORAGE_KEY)
     if (raw) {
       const items = JSON.parse(raw)
       msgId = items.length
@@ -54,7 +54,7 @@ const chatMessages = ref(loadHistory())
 function saveHistory() {
   try {
     const recent = chatMessages.value.slice(-MAX_STORED)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(recent))
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(recent))
   } catch (e) { /* ignore */ }
 }
 
@@ -69,21 +69,31 @@ function addMessage(from, label, content, timestamp) {
 function sendMessage() {
   const text = inputText.value.trim()
   if (!text) return
+  const sent = props.send ? props.send('command_submit', { text }) : false
+  if (!sent) return
   addMessage('player', '玩家', text)
-  props.send('command_submit', { text })
   inputText.value = ''
 }
 
-if (props.on) {
-  props.on('query_response', (msg) => {
+let offQueryResponse = null
+let offPlayerNotification = null
+
+onMounted(() => {
+  if (!props.on) return
+  offQueryResponse = props.on('query_response', (msg) => {
     addMessage('system', '副官', msg.data?.answer || msg.data?.response_text || JSON.stringify(msg.data), msg.timestamp)
   })
-  props.on('player_notification', (msg) => {
+  offPlayerNotification = props.on('player_notification', (msg) => {
     const icon = msg.data?.icon || 'ℹ'
     addMessage('notification', icon, msg.data?.content || JSON.stringify(msg.data), msg.timestamp)
   })
   // task_update is handled by TaskPanel, not ChatView
-}
+})
+
+onUnmounted(() => {
+  if (offQueryResponse) offQueryResponse()
+  if (offPlayerNotification) offPlayerNotification()
+})
 </script>
 
 <style scoped>
