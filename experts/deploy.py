@@ -71,13 +71,16 @@ class DeployJob(BaseJob):
             return
 
         if success:
+            # Note: GameAPI deploy_units may silently fail on non-deployable actors.
+            # Report as succeeded but include caveat — Task Agent should verify via query_world.
             self.status = JobStatus.SUCCEEDED
             self.emit_signal(
                 kind=SignalKind.TASK_COMPLETE,
-                summary=f"Deployed actor {config.actor_id} at {config.target_position}",
+                summary=f"Deploy command sent for actor {config.actor_id} at {config.target_position} (verify via query_world)",
                 result="succeeded",
                 data={
                     "actor_id": config.actor_id,
+                    "note": "GameAPI deploy may silently fail on non-deployable actors. Use query_world to verify.",
                     "position": list(config.target_position),
                     "building_type": config.building_type,
                 },

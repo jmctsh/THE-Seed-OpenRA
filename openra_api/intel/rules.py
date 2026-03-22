@@ -27,6 +27,9 @@ DEFAULT_NAME_ALIASES: Dict[str, str] = {
 DEFAULT_UNIT_CATEGORY_RULES: Dict[str, str] = {
     "矿车": "harvester",
     "矿场": "building",
+    "建造厂": "building",
+    "电厂": "building",
+    "核电": "building",
     "兵营": "building",
     "车间": "building",
     "雷达": "building",
