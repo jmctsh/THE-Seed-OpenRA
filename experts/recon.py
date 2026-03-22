@@ -63,12 +63,14 @@ class ReconJob(BaseJob):
         return "ReconExpert"
 
     def get_resource_needs(self) -> list[ResourceNeed]:
+        # Soft constraint: prefer fast units but accept any mobile unit.
+        # Kernel allocates fastest available; infantry works if no vehicles.
         return [
             ResourceNeed(
                 job_id=self.job_id,
                 kind=ResourceKind.ACTOR,
                 count=1,
-                predicates={"owner": "self", "category": "vehicle", "mobility": "fast"},
+                predicates={"owner": "self"},
             )
         ]
 

@@ -96,7 +96,7 @@ def test_recon_expert_creates_job_with_fast_vehicle_need() -> None:
     assert len(needs) == 1
     assert needs[0].kind == ResourceKind.ACTOR
     assert needs[0].count == 1
-    assert needs[0].predicates == {"owner": "self", "category": "vehicle", "mobility": "fast"}
+    assert needs[0].predicates == {"owner": "self"}  # Soft constraint: any mobile unit
     assert job.tick_interval == 1.0
     print("  PASS: recon_expert_creates_job_with_fast_vehicle_need")
 

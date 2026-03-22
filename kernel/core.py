@@ -720,12 +720,14 @@ class Kernel:
 
     def _infer_resource_needs(self, controller: BaseJob | _ManagedJob, config: ExpertConfig) -> list[ResourceNeed]:
         if controller.expert_type == "ReconExpert":
+            # Soft constraint: any mobile unit works for scouting.
+            # Kernel's allocation logic should prefer faster units.
             return [
                 ResourceNeed(
                     job_id=controller.job_id,
                     kind=ResourceKind.ACTOR,
                     count=1,
-                    predicates={"mobility": "fast", "owner": "self"},
+                    predicates={"owner": "self"},
                 )
             ]
         if controller.expert_type == "CombatExpert":
