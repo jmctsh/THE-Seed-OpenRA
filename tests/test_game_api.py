@@ -13,7 +13,7 @@ from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from openra_api.game_api import GameAPI
+from openra_api.game_api import GameAPI, GameAPIError
 
 
 class _PersistentJsonServer:
@@ -210,6 +210,54 @@ def test_game_api_normalizes_camel_case_produce_aliases() -> None:
     print("  PASS: game_api_normalizes_camel_case_produce_aliases")
 
 
+def test_place_building_raises_when_ready_item_does_not_change() -> None:
+    api = GameAPI("127.0.0.1", port=1)
+    responses = [
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+    ]
+
+    def fake_queue(queue_type: str) -> dict:
+        assert queue_type == "Building"
+        return responses.pop(0)
+
+    api.query_production_queue = fake_queue  # type: ignore[method-assign]
+    api._send_request = lambda command, params: {"status": 1, "data": None}  # type: ignore[method-assign]
+    api._handle_response = lambda response, _error: response.get("data")  # type: ignore[method-assign]
+
+    try:
+        api.place_building("Building")
+        raise AssertionError("Expected place_building to detect no-effect placement")
+    except GameAPIError as exc:
+        assert exc.code == "PLACE_BUILDING_NO_EFFECT"
+    print("  PASS: place_building_raises_when_ready_item_does_not_change")
+
+
+def test_place_building_accepts_ready_item_change() -> None:
+    api = GameAPI("127.0.0.1", port=1)
+    responses = [
+        {"queue_type": "Building", "queue_items": [{"name": "barr", "chineseName": "兵营", "done": True, "owner_actor_id": 3, "total_cost": 250, "total_time": 75}], "has_ready_item": True},
+        {"queue_type": "Building", "queue_items": [], "has_ready_item": False},
+    ]
+
+    def fake_queue(queue_type: str) -> dict:
+        assert queue_type == "Building"
+        return responses.pop(0)
+
+    api.query_production_queue = fake_queue  # type: ignore[method-assign]
+    api._send_request = lambda command, params: {"status": 1, "data": None}  # type: ignore[method-assign]
+    api._handle_response = lambda response, _error: response.get("data")  # type: ignore[method-assign]
+
+    api.place_building("Building")
+    print("  PASS: place_building_accepts_ready_item_change")
+
+
 if __name__ == "__main__":
     print("Running GameAPI tests...\n")
     test_game_api_reuses_single_connection()
@@ -217,4 +265,6 @@ if __name__ == "__main__":
     test_game_api_serializes_concurrent_requests()
     test_game_api_normalizes_camel_case_can_produce_aliases()
     test_game_api_normalizes_camel_case_produce_aliases()
-    print("\nAll 5 tests passed!")
+    test_place_building_raises_when_ready_item_does_not_change()
+    test_place_building_accepts_ready_item_change()
+    print("\nAll 7 tests passed!")

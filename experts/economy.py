@@ -6,6 +6,7 @@ from typing import Any, Optional, Protocol
 
 from benchmark import span as bm_span
 from models import EventType, JobStatus, EconomyJobConfig, ResourceKind, ResourceNeed, SignalKind
+from openra_api.game_api import GameAPIError
 from openra_api.production_names import production_name_matches
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
@@ -87,9 +88,12 @@ class EconomyJob(BaseJob):
         if self.status == JobStatus.SUCCEEDED:
             return
 
-        if self._maybe_place_ready_building(queue):
+        placement_state = self._maybe_place_ready_building(queue)
+        if placement_state == "placed":
             self.phase = "placing"
             self.status = JobStatus.RUNNING
+            return
+        if placement_state == "blocked":
             return
 
         reason = self._waiting_reason_for(queue, economy)
@@ -181,7 +185,7 @@ class EconomyJob(BaseJob):
             and not self._has_matching_ready_item(queue)
         ):
             return "queue_ready_item_pending"
-        if bool(economy.get("low_power")):
+        if bool(economy.get("low_power")) and not self._is_power_recovery_job():
             return "low_power"
         if float(economy.get("total_credits", 0) or 0) <= 0 and not self._matching_queue_items(queue, include_done=False):
             return "no_funds"
@@ -206,6 +210,7 @@ class EconomyJob(BaseJob):
             "cannot_produce": f"当前无法生产 {self.config.unit_type}，等待前置条件恢复",
             "queue_paused": f"{self.config.queue_type} 队列暂停，等待恢复",
             "queue_ready_item_pending": "建造队列里有待放置建筑，等待先清空队列",
+            "ready_item_not_placeable": "建筑已就绪但无法自动放置，等待人工清理或腾出位置",
         }
         self.emit_signal(
             kind=SignalKind.BLOCKED,
@@ -247,14 +252,29 @@ class EconomyJob(BaseJob):
     def _has_matching_ready_item(self, queue: Optional[dict[str, Any]]) -> bool:
         return any(bool(item.get("done")) for item in self._matching_queue_items(queue, include_done=True))
 
-    def _maybe_place_ready_building(self, queue: Optional[dict[str, Any]]) -> bool:
+    def _is_power_recovery_job(self) -> bool:
+        if self.config.queue_type != "Building":
+            return False
+        return any(
+            production_name_matches(self.config.unit_type, code, display_name)
+            for code, display_name in (
+                ("powr", "发电厂"),
+                ("apwr", "高级发电厂"),
+            )
+        )
+
+    def _maybe_place_ready_building(self, queue: Optional[dict[str, Any]]) -> Optional[str]:
         if self.config.queue_type != "Building" or queue is None:
-            return False
+            return None
         if not self._has_matching_ready_item(queue):
-            return False
-        with bm_span("expert_logic", name=f"economy:{self.job_id}:place_building"):
-            self.game_api.place_building(self.config.queue_type)
-        return True
+            return None
+        try:
+            with bm_span("expert_logic", name=f"economy:{self.job_id}:place_building"):
+                self.game_api.place_building(self.config.queue_type)
+        except GameAPIError:
+            self._enter_waiting("ready_item_not_placeable")
+            return "blocked"
+        return "placed"
 
     def _matching_queue_items(self, queue: Optional[dict[str, Any]], *, include_done: bool) -> list[dict[str, Any]]:
         if queue is None:

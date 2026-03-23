@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from experts.economy import EconomyExpert, EconomyJob
 from models import EconomyJobConfig, JobStatus, ResourceKind, SignalKind
+from openra_api.game_api import GameAPIError
 
 
 class MockGameAPI:
@@ -16,6 +17,7 @@ class MockGameAPI:
         self.produce_calls: list[dict] = []
         self.place_building_calls: list[dict] = []
         self.can_produce_value = True
+        self.place_building_error: GameAPIError | None = None
 
     def can_produce(self, unit_type: str) -> bool:
         return self.can_produce_value
@@ -32,6 +34,8 @@ class MockGameAPI:
 
     def place_building(self, queue_type: str, location=None) -> None:
         self.place_building_calls.append({"queue_type": queue_type, "location": location})
+        if self.place_building_error is not None:
+            raise self.place_building_error
 
 
 class MockWorldModel:
@@ -180,6 +184,32 @@ def test_economy_job_waits_when_queue_missing() -> None:
     print("  PASS: economy_job_waits_when_queue_missing")
 
 
+def test_economy_job_can_build_power_while_low_power() -> None:
+    api = MockGameAPI()
+    world = MockWorldModel()
+    world.economy["low_power"] = True
+    world.queues = {"Building": {"queue_type": "Building", "items": [], "has_ready_item": False}}
+    signals = []
+    job = EconomyJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(unit_type="PowerPlant", count=1, queue_type="Building"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["queue:Building"])
+
+    job.tick()
+
+    assert job.status == JobStatus.RUNNING
+    assert api.produce_calls == [
+        {"unit_type": "PowerPlant", "quantity": 1, "auto_place_building": True}
+    ]
+    assert signals == []
+    print("  PASS: economy_job_can_build_power_while_low_power")
+
+
 def test_economy_job_matches_aliases_in_queue_and_completion_events() -> None:
     api = MockGameAPI()
     world = MockWorldModel()
@@ -255,6 +285,36 @@ def test_economy_job_auto_places_ready_buildings_and_blocks_foreign_ready_items(
     print("  PASS: economy_job_auto_places_ready_buildings_and_blocks_foreign_ready_items")
 
 
+def test_economy_job_waits_when_ready_building_cannot_be_placed() -> None:
+    api = MockGameAPI()
+    api.place_building_error = GameAPIError("COMMAND_EXECUTION_ERROR", "无法自动放置建筑: 兵营")
+    world = MockWorldModel()
+    world.queues = {
+        "Building": {
+            "queue_type": "Building",
+            "items": [{"name": "barr", "display_name": "兵营", "done": True, "paused": False}],
+            "has_ready_item": True,
+        }
+    }
+    signals = []
+    job = EconomyJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(unit_type="兵营", count=1, queue_type="Building"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["queue:Building"])
+
+    job.tick()
+
+    assert job.status == JobStatus.WAITING
+    assert signals[-1].kind == SignalKind.BLOCKED
+    assert signals[-1].data["reason"] == "ready_item_not_placeable"
+    print("  PASS: economy_job_waits_when_ready_building_cannot_be_placed")
+
+
 def test_economy_job_enables_auto_place_for_buildings() -> None:
     api = MockGameAPI()
     world = MockWorldModel()
@@ -283,7 +343,9 @@ if __name__ == "__main__":
     test_economy_job_emits_progress_and_finishes()
     test_economy_job_waits_on_low_power_and_recovers()
     test_economy_job_waits_when_queue_missing()
+    test_economy_job_can_build_power_while_low_power()
     test_economy_job_matches_aliases_in_queue_and_completion_events()
     test_economy_job_auto_places_ready_buildings_and_blocks_foreign_ready_items()
+    test_economy_job_waits_when_ready_building_cannot_be_placed()
     test_economy_job_enables_auto_place_for_buildings()
-    print("\nAll 7 EconomyExpert tests passed!")
+    print("\nAll 8 EconomyExpert tests passed!")

@@ -165,6 +165,21 @@ class GameAPI:
                     return candidate
                 raise
 
+    @staticmethod
+    def _ready_queue_signature(queue: Optional[dict]) -> Optional[tuple]:
+        if not isinstance(queue, dict) or not queue.get("has_ready_item"):
+            return None
+        for item in queue.get("queue_items", []):
+            if bool(item.get("done")):
+                return (
+                    item.get("name"),
+                    item.get("chineseName"),
+                    item.get("owner_actor_id"),
+                    item.get("total_cost"),
+                    item.get("total_time"),
+                )
+        return None
+
     def _send_request(self, command: str, params: dict) -> dict:
         '''通过socket和Game交互，发送信息并接收响应
 
@@ -1005,6 +1020,9 @@ class GameAPI:
             GameAPIError: 当放置建筑失败时
         '''
         try:
+            before_ready = None
+            if location is None:
+                before_ready = self._ready_queue_signature(self.query_production_queue(queue_type))
             params = {
                 "queueType": queue_type
             }
@@ -1013,6 +1031,17 @@ class GameAPI:
 
             response = self._send_request('place_building', params)
             self._handle_response(response, "放置建筑失败")
+            if location is None and before_ready is not None:
+                deadline = time.time() + 0.35
+                while time.time() < deadline:
+                    after_ready = self._ready_queue_signature(self.query_production_queue(queue_type))
+                    if after_ready != before_ready:
+                        return
+                    time.sleep(0.05)
+                raise GameAPIError(
+                    "PLACE_BUILDING_NO_EFFECT",
+                    f"自动放置命令未生效: {queue_type} 队列中的待放置建筑没有变化",
+                )
         except GameAPIError:
             raise
         except Exception as e:
