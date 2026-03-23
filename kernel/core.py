@@ -241,6 +241,7 @@ class Kernel:
             for job in list(self._jobs.values()):
                 if job.task_id == task_id and job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}:
                     self.abort_job(job.job_id)
+            self._release_task_job_resources(task_id)
             self._close_pending_questions_for_task(task_id)
             task.status = TaskStatus.ABORTED
             task.timestamp = _now()
@@ -274,6 +275,7 @@ class Kernel:
             for job in list(self._jobs.values()):
                 if job.task_id == task_id and job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}:
                     self.abort_job(job.job_id)
+            self._release_task_job_resources(task_id)
             self._close_pending_questions_for_task(task_id)
             self._stop_agent(task_id)
             self._sync_world_runtime()
@@ -632,6 +634,14 @@ class Kernel:
             controller.resources = []
         for resource_id in resource_ids:
             self.world_model.unbind_resource(resource_id)
+
+    def _release_task_job_resources(self, task_id: str) -> None:
+        for controller in self._jobs.values():
+            if controller.task_id != task_id:
+                continue
+            if controller.resources:
+                self._release_job_resources(controller)
+            self._resource_loss_notified.discard(controller.job_id)
 
     def _sync_world_runtime(self) -> None:
         self.world_model.set_runtime_state(

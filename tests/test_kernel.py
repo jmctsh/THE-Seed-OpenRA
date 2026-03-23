@@ -342,6 +342,37 @@ def test_tool_handlers_complete_task_and_route_signal() -> None:
     print("  PASS: tool_handlers_complete_task_and_route_signal")
 
 
+def test_complete_task_releases_resources_from_terminal_jobs() -> None:
+    def needs_factory(job_id, _config):
+        return [ResourceNeed(job_id=job_id, kind=ResourceKind.ACTOR, count=1, predicates={"mobility": "fast", "owner": "self"})]
+
+    kernel, _ = make_resource_kernel(needs_factory)
+    task1 = kernel.create_task("first strike", TaskKind.MANAGED, 50)
+    job1 = kernel.start_job(
+        task1.task_id,
+        "CombatExpert",
+        CombatJobConfig(target_position=(100, 100), engagement_mode=EngagementMode.HARASS),
+    )
+
+    controller1 = kernel._jobs[job1.job_id]
+    assert controller1.resources == ["actor:10"]
+    controller1.status = JobStatus.SUCCEEDED
+
+    assert kernel.complete_task(task1.task_id, "succeeded", "done") is True
+    assert kernel.world_model.resource_bindings == {}
+
+    task2 = kernel.create_task("second strike", TaskKind.MANAGED, 50)
+    job2 = kernel.start_job(
+        task2.task_id,
+        "CombatExpert",
+        CombatJobConfig(target_position=(100, 100), engagement_mode=EngagementMode.HARASS),
+    )
+    controller2 = kernel._jobs[job2.job_id]
+
+    assert controller2.resources == ["actor:10"]
+    print("  PASS: complete_task_releases_resources_from_terminal_jobs")
+
+
 def test_route_events_batches_through_route_event() -> None:
     kernel = make_kernel()
     received: list[Event] = []
@@ -665,6 +696,7 @@ def main() -> None:
     test_start_job_validates_and_lifecycle_controls()
     test_cancel_task_and_cancel_tasks_abort_jobs()
     test_tool_handlers_complete_task_and_route_signal()
+    test_complete_task_releases_resources_from_terminal_jobs()
     test_route_events_batches_through_route_event()
     test_resource_matching_and_priority_preemption()
     test_multi_resource_job_degrades_and_unit_died_auto_replaces()
