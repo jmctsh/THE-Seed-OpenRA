@@ -357,6 +357,40 @@ def test_base_under_attack_requires_nearby_enemy_combat_and_meaningful_damage() 
     print("  PASS: base_under_attack_requires_nearby_enemy_combat_and_meaningful_damage")
 
 
+def test_mcv_deploy_is_not_reported_as_structure_loss_or_base_attack() -> None:
+    frames = [
+        Frame(
+            self_actors=[
+                Actor(actor_id=129, type="基地车", faction="自己", position=Location(90, 12), hppercent=100, activity="Idle"),
+            ],
+            enemy_actors=[],
+            economy=PlayerBaseInfo(Cash=5000, Resources=0, Power=0, PowerDrained=0, PowerProvided=0),
+            map_info=make_map(explored=0.5, visible=0.25),
+            queues={},
+        ),
+        Frame(
+            self_actors=[
+                Actor(actor_id=136, type="建造厂", faction="自己", position=Location(89, 11), hppercent=100, activity="Idle"),
+            ],
+            enemy_actors=[],
+            economy=PlayerBaseInfo(Cash=5000, Resources=0, Power=0, PowerDrained=0, PowerProvided=0),
+            map_info=make_map(explored=0.5, visible=0.25),
+            queues={},
+        ),
+    ]
+    source = MockWorldSource(frames)
+    world = WorldModel(source)
+
+    world.refresh(now=100.0, force=True)
+    source.set_frame(1)
+    events = world.refresh(now=101.0, force=True)
+    types = {event.type for event in events}
+
+    assert EventType.STRUCTURE_LOST not in types
+    assert EventType.BASE_UNDER_ATTACK not in types
+    print("  PASS: mcv_deploy_is_not_reported_as_structure_loss_or_base_attack")
+
+
 def main() -> None:
     test_refresh_layers_and_summary()
     test_layered_refresh_respects_intervals()
@@ -365,7 +399,8 @@ def main() -> None:
     test_unit_death_runtime_state_and_constraints()
     test_refresh_failure_marks_stale_and_recovers()
     test_base_under_attack_requires_nearby_enemy_combat_and_meaningful_damage()
-    print("OK: 7 WorldModel tests passed")
+    test_mcv_deploy_is_not_reported_as_structure_loss_or_base_attack()
+    print("OK: 8 WorldModel tests passed")
 
 
 if __name__ == "__main__":

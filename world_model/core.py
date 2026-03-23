@@ -610,9 +610,17 @@ class WorldModel:
 
         previous_ids = set(previous.actors)
         current_ids = set(current.actors)
+        new_self_buildings = [
+            current.actors[actor_id]
+            for actor_id in sorted(current_ids - previous_ids)
+            if current.actors[actor_id].owner == ActorOwner.SELF
+            and current.actors[actor_id].category == ActorCategory.BUILDING
+        ]
 
         for actor_id in sorted(previous_ids - current_ids):
             actor = previous.actors[actor_id]
+            if self._is_probable_self_deploy(actor, new_self_buildings):
+                continue
             event_type = EventType.UNIT_DIED
             if actor.owner == ActorOwner.SELF and actor.category in {ActorCategory.BUILDING, ActorCategory.MCV}:
                 event_type = EventType.STRUCTURE_LOST
@@ -702,6 +710,18 @@ class WorldModel:
             )
 
         return events
+
+    def _is_probable_self_deploy(
+        self,
+        actor: NormalizedActor,
+        new_self_buildings: Sequence[NormalizedActor],
+    ) -> bool:
+        if actor.owner != ActorOwner.SELF or actor.category != ActorCategory.MCV:
+            return False
+        for building in new_self_buildings:
+            if self._distance(actor.position, building.position) <= 48:
+                return True
+        return False
 
     def _detect_queue_events(self, previous: WorldState, current: WorldState, timestamp: float) -> list[Event]:
         events: list[Event] = []
