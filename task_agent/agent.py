@@ -248,6 +248,8 @@ class TaskAgent:
         jobs = self._jobs_provider(self.task.task_id)
         if await self._maybe_bootstrap_structure_build(jobs):
             return
+        if await self._maybe_bootstrap_simple_production(jobs):
+            return
         if self._bootstrap_job_id is not None:
             return
 
@@ -300,6 +302,7 @@ class TaskAgent:
                 tool_calls=len(response.tool_calls),
                 has_text=bool(response.text),
             )
+            self._log_reasoning_text(response.text, turn=turn + 1)
 
             # If LLM returns tool calls, execute them and continue
             if response.tool_calls:
@@ -340,6 +343,19 @@ class TaskAgent:
                 self.task.task_id,
                 self._wake_count,
             )
+
+    def _log_reasoning_text(self, text: Optional[str], *, turn: int) -> None:
+        """Persist non-tool LLM text so diagnostics can show the reasoning path."""
+        reasoning = (text or "").strip()
+        if not reasoning:
+            return
+        slog.info(
+            reasoning,
+            event="llm_reasoning",
+            task_id=self.task.task_id,
+            wake=self._wake_count,
+            turn=turn,
+        )
 
     async def _maybe_bootstrap_structure_build(self, jobs: list[Job]) -> bool:
         """Deterministically pin common Chinese build-structure commands.
@@ -405,6 +421,100 @@ class TaskAgent:
             unit_type=unit_type,
         )
         return True
+
+    async def _maybe_bootstrap_simple_production(self, jobs: list[Job]) -> bool:
+        """Deterministically pin common one-shot production commands.
+
+        Live testing showed that simple infantry commands like "生产3个步兵"
+        can still drift through the LLM into non-canonical unit ids such as
+        `rifl`, even though the live RA ruleset expects `e1`. For the common
+        "生产/造/训练 + <unit>" path, bootstrap directly into the correct
+        EconomyExpert config instead of spending LLM turns guessing ids.
+        """
+        if jobs:
+            return False
+
+        normalized = re.sub(r"\s+", "", self.task.raw_text)
+        if normalized.startswith(("建造", "修建")):
+            return False
+        if not any(token in normalized for token in ("生产", "造", "训练", "补")):
+            return False
+
+        unit_type = None
+        queue_type = None
+        for aliases, canonical, queue in (
+            (("步兵", "枪兵", "步枪兵", "普通步兵"), "e1", "Infantry"),
+            (("火箭兵", "火箭筒兵", "导弹兵"), "e3", "Infantry"),
+            (("工程师", "维修工程师"), "e6", "Infantry"),
+        ):
+            if any(alias in normalized for alias in aliases):
+                unit_type = canonical
+                queue_type = queue
+                break
+        if unit_type is None or queue_type is None:
+            return False
+
+        count = self._extract_requested_count(normalized)
+        result = await self.tool_executor.execute(
+            tool_call_id=f"bootstrap_{self.task.task_id}",
+            name="start_job",
+            arguments_json=json.dumps(
+                {
+                    "expert_type": "EconomyExpert",
+                    "config": {
+                        "unit_type": unit_type,
+                        "count": count,
+                        "queue_type": queue_type,
+                        "repeat": False,
+                    },
+                },
+                ensure_ascii=False,
+            ),
+        )
+        if result.error:
+            logger.warning(
+                "Bootstrap simple production failed: task_id=%s raw_text=%r error=%s",
+                self.task.task_id,
+                self.task.raw_text,
+                result.error,
+            )
+            return False
+
+        job_id = None
+        if isinstance(result.result, dict):
+            job_id = result.result.get("job_id")
+        if isinstance(job_id, str):
+            self._bootstrap_job_id = job_id
+            self._bootstrap_raw_text = self.task.raw_text
+
+        slog.info(
+            "Bootstrapped simple production job",
+            event="bootstrap_simple_production",
+            task_id=self.task.task_id,
+            raw_text=self.task.raw_text,
+            unit_type=unit_type,
+            count=count,
+            queue_type=queue_type,
+        )
+        return True
+
+    def _extract_requested_count(self, normalized_text: str) -> int:
+        match = re.search(r"(\d+)", normalized_text)
+        if match:
+            return max(1, int(match.group(1)))
+
+        chinese_digits = {"零": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+        if "十" in normalized_text:
+            left, _, right = normalized_text.partition("十")
+            tens = chinese_digits.get(left, 1 if left == "" else 0)
+            ones = chinese_digits.get(right[:1], 0)
+            value = tens * 10 + ones
+            if value > 0:
+                return value
+        for char in normalized_text:
+            if char in chinese_digits and chinese_digits[char] > 0:
+                return chinese_digits[char]
+        return 1
 
     async def _maybe_finalize_bootstrap_task(self, recent_signals: list[ExpertSignal]) -> bool:
         """Close deterministic bootstrap build tasks without another LLM turn.

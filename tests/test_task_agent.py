@@ -11,6 +11,7 @@ import os
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import logging_system
 from llm import LLMResponse, MockProvider, ToolCall
 from models import (
     ExpertSignal,
@@ -160,6 +161,33 @@ def test_single_turn_text_response():
     assert len(mock.call_log) == 1
     assert agent._total_llm_calls == 1
     print("  PASS: single_turn_text_response")
+
+
+def test_llm_reasoning_is_logged():
+    """Non-tool LLM text is emitted as structured task_agent reasoning logs."""
+    logging_system.clear()
+    mock = MockProvider(responses=[
+        LLMResponse(text="先观察敌情，再决定是否扩张。", model="mock"),
+    ])
+
+    agent = TaskAgent(
+        task=make_task(),
+        llm=mock,
+        tool_executor=make_executor(),
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.1, max_turns=5),
+    )
+
+    async def run():
+        await agent._wake_cycle(trigger="init")
+
+    asyncio.run(run())
+
+    logs = logging_system.query(component="task_agent", event="llm_reasoning")
+    assert len(logs) >= 1
+    assert any("先观察敌情" in record.message for record in logs)
+    print("  PASS: llm_reasoning_is_logged")
 
 
 def test_multi_turn_tool_use():
@@ -758,6 +786,119 @@ def test_bootstrap_structure_build_completes_without_llm_drift() -> None:
     print("  PASS: bootstrap_structure_build_completes_without_llm_drift")
 
 
+def test_bootstrap_simple_production_maps_basic_infantry_to_e1() -> None:
+    provider = MockProvider([LLMResponse(text="monitoring")])
+    captured: list[dict] = []
+
+    async def start_job_handler(_name: str, args: dict) -> dict:
+        captured.append(args)
+        return {"job_id": "j_e1", "status": "running"}
+
+    async def noop_handler(_name: str, _args: dict) -> dict:
+        return {"ok": True}
+
+    executor = ToolExecutor()
+    from task_agent.tools import get_tool_names
+    for name in get_tool_names():
+        executor.register(name, noop_handler)
+    executor.register("start_job", start_job_handler)
+
+    agent = TaskAgent(
+        task=make_task(raw_text="生产3个步兵"),
+        llm=provider,
+        tool_executor=executor,
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(max_turns=1),
+    )
+
+    async def run():
+        await agent._wake_cycle(trigger="init")
+
+    asyncio.run(run())
+
+    assert captured == [
+        {
+            "expert_type": "EconomyExpert",
+            "config": {
+                "unit_type": "e1",
+                "count": 3,
+                "queue_type": "Infantry",
+                "repeat": False,
+            },
+        }
+    ]
+    print("  PASS: bootstrap_simple_production_maps_basic_infantry_to_e1")
+
+
+def test_bootstrap_simple_production_completes_without_llm_drift() -> None:
+    captured_start_jobs: list[dict] = []
+    captured_completions: list[dict] = []
+
+    class NoLlmNeededProvider(MockProvider):
+        async def chat(self, messages, **kwargs):
+            raise AssertionError("Bootstrap simple-production path should not call the LLM")
+
+    async def start_job_handler(_name: str, args: dict) -> dict:
+        captured_start_jobs.append(args)
+        return {"job_id": "j_bootstrap_prod", "status": "running"}
+
+    async def complete_task_handler(_name: str, args: dict) -> dict:
+        captured_completions.append(args)
+        return {"ok": True}
+
+    async def noop_handler(_name: str, _args: dict) -> dict:
+        return {"ok": True}
+
+    executor = ToolExecutor()
+    from task_agent.tools import get_tool_names
+    for name in get_tool_names():
+        executor.register(name, noop_handler)
+    executor.register("start_job", start_job_handler)
+    executor.register("complete_task", complete_task_handler)
+
+    agent = TaskAgent(
+        task=make_task(raw_text="生产3个步兵"),
+        llm=NoLlmNeededProvider(),
+        tool_executor=executor,
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+    )
+
+    async def run():
+        await agent._wake_cycle(trigger="init")
+        agent.push_signal(
+            ExpertSignal(
+                task_id="t1",
+                job_id="j_bootstrap_prod",
+                kind=SignalKind.TASK_COMPLETE,
+                summary="生产完成 3/3: e1",
+                result="succeeded",
+            )
+        )
+        await agent._wake_cycle(trigger="event")
+
+    asyncio.run(run())
+
+    assert captured_start_jobs == [
+        {
+            "expert_type": "EconomyExpert",
+            "config": {
+                "unit_type": "e1",
+                "count": 3,
+                "queue_type": "Infantry",
+                "repeat": False,
+            },
+        }
+    ]
+    assert len(captured_completions) == 1
+    assert captured_completions[0]["result"] == "succeeded"
+    assert "生产3个步兵" in captured_completions[0]["summary"]
+    assert agent._task_completed is True
+    assert agent._total_llm_calls == 0
+    print("  PASS: bootstrap_simple_production_completes_without_llm_drift")
+
+
 def test_system_prompt_pins_structure_build_commands_to_economy() -> None:
     assert '建造矿场' in SYSTEM_PROMPT
     assert 'unit_type "proc"' in SYSTEM_PROMPT
@@ -773,6 +914,7 @@ if __name__ == "__main__":
     test_context_packet_construction()
     test_context_to_message()
     test_single_turn_text_response()
+    test_llm_reasoning_is_logged()
     test_multi_turn_tool_use()
     test_complete_task_stops_loop()
     test_max_turns_limit()
@@ -788,6 +930,8 @@ if __name__ == "__main__":
     test_single_agent_error_isolation()
     test_bootstrap_structure_build_maps_refinery_to_proc()
     test_bootstrap_structure_build_completes_without_llm_drift()
+    test_bootstrap_simple_production_maps_basic_infantry_to_e1()
+    test_bootstrap_simple_production_completes_without_llm_drift()
     test_system_prompt_pins_structure_build_commands_to_economy()
 
-    print(f"\nAll 19 tests passed!")
+    print(f"\nAll 20 tests passed!")
