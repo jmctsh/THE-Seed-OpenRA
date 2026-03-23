@@ -690,6 +690,74 @@ def test_bootstrap_structure_build_maps_refinery_to_proc() -> None:
     print("  PASS: bootstrap_structure_build_maps_refinery_to_proc")
 
 
+def test_bootstrap_structure_build_completes_without_llm_drift() -> None:
+    captured_start_jobs: list[dict] = []
+    captured_completions: list[dict] = []
+
+    class NoLlmNeededProvider(MockProvider):
+        async def chat(self, messages, **kwargs):
+            raise AssertionError("Bootstrap structure-build path should not call the LLM")
+
+    async def start_job_handler(_name: str, args: dict) -> dict:
+        captured_start_jobs.append(args)
+        return {"job_id": "j_bootstrap", "status": "running"}
+
+    async def complete_task_handler(_name: str, args: dict) -> dict:
+        captured_completions.append(args)
+        return {"ok": True}
+
+    async def noop_handler(_name: str, _args: dict) -> dict:
+        return {"ok": True}
+
+    executor = ToolExecutor()
+    from task_agent.tools import get_tool_names
+    for name in get_tool_names():
+        executor.register(name, noop_handler)
+    executor.register("start_job", start_job_handler)
+    executor.register("complete_task", complete_task_handler)
+
+    agent = TaskAgent(
+        task=make_task(raw_text="建造兵营"),
+        llm=NoLlmNeededProvider(),
+        tool_executor=executor,
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+    )
+
+    async def run():
+        await agent._wake_cycle(trigger="init")
+        agent.push_signal(
+            ExpertSignal(
+                task_id="t1",
+                job_id="j_bootstrap",
+                kind=SignalKind.TASK_COMPLETE,
+                summary="生产完成 1/1: barr",
+                result="succeeded",
+            )
+        )
+        await agent._wake_cycle(trigger="event")
+
+    asyncio.run(run())
+
+    assert captured_start_jobs == [
+        {
+            "expert_type": "EconomyExpert",
+            "config": {
+                "unit_type": "barr",
+                "count": 1,
+                "queue_type": "Building",
+                "repeat": False,
+            },
+        }
+    ]
+    assert len(captured_completions) == 1
+    assert captured_completions[0]["result"] == "succeeded"
+    assert "建造兵营" in captured_completions[0]["summary"]
+    assert agent._task_completed is True
+    assert agent._total_llm_calls == 0
+    print("  PASS: bootstrap_structure_build_completes_without_llm_drift")
+
+
 def test_system_prompt_pins_structure_build_commands_to_economy() -> None:
     assert '建造矿场' in SYSTEM_PROMPT
     assert 'unit_type "proc"' in SYSTEM_PROMPT
@@ -719,6 +787,7 @@ if __name__ == "__main__":
     test_failure_counter_resets_on_success()
     test_single_agent_error_isolation()
     test_bootstrap_structure_build_maps_refinery_to_proc()
+    test_bootstrap_structure_build_completes_without_llm_drift()
     test_system_prompt_pins_structure_build_commands_to_economy()
 
-    print(f"\nAll 18 tests passed!")
+    print(f"\nAll 19 tests passed!")

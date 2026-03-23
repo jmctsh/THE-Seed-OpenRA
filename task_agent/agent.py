@@ -139,6 +139,8 @@ class TaskAgent:
         self._total_llm_calls = 0
         self._consecutive_failures = 0
         self._last_llm_error: str = ""
+        self._bootstrap_job_id: Optional[str] = None
+        self._bootstrap_raw_text: Optional[str] = None
 
     # --- Public interface (called by Kernel) ---
 
@@ -239,10 +241,16 @@ class TaskAgent:
         open_decisions = [s for s in signals if s.kind == SignalKind.DECISION_REQUEST]
         recent_signals = [s for s in signals if s.kind != SignalKind.DECISION_REQUEST]
 
+        if await self._maybe_finalize_bootstrap_task(recent_signals):
+            return
+
         # Build context packet
         jobs = self._jobs_provider(self.task.task_id)
         if await self._maybe_bootstrap_structure_build(jobs):
-            jobs = self._jobs_provider(self.task.task_id)
+            return
+        if self._bootstrap_job_id is not None:
+            return
+
         world = self._world_provider()
         packet = build_context_packet(
             task=self.task,
@@ -382,6 +390,13 @@ class TaskAgent:
             )
             return False
 
+        job_id = None
+        if isinstance(result.result, dict):
+            job_id = result.result.get("job_id")
+        if isinstance(job_id, str):
+            self._bootstrap_job_id = job_id
+            self._bootstrap_raw_text = self.task.raw_text
+
         slog.info(
             "Bootstrapped structure build job",
             event="bootstrap_structure_build",
@@ -390,6 +405,60 @@ class TaskAgent:
             unit_type=unit_type,
         )
         return True
+
+    async def _maybe_finalize_bootstrap_task(self, recent_signals: list[ExpertSignal]) -> bool:
+        """Close deterministic bootstrap build tasks without another LLM turn.
+
+        Live testing showed that once a simple build-structure task had already
+        been bootstrapped into the correct EconomyJob, sending the task back
+        through the LLM on completion let the model drift into unrelated follow-
+        up work (for example, turning "建造兵营" into recon). For these
+        deterministic one-job build tasks, the TaskAgent should simply wait for
+        the bootstrapped job's terminal signal and then close the task.
+        """
+        if self._bootstrap_job_id is None:
+            return False
+
+        for signal in recent_signals:
+            if signal.job_id != self._bootstrap_job_id:
+                continue
+            if signal.kind != SignalKind.TASK_COMPLETE:
+                continue
+
+            result = signal.result or "succeeded"
+            prefix = {
+                "succeeded": "已完成",
+                "failed": "未完成",
+                "aborted": "已中止",
+            }.get(result, "已结束")
+            raw_text = self._bootstrap_raw_text or self.task.raw_text
+            summary = f"{prefix}：{raw_text}"
+            if signal.summary:
+                summary = f"{summary}。{signal.summary}"
+
+            complete = await self.tool_executor.execute(
+                tool_call_id=f"bootstrap_complete_{self.task.task_id}",
+                name="complete_task",
+                arguments_json=json.dumps(
+                    {
+                        "result": result,
+                        "summary": summary,
+                    },
+                    ensure_ascii=False,
+                ),
+            )
+            if complete.error is None:
+                self._task_completed = True
+                return True
+
+            logger.warning(
+                "Bootstrap auto-complete failed: task_id=%s job_id=%s error=%s",
+                self.task.task_id,
+                self._bootstrap_job_id,
+                complete.error,
+            )
+            return False
+        return False
 
     def _build_messages(self, context_msg: dict[str, str]) -> list[dict[str, Any]]:
         """Build the message list for an LLM call."""
