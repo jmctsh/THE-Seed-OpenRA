@@ -246,6 +246,8 @@ class TaskAgent:
 
         # Build context packet
         jobs = self._jobs_provider(self.task.task_id)
+        if self._maybe_attach_existing_rule_job(jobs):
+            return
         if await self._maybe_bootstrap_structure_build(jobs):
             return
         if await self._maybe_bootstrap_simple_production(jobs):
@@ -497,6 +499,58 @@ class TaskAgent:
             queue_type=queue_type,
         )
         return True
+
+    def _maybe_attach_existing_rule_job(self, jobs: list[Job]) -> bool:
+        """Treat simple rule-routed tasks as monitor-only once a single job exists.
+
+        Live testing showed that simple Adjutant rule-routed commands such as
+        "探索地图" could still wake the TaskAgent and let it re-plan into
+        unrelated cross-domain work (e.g. building factories and extra scouts).
+        When the task text is a single-intent command and it already has one
+        matching job, the agent should only monitor that job and wait for its
+        terminal signal instead of continuing to re-plan through the LLM.
+        """
+        if self._bootstrap_job_id is not None:
+            return True
+        if len(jobs) != 1:
+            return False
+
+        normalized = re.sub(r"\s+", "", self.task.raw_text)
+        if not normalized:
+            return False
+        if self._looks_like_complex_command(normalized):
+            return False
+
+        job = jobs[0]
+        if self._is_simple_rule_job(normalized, job):
+            self._bootstrap_job_id = job.job_id
+            self._bootstrap_raw_text = self.task.raw_text
+            slog.info(
+                "Attached existing rule-routed job for monitor-only task",
+                event="bootstrap_existing_rule_job",
+                task_id=self.task.task_id,
+                job_id=job.job_id,
+                expert_type=job.expert_type,
+                raw_text=self.task.raw_text,
+            )
+            return True
+        return False
+
+    @staticmethod
+    def _looks_like_complex_command(normalized_text: str) -> bool:
+        return any(token in normalized_text for token in ("然后", "之后", "并且", "同时", "别", "不要", "如果", "优先"))
+
+    @staticmethod
+    def _is_simple_rule_job(normalized_text: str, job: Job) -> bool:
+        if "基地车" in normalized_text and ("部署" in normalized_text or normalized_text.lower().startswith("deploy")):
+            return job.expert_type == "DeployExpert"
+        if any(token in normalized_text for token in ("探索地图", "找敌人", "找基地")):
+            return job.expert_type == "ReconExpert"
+        if normalized_text.startswith(("建造", "修建", "造")):
+            return job.expert_type == "EconomyExpert"
+        if any(token in normalized_text for token in ("生产", "训练", "补")):
+            return job.expert_type == "EconomyExpert"
+        return False
 
     def _extract_requested_count(self, normalized_text: str) -> int:
         match = re.search(r"(\d+)", normalized_text)

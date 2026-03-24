@@ -899,6 +899,32 @@ def test_bootstrap_simple_production_completes_without_llm_drift() -> None:
     print("  PASS: bootstrap_simple_production_completes_without_llm_drift")
 
 
+def test_existing_rule_routed_recon_job_is_monitor_only() -> None:
+    class NoLlmNeededProvider(MockProvider):
+        async def chat(self, messages, **kwargs):
+            raise AssertionError("Rule-routed recon monitor path should not call the LLM")
+
+    task = make_task(raw_text="探索地图")
+    job = make_job(job_id="j_rule_recon", task_id=task.task_id)
+
+    agent = TaskAgent(
+        task=task,
+        llm=NoLlmNeededProvider(),
+        tool_executor=make_executor(),
+        jobs_provider=lambda _tid: [job],
+        world_summary_provider=noop_world_provider,
+    )
+
+    async def run():
+        await agent._wake_cycle(trigger="init")
+
+    asyncio.run(run())
+
+    assert agent._bootstrap_job_id == "j_rule_recon"
+    assert agent._total_llm_calls == 0
+    print("  PASS: existing_rule_routed_recon_job_is_monitor_only")
+
+
 def test_system_prompt_pins_structure_build_commands_to_economy() -> None:
     assert '建造矿场' in SYSTEM_PROMPT
     assert 'unit_type "proc"' in SYSTEM_PROMPT
@@ -932,6 +958,7 @@ if __name__ == "__main__":
     test_bootstrap_structure_build_completes_without_llm_drift()
     test_bootstrap_simple_production_maps_basic_infantry_to_e1()
     test_bootstrap_simple_production_completes_without_llm_drift()
+    test_existing_rule_routed_recon_job_is_monitor_only()
     test_system_prompt_pins_structure_build_commands_to_economy()
 
-    print(f"\nAll 20 tests passed!")
+    print(f"\nAll 21 tests passed!")
