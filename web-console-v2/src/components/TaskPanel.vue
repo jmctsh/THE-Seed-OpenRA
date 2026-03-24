@@ -36,6 +36,14 @@ const props = defineProps({
 const tasks = ref([])
 const pendingQuestions = ref([])
 
+function sortTasksNewestFirst(items) {
+  return [...items].sort((a, b) => {
+    const aTime = Number(a?.timestamp || a?.created_at || 0)
+    const bTime = Number(b?.timestamp || b?.created_at || 0)
+    return bTime - aTime
+  })
+}
+
 function reply(question, answer) {
   props.send('question_reply', {
     message_id: question.message_id,
@@ -46,7 +54,7 @@ function reply(question, answer) {
 
 if (props.on) {
   props.on('task_list', (msg) => {
-    tasks.value = msg.data?.tasks || []
+    tasks.value = sortTasksNewestFirst(msg.data?.tasks || [])
     pendingQuestions.value = msg.data?.pending_questions || []
   })
   props.on('task_update', (msg) => {
@@ -54,6 +62,7 @@ if (props.on) {
     if (!update?.task_id) return
     const idx = tasks.value.findIndex(t => t.task_id === update.task_id)
     if (idx >= 0) Object.assign(tasks.value[idx], update)
+    tasks.value = sortTasksNewestFirst(tasks.value)
   })
   props.on('world_snapshot', (msg) => {
     if (msg.data?.pending_questions) {
