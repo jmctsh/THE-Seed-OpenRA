@@ -24,6 +24,7 @@ from openra_api.game_api import GameAPI
 from openra_api.intel.names import normalize_unit_name
 from openra_api.intel.rules import DEFAULT_UNIT_CATEGORY_RULES, DEFAULT_UNIT_VALUE_WEIGHTS
 from openra_api.models import Actor, Location, MapQueryResult, PlayerBaseInfo, TargetsQueryParam
+from openra_api.production_names import production_name_matches
 from unit_registry import UnitRegistry, get_default_registry
 
 
@@ -297,7 +298,7 @@ class WorldModel:
                 unbound_only=params.get("unbound_only", False),
                 can_attack=params.get("can_attack"),
                 can_harvest=params.get("can_harvest"),
-                name=params.get("name"),
+                name=params.get("name") or params.get("type"),
                 near=params.get("near"),
                 max_distance=params.get("max_distance"),
             )
@@ -358,7 +359,7 @@ class WorldModel:
                 continue
             if can_harvest is not None and actor.can_harvest != can_harvest:
                 continue
-            if name and actor.name != name and actor.display_name != name:
+            if name and not production_name_matches(name, actor.name, actor.display_name):
                 continue
             if near is not None and max_distance is not None:
                 if self._distance(actor.position, near) > max_distance:

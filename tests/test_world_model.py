@@ -220,6 +220,33 @@ def test_category_inference_marks_buildings_correctly() -> None:
     print("  PASS: category_inference_marks_buildings_correctly")
 
 
+def test_actor_queries_honor_type_aliases() -> None:
+    frame = Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="发电厂", faction="自己", position=Location(12, 12), hppercent=100, activity="Idle"),
+            Actor(actor_id=3, type="基地车", faction="自己", position=Location(14, 14), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=2500, Resources=300, Power=80, PowerDrained=40, PowerProvided=100),
+        map_info=make_map(explored=0.5, visible=0.25),
+        queues={},
+    )
+    source = MockWorldSource([frame])
+    world = WorldModel(source)
+
+    world.refresh(now=100.0, force=True)
+
+    mcv = world.query("my_actors", {"type": "mcv"})["actors"]
+    power = world.query("my_actors", {"type": "powr"})["actors"]
+    yard = world.query("my_actors", {"type": "建造厂"})["actors"]
+
+    assert [item["actor_id"] for item in mcv] == [3]
+    assert [item["actor_id"] for item in power] == [2]
+    assert [item["actor_id"] for item in yard] == [1]
+    print("  PASS: actor_queries_honor_type_aliases")
+
+
 def test_event_detection_and_queries() -> None:
     source = MockWorldSource(make_frames())
     world = WorldModel(source)
@@ -395,12 +422,13 @@ def main() -> None:
     test_refresh_layers_and_summary()
     test_layered_refresh_respects_intervals()
     test_category_inference_marks_buildings_correctly()
+    test_actor_queries_honor_type_aliases()
     test_event_detection_and_queries()
     test_unit_death_runtime_state_and_constraints()
     test_refresh_failure_marks_stale_and_recovers()
     test_base_under_attack_requires_nearby_enemy_combat_and_meaningful_damage()
     test_mcv_deploy_is_not_reported_as_structure_loss_or_base_attack()
-    print("OK: 8 WorldModel tests passed")
+    print("OK: 9 WorldModel tests passed")
 
 
 if __name__ == "__main__":
