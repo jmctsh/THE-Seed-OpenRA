@@ -1,5 +1,14 @@
 <template>
   <div class="chat-view">
+    <div class="chat-toolbar">
+      <button
+        v-if="chatMessages.length"
+        @click="clearChat"
+        class="clear-btn"
+      >
+        清空聊天
+      </button>
+    </div>
     <div class="chat-messages" ref="messagesEl">
       <div v-for="msg in chatMessages" :key="msg.id" :class="['chat-msg', msg.from]">
         <span class="msg-label">{{ msg.label }}</span>
@@ -17,6 +26,7 @@
 <script setup>
 import { ref, nextTick, defineProps, onMounted, onUnmounted } from 'vue'
 import { formatTimeAgo } from '../composables/useTimeAgo.js'
+import { formatTaskLabel, registerTaskLabel, replaceTaskIdsWithLabels } from '../composables/taskLabels.js'
 
 const refreshTick = ref(0)
 let refreshTimer = null
@@ -66,6 +76,16 @@ function addMessage(from, label, content, timestamp) {
   })
 }
 
+function clearChat() {
+  chatMessages.value = []
+  msgId = 0
+  try {
+    sessionStorage.removeItem(STORAGE_KEY)
+  } catch (_) {
+    // ignore storage failures
+  }
+}
+
 function sendMessage() {
   const text = inputText.value.trim()
   if (!text) return
@@ -81,7 +101,18 @@ let offPlayerNotification = null
 onMounted(() => {
   if (!props.on) return
   offQueryResponse = props.on('query_response', (msg) => {
-    addMessage('system', '副官', msg.data?.answer || msg.data?.response_text || JSON.stringify(msg.data), msg.timestamp)
+    const taskId = msg.data?.task_id
+    if (taskId) registerTaskLabel(taskId)
+    let content = msg.data?.answer || msg.data?.response_text || JSON.stringify(msg.data)
+    content = replaceTaskIdsWithLabels(content)
+    if (
+      taskId &&
+      !content.includes(formatTaskLabel(taskId)) &&
+      msg.data?.response_type === 'command'
+    ) {
+      content = `${content}（${formatTaskLabel(taskId)}）`
+    }
+    addMessage('system', '副官', content, msg.timestamp)
   })
   offPlayerNotification = props.on('player_notification', (msg) => {
     const icon = msg.data?.icon || 'ℹ'
@@ -98,6 +129,21 @@ onUnmounted(() => {
 
 <style scoped>
 .chat-view { display: flex; flex-direction: column; height: 100%; }
+.chat-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px 0;
+}
+.clear-btn {
+  padding: 4px 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 999px;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+  font-size: 12px;
+}
+.clear-btn:hover { background: #f6f8fa; }
 .chat-messages { flex: 1; overflow-y: auto; padding: 12px; }
 .chat-msg { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
 .chat-msg.player { background: #e3f2fd; text-align: right; }

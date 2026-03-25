@@ -1,10 +1,19 @@
 <template>
   <div class="task-panel">
-    <h3>Tasks</h3>
+    <div class="panel-header">
+      <h3>Tasks</h3>
+      <button
+        v-if="hasTerminalTasks"
+        @click="clearHistory"
+        class="clear-btn"
+      >
+        清理历史
+      </button>
+    </div>
     <div v-if="!tasks.length" class="empty">无活跃任务</div>
     <div v-for="task in tasks" :key="task.task_id" :class="['task-card', task.status]">
       <div class="task-header">
-        <span class="task-id">{{ task.task_id }}</span>
+        <span class="task-id" :title="task.task_id">{{ displayTaskLabel(task.task_id) }}</span>
         <span :class="['status-badge', task.status]">{{ task.status }}</span>
       </div>
       <div class="task-text">{{ task.raw_text }}</div>
@@ -25,8 +34,14 @@
 </template>
 
 <script setup>
-import { ref, defineProps } from 'vue'
+import { computed, ref, defineProps } from 'vue'
 import { formatTimeAgo } from '../composables/useTimeAgo.js'
+import {
+  formatTaskLabel,
+  loadHiddenTaskIds,
+  registerTaskLabels,
+  saveHiddenTaskIds,
+} from '../composables/taskLabels.js'
 
 const props = defineProps({
   send: Function,
@@ -35,6 +50,7 @@ const props = defineProps({
 
 const tasks = ref([])
 const pendingQuestions = ref([])
+const hiddenTaskIds = ref(loadHiddenTaskIds())
 
 function sortTasksNewestFirst(items) {
   return [...items].sort((a, b) => {
@@ -42,6 +58,34 @@ function sortTasksNewestFirst(items) {
     const bTime = Number(b?.timestamp || b?.created_at || 0)
     return bTime - aTime
   })
+}
+
+function isTerminalTask(task) {
+  return ['succeeded', 'failed', 'aborted', 'partial'].includes(task?.status)
+}
+
+function normalizeTasks(items) {
+  registerTaskLabels(items)
+  const hidden = hiddenTaskIds.value
+  return sortTasksNewestFirst(
+    (items || []).filter((task) => !hidden.has(task.task_id) || !isTerminalTask(task))
+  )
+}
+
+function displayTaskLabel(taskId) {
+  return formatTaskLabel(taskId)
+}
+
+const hasTerminalTasks = computed(() => tasks.value.some(isTerminalTask))
+
+function clearHistory() {
+  const nextHidden = new Set(hiddenTaskIds.value)
+  for (const task of tasks.value) {
+    if (isTerminalTask(task)) nextHidden.add(task.task_id)
+  }
+  hiddenTaskIds.value = nextHidden
+  saveHiddenTaskIds(nextHidden)
+  tasks.value = normalizeTasks(tasks.value)
 }
 
 function reply(question, answer) {
@@ -54,7 +98,7 @@ function reply(question, answer) {
 
 if (props.on) {
   props.on('task_list', (msg) => {
-    tasks.value = sortTasksNewestFirst(msg.data?.tasks || [])
+    tasks.value = normalizeTasks(msg.data?.tasks || [])
     pendingQuestions.value = msg.data?.pending_questions || []
   })
   props.on('task_update', (msg) => {
@@ -62,7 +106,8 @@ if (props.on) {
     if (!update?.task_id) return
     const idx = tasks.value.findIndex(t => t.task_id === update.task_id)
     if (idx >= 0) Object.assign(tasks.value[idx], update)
-    tasks.value = sortTasksNewestFirst(tasks.value)
+    else tasks.value.push(update)
+    tasks.value = normalizeTasks(tasks.value)
   })
   props.on('world_snapshot', (msg) => {
     if (msg.data?.pending_questions) {
@@ -74,8 +119,24 @@ if (props.on) {
 
 <style scoped>
 .task-panel { padding: 12px; overflow-y: auto; }
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
 .task-panel h3 { margin: 8px 0; font-size: 14px; color: #666; }
 .empty { color: #999; font-size: 13px; }
+.clear-btn {
+  padding: 3px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 999px;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+  font-size: 11px;
+}
+.clear-btn:hover { background: #f6f8fa; }
 .task-card { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
 .task-card.running { border-left: 3px solid #4caf50; }
 .task-card.pending { border-left: 3px solid #ff9800; }
