@@ -13,6 +13,9 @@
         >
           {{ opsVisible ? '隐藏操作' : '显示操作' }}
         </button>
+        <button @click="clearUi" class="mode-btn" title="清空当前会话的聊天和历史任务展示">
+          清空界面
+        </button>
         <button @click="toggleMode" class="mode-btn">
           {{ mode === 'user' ? '切换调试' : '切换用户' }}
         </button>
@@ -65,6 +68,10 @@ function toggleMode() {
 
 function toggleOps() {
   opsVisible.value = !opsVisible.value
+}
+
+function clearUi() {
+  window.dispatchEvent(new CustomEvent('theseed:clear-ui'))
 }
 
 function setMode(m) {

@@ -2,14 +2,6 @@
   <div class="task-panel">
     <div class="panel-header">
       <h3>Tasks</h3>
-      <button
-        v-if="hasTerminalTasks"
-        @click="clearHistory"
-        class="clear-btn"
-        title="只隐藏已结束任务，不会取消正在运行的任务"
-      >
-        隐藏已结束
-      </button>
     </div>
     <div v-if="!tasks.length" class="empty">无活跃任务</div>
     <div v-for="task in tasks" :key="task.task_id" :class="['task-card', task.status]">
@@ -35,9 +27,10 @@
 </template>
 
 <script setup>
-import { computed, ref, defineProps } from 'vue'
+import { ref, defineProps, onMounted, onUnmounted } from 'vue'
 import { formatTimeAgo } from '../composables/useTimeAgo.js'
 import {
+  clearTaskUiState,
   formatTaskLabel,
   loadHiddenTaskIds,
   registerTaskLabels,
@@ -52,6 +45,8 @@ const props = defineProps({
 const tasks = ref([])
 const pendingQuestions = ref([])
 const hiddenTaskIds = ref(loadHiddenTaskIds())
+let latestTaskList = []
+let clearUiHandler = null
 
 function sortTasksNewestFirst(items) {
   return [...items].sort((a, b) => {
@@ -77,16 +72,15 @@ function displayTaskLabel(taskId) {
   return formatTaskLabel(taskId)
 }
 
-const hasTerminalTasks = computed(() => tasks.value.some(isTerminalTask))
-
 function clearHistory() {
-  const nextHidden = new Set(hiddenTaskIds.value)
-  for (const task of tasks.value) {
+  const nextHidden = new Set()
+  for (const task of latestTaskList) {
     if (isTerminalTask(task)) nextHidden.add(task.task_id)
   }
+  clearTaskUiState()
   hiddenTaskIds.value = nextHidden
   saveHiddenTaskIds(nextHidden)
-  tasks.value = normalizeTasks(tasks.value)
+  tasks.value = normalizeTasks(latestTaskList)
 }
 
 function reply(question, answer) {
@@ -99,16 +93,17 @@ function reply(question, answer) {
 
 if (props.on) {
   props.on('task_list', (msg) => {
-    tasks.value = normalizeTasks(msg.data?.tasks || [])
+    latestTaskList = msg.data?.tasks || []
+    tasks.value = normalizeTasks(latestTaskList)
     pendingQuestions.value = msg.data?.pending_questions || []
   })
   props.on('task_update', (msg) => {
     const update = msg.data
     if (!update?.task_id) return
-    const idx = tasks.value.findIndex(t => t.task_id === update.task_id)
-    if (idx >= 0) Object.assign(tasks.value[idx], update)
-    else tasks.value.push(update)
-    tasks.value = normalizeTasks(tasks.value)
+    const idx = latestTaskList.findIndex(t => t.task_id === update.task_id)
+    if (idx >= 0) Object.assign(latestTaskList[idx], update)
+    else latestTaskList.push(update)
+    tasks.value = normalizeTasks(latestTaskList)
   })
   props.on('world_snapshot', (msg) => {
     if (msg.data?.pending_questions) {
@@ -116,6 +111,15 @@ if (props.on) {
     }
   })
 }
+
+onMounted(() => {
+  clearUiHandler = () => clearHistory()
+  window.addEventListener('theseed:clear-ui', clearUiHandler)
+})
+
+onUnmounted(() => {
+  if (clearUiHandler) window.removeEventListener('theseed:clear-ui', clearUiHandler)
+})
 </script>
 
 <style scoped>
@@ -128,16 +132,6 @@ if (props.on) {
 }
 .task-panel h3 { margin: 8px 0; font-size: 14px; color: #666; }
 .empty { color: #999; font-size: 13px; }
-.clear-btn {
-  padding: 3px 8px;
-  border: 1px solid #d0d7de;
-  border-radius: 999px;
-  background: #fff;
-  color: #555;
-  cursor: pointer;
-  font-size: 11px;
-}
-.clear-btn:hover { background: #f6f8fa; }
 .task-card { border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
 .task-card.running { border-left: 3px solid #4caf50; }
 .task-card.pending { border-left: 3px solid #ff9800; }

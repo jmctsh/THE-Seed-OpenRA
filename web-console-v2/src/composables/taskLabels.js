@@ -69,3 +69,12 @@ export function loadHiddenTaskIds() {
 export function saveHiddenTaskIds(taskIds) {
   saveJson(HIDDEN_KEY, [...taskIds])
 }
+
+export function clearTaskUiState() {
+  try {
+    sessionStorage.removeItem(LABELS_KEY)
+    sessionStorage.removeItem(HIDDEN_KEY)
+  } catch (_) {
+    // ignore storage failures
+  }
+}
