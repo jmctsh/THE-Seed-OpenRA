@@ -1,6 +1,26 @@
 <template>
   <div class="diag-panel">
     <h3>Diagnostics</h3>
+    <div class="trace-controls">
+      <label class="trace-label" for="task-trace-select">Task Trace</label>
+      <select id="task-trace-select" v-model="selectedTaskId" class="trace-select">
+        <option value="ALL">全部任务</option>
+        <option v-for="task in knownTasks" :key="task.task_id" :value="task.task_id">
+          {{ task.label }} · {{ task.raw_text || '未命名任务' }}
+        </option>
+      </select>
+    </div>
+    <div class="trace-stream">
+      <div v-for="(entry, i) in filteredTraceEntries" :key="`trace-${i}`" class="trace-entry">
+        <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
+        <span class="trace-source">[{{ entry.source }}]</span>
+        <span v-if="entry.taskLabel" class="trace-task">{{ entry.taskLabel }}</span>
+        <span v-if="entry.jobId" class="trace-job">{{ entry.jobId }}</span>
+        <span class="trace-msg">{{ entry.message }}</span>
+      </div>
+      <div v-if="!filteredTraceEntries.length" class="empty">当前没有可追踪的任务事件</div>
+    </div>
+
     <div class="log-filter">
       <button
         v-for="lvl in ['ALL', 'INFO', 'WARN', 'ERROR']"
@@ -45,6 +65,12 @@
 
 <script setup>
 import { ref, computed, nextTick, reactive, defineProps } from 'vue'
+import {
+  formatTaskLabel,
+  registerTaskLabel,
+  registerTaskLabels,
+  replaceTaskIdsWithLabels,
+} from '../composables/taskLabels.js'
 
 const props = defineProps({ on: Function })
 
@@ -57,6 +83,9 @@ const logEl = ref(null)
 const benchmarkStats = reactive({})
 const filterLevel = ref('ALL')
 const filterComponent = ref('ALL')
+const selectedTaskId = ref('ALL')
+const knownTasks = ref([])
+const traceEntries = ref([])
 
 const filteredLogs = computed(() => {
   const minLevel = filterLevel.value === 'ALL' ? 0 : (LEVEL_ORDER[filterLevel.value] || 0)
@@ -66,6 +95,13 @@ const filteredLogs = computed(() => {
     if (filterComponent.value === 'ALL') return true
     return entry.component === filterComponent.value
   })
+})
+
+const filteredTraceEntries = computed(() => {
+  const items = selectedTaskId.value === 'ALL'
+    ? traceEntries.value
+    : traceEntries.value.filter((entry) => entry.taskId === selectedTaskId.value)
+  return items.slice(-120)
 })
 
 const displayedBenchmarks = computed(() =>
@@ -86,6 +122,29 @@ function formatTime(ts) {
   if (!ts) return ''
   const d = new Date(ts * 1000)
   return d.toLocaleTimeString()
+}
+
+function normalizeTaskCatalog(tasks) {
+  registerTaskLabels(tasks)
+  knownTasks.value = [...(tasks || [])]
+    .sort((a, b) => Number(b?.timestamp || b?.created_at || 0) - Number(a?.timestamp || a?.created_at || 0))
+    .map((task) => ({
+      ...task,
+      label: formatTaskLabel(task.task_id),
+    }))
+}
+
+function resolveTaskId(payload = {}) {
+  return payload.task_id || payload.holder_task_id || payload.data?.task_id || null
+}
+
+function resolveJobId(payload = {}) {
+  return payload.job_id || payload.holder_job_id || payload.data?.job_id || null
+}
+
+function addTraceEntry(entry) {
+  traceEntries.value.push(entry)
+  if (traceEntries.value.length > 800) traceEntries.value.splice(0, 200)
 }
 
 function addLog(entry) {
@@ -118,13 +177,27 @@ function updateBenchmark(records) {
 if (props.on) {
   props.on('log_entry', (msg) => {
     const entry = msg.data || msg
+    const taskId = resolveTaskId(entry.data || {})
+    const jobId = resolveJobId(entry.data || {})
+    if (taskId) registerTaskLabel(taskId)
+    const message = replaceTaskIdsWithLabels(entry.message || JSON.stringify(entry))
     addLog({
       component: entry.component || entry.tag || 'log',
       level: entry.level || 'INFO',
       tag: entry.event || entry.tag || entry.component || 'log',
-      message: entry.message || JSON.stringify(entry),
+      message,
       timestamp: entry.timestamp || msg.timestamp,
     })
+    if (taskId || jobId) {
+      addTraceEntry({
+        timestamp: entry.timestamp || msg.timestamp,
+        source: entry.component || 'log',
+        taskId,
+        taskLabel: taskId ? formatTaskLabel(taskId) : null,
+        jobId,
+        message: `[${entry.event || entry.level || 'log'}] ${message}`,
+      })
+    }
   })
   props.on('world_snapshot', (msg) => {
     if (msg.data?.benchmark) updateBenchmark(msg.data.benchmark)
@@ -132,12 +205,100 @@ if (props.on) {
   props.on('benchmark', (msg) => {
     if (msg.data?.records) updateBenchmark(msg.data.records)
   })
+  props.on('task_list', (msg) => {
+    const tasks = msg.data?.tasks || []
+    normalizeTaskCatalog(tasks)
+  })
+  props.on('task_update', (msg) => {
+    const task = msg.data || {}
+    if (!task.task_id) return
+    registerTaskLabel(task.task_id)
+    addTraceEntry({
+      timestamp: task.timestamp || msg.timestamp,
+      source: 'task',
+      taskId: task.task_id,
+      taskLabel: formatTaskLabel(task.task_id),
+      jobId: null,
+      message: `状态更新：${task.status}${task.raw_text ? ` · ${task.raw_text}` : ''}`,
+    })
+  })
+  props.on('query_response', (msg) => {
+    const taskId = msg.data?.task_id || null
+    if (!taskId) return
+    registerTaskLabel(taskId)
+    addTraceEntry({
+      timestamp: msg.timestamp,
+      source: 'adjutant',
+      taskId,
+      taskLabel: formatTaskLabel(taskId),
+      jobId: msg.data?.job_id || null,
+      message: replaceTaskIdsWithLabels(msg.data?.answer || msg.data?.response_text || '收到副官回复'),
+    })
+  })
+  props.on('player_notification', (msg) => {
+    const taskId = msg.data?.task_id || msg.data?.data?.task_id || null
+    if (!taskId) return
+    registerTaskLabel(taskId)
+    addTraceEntry({
+      timestamp: msg.timestamp,
+      source: 'notify',
+      taskId,
+      taskLabel: formatTaskLabel(taskId),
+      jobId: null,
+      message: replaceTaskIdsWithLabels(msg.data?.content || JSON.stringify(msg.data)),
+    })
+  })
 }
 </script>
 
 <style scoped>
 .diag-panel { padding: 12px; display: flex; flex-direction: column; height: 100%; }
 .diag-panel h3 { margin: 8px 0; font-size: 14px; color: #666; }
+.trace-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.trace-label {
+  font-size: 12px;
+  color: #666;
+}
+.trace-select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+}
+.trace-stream {
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  padding: 8px;
+  border: 1px solid #eceff1;
+  border-radius: 6px;
+  background: #fafbfc;
+  font-family: monospace;
+  font-size: 12px;
+}
+.trace-entry {
+  margin-bottom: 6px;
+}
+.trace-source { color: #455a64; margin-right: 6px; }
+.trace-task {
+  color: #1565c0;
+  margin-right: 6px;
+}
+.trace-job {
+  color: #6a1b9a;
+  margin-right: 6px;
+}
+.trace-msg {
+  color: #222;
+  white-space: pre-wrap;
+}
 .log-filter { display: flex; gap: 4px; margin-bottom: 6px; flex-wrap: wrap; }
 .filter-btn { padding: 2px 8px; border: 1px solid #ccc; border-radius: 3px; background: #f5f5f5; cursor: pointer; font-size: 11px; }
 .filter-btn.active { background: #1976d2; color: white; border-color: #1976d2; }
