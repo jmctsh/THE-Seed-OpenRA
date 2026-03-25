@@ -416,6 +416,39 @@ def test_route_events_batches_through_route_event() -> None:
     print("  PASS: route_events_batches_through_route_event")
 
 
+def test_game_reset_event_clears_runtime_state() -> None:
+    kernel = make_kernel()
+    task = kernel.create_task("侦察旧对局", TaskKind.MANAGED, 50)
+    job = kernel.start_job(
+        task.task_id,
+        "ReconExpert",
+        ReconJobConfig(search_region="enemy_half", target_type="base", target_owner="enemy"),
+    )
+
+    assert kernel.list_tasks()
+    assert kernel.list_jobs()
+
+    kernel.route_event(
+        Event(
+            type=EventType.GAME_RESET,
+            data={"previous_self_units": 8, "current_self_units": 1},
+            timestamp=200.0,
+        )
+    )
+
+    assert kernel.list_tasks() == []
+    assert kernel.list_jobs() == []
+    runtime_state = kernel.world_model.query("runtime_state")
+    assert runtime_state["active_tasks"] == {}
+    assert runtime_state["active_jobs"] == {}
+    assert runtime_state["resource_bindings"] == {}
+    assert runtime_state["constraints"] == []
+    notifications = kernel.list_player_notifications()
+    assert notifications[-1]["type"] == "game_reset"
+    assert "已清理旧任务状态" in notifications[-1]["content"]
+    print("  PASS: game_reset_event_clears_runtime_state")
+
+
 def test_resource_matching_and_priority_preemption() -> None:
     def needs_factory(job_id, _config):
         return [ResourceNeed(job_id=job_id, kind=ResourceKind.ACTOR, count=1, predicates={"mobility": "fast", "owner": "self"})]
@@ -723,6 +756,7 @@ def main() -> None:
     test_blocked_signal_registers_task_warning()
     test_complete_task_releases_resources_from_terminal_jobs()
     test_route_events_batches_through_route_event()
+    test_game_reset_event_clears_runtime_state()
     test_resource_matching_and_priority_preemption()
     test_multi_resource_job_degrades_and_unit_died_auto_replaces()
     test_soft_actor_need_does_not_claim_static_buildings()
@@ -732,7 +766,7 @@ def main() -> None:
     test_pending_question_timeout_and_late_reply()
     test_cancel_task_closes_pending_question()
     test_auto_response_rule_registration_and_base_under_attack_dedup()
-    print("OK: 14 Kernel tests passed")
+    print("OK: 15 Kernel tests passed")
 
 
 if __name__ == "__main__":

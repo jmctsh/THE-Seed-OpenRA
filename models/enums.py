@@ -47,6 +47,7 @@ class SignalKind(str, Enum):
 
 
 class EventType(str, Enum):
+    GAME_RESET = "GAME_RESET"
     UNIT_DIED = "UNIT_DIED"
     UNIT_DAMAGED = "UNIT_DAMAGED"
     ENEMY_DISCOVERED = "ENEMY_DISCOVERED"

@@ -341,6 +341,9 @@ class Kernel:
         with bm_span("tool_exec", name=f"kernel:route_event:{event.type.value}"):
             slog.info("Kernel routing event", event="event_routed", event_type=event.type.value, actor_id=event.actor_id, position=event.position, data=event.data)
             self._apply_auto_response_rules(event)
+            if event.type == EventType.GAME_RESET:
+                self._handle_game_reset(event)
+                return
             if event.type in {EventType.UNIT_DIED, EventType.UNIT_DAMAGED}:
                 self._route_actor_event(event)
                 return
@@ -357,6 +360,34 @@ class Kernel:
                 self._rebalance_resources()
                 return
             return None
+
+    def _handle_game_reset(self, event: Event) -> None:
+        for task_id in list(self._task_runtimes):
+            self._stop_agent(task_id)
+        self.tasks.clear()
+        self._task_runtimes.clear()
+        self._jobs.clear()
+        self._constraints.clear()
+        self._resource_needs.clear()
+        self._resource_loss_notified.clear()
+        self._pending_questions.clear()
+        self._timed_out_questions.clear()
+        self._closed_questions.clear()
+        self._delivered_player_responses.clear()
+        self.task_messages.clear()
+        self.world_model.set_runtime_state(
+            active_tasks={},
+            active_jobs={},
+            resource_bindings={},
+            constraints=[],
+        )
+        self.push_player_notification(
+            "game_reset",
+            "检测到对局已重置，已清理旧任务状态",
+            data=event.data,
+            timestamp=event.timestamp,
+        )
+        slog.warn("Kernel cleared stale runtime after game reset", event="game_reset_handled", data=event.data)
 
     def route_events(self, events: list[Event]) -> None:
         with bm_span("tool_exec", name="kernel:route_events", metadata={"count": len(events)}):

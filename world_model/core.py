@@ -601,12 +601,49 @@ class WorldModel:
     def _detect_events(self, previous: WorldState, current: WorldState, timestamp: float) -> list[Event]:
         if previous.timestamp <= 0:
             return []
+        if self._is_probable_match_reset(previous, current):
+            return [
+                Event(
+                    type=EventType.GAME_RESET,
+                    data={
+                        "previous_self_units": len(previous.self_ids),
+                        "current_self_units": len(current.self_ids),
+                    },
+                    timestamp=timestamp,
+                )
+            ]
         events: list[Event] = []
         events.extend(self._detect_actor_events(previous, current, timestamp))
         events.extend(self._detect_queue_events(previous, current, timestamp))
         events.extend(self._detect_summary_events(current, timestamp))
         events.sort(key=lambda item: item.timestamp)
         return events
+
+    def _is_probable_match_reset(self, previous: WorldState, current: WorldState) -> bool:
+        if not previous.self_ids or not current.self_ids:
+            return False
+        if previous.self_ids & current.self_ids:
+            return False
+
+        current_self = [current.actors[actor_id] for actor_id in current.self_ids if actor_id in current.actors]
+        previous_self = [previous.actors[actor_id] for actor_id in previous.self_ids if actor_id in previous.actors]
+        current_buildings = [actor for actor in current_self if actor.category == ActorCategory.BUILDING]
+        current_mcvs = [actor for actor in current_self if actor.category == ActorCategory.MCV]
+        previous_had_base = any(actor.category in {ActorCategory.BUILDING, ActorCategory.MCV} for actor in previous_self)
+
+        if not previous_had_base:
+            return False
+        if current.enemy_ids:
+            return False
+        if current_buildings:
+            return False
+        if len(current_mcvs) != 1:
+            return False
+        if len(current.self_ids) > 3:
+            return False
+        if len(previous.self_ids) <= len(current.self_ids):
+            return False
+        return True
 
     def _detect_actor_events(self, previous: WorldState, current: WorldState, timestamp: float) -> list[Event]:
         events: list[Event] = []

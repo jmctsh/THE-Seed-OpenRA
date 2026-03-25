@@ -418,6 +418,41 @@ def test_mcv_deploy_is_not_reported_as_structure_loss_or_base_attack() -> None:
     print("  PASS: mcv_deploy_is_not_reported_as_structure_loss_or_base_attack")
 
 
+def test_match_reset_emits_game_reset_event() -> None:
+    frames = [
+        Frame(
+            self_actors=[
+                Actor(actor_id=130, type="建造厂", faction="自己", position=Location(15, 112), hppercent=100, activity="Idle"),
+                Actor(actor_id=131, type="发电厂", faction="自己", position=Location(16, 116), hppercent=100, activity="Idle"),
+                Actor(actor_id=152, type="矿场", faction="自己", position=Location(10, 116), hppercent=100, activity="Idle"),
+                Actor(actor_id=156, type="步兵", faction="自己", position=Location(78, 65), hppercent=100, activity="Idle"),
+            ],
+            enemy_actors=[],
+            economy=PlayerBaseInfo(Cash=2950, Resources=65075, Power=240, PowerDrained=260, PowerProvided=500),
+            map_info=make_map(explored=0.25, visible=0.05),
+            queues={},
+        ),
+        Frame(
+            self_actors=[
+                Actor(actor_id=129, type="基地车", faction="自己", position=Location(113, 16), hppercent=100, activity="Idle"),
+            ],
+            enemy_actors=[],
+            economy=PlayerBaseInfo(Cash=5000, Resources=0, Power=0, PowerDrained=0, PowerProvided=0),
+            map_info=make_map(explored=0.0, visible=0.0),
+            queues={},
+        ),
+    ]
+    source = MockWorldSource(frames)
+    world = WorldModel(source)
+
+    world.refresh(now=100.0, force=True)
+    source.set_frame(1)
+    events = world.refresh(now=101.0, force=True)
+
+    assert [event.type for event in events] == [EventType.GAME_RESET]
+    print("  PASS: match_reset_emits_game_reset_event")
+
+
 def main() -> None:
     test_refresh_layers_and_summary()
     test_layered_refresh_respects_intervals()
@@ -428,7 +463,8 @@ def main() -> None:
     test_refresh_failure_marks_stale_and_recovers()
     test_base_under_attack_requires_nearby_enemy_combat_and_meaningful_damage()
     test_mcv_deploy_is_not_reported_as_structure_loss_or_base_attack()
-    print("OK: 9 WorldModel tests passed")
+    test_match_reset_emits_game_reset_event()
+    print("OK: 10 WorldModel tests passed")
 
 
 if __name__ == "__main__":
