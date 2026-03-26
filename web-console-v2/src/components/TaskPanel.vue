@@ -13,6 +13,16 @@
       <div class="task-meta">
         优先级: {{ task.priority }} · {{ formatTimeAgo(task.timestamp) }}
       </div>
+      <div v-if="task.jobs?.length" class="task-jobs">
+        <div class="task-jobs-title">Experts · {{ task.job_count }}</div>
+        <div v-for="job in task.jobs" :key="job.job_id" class="job-row">
+          <span class="job-expert">{{ job.expert_type }}</span>
+          <span :class="['job-status', job.status]">{{ job.status }}</span>
+        </div>
+        <div v-for="job in task.jobs" :key="`${job.job_id}-summary`" class="job-summary">
+          {{ job.summary }}
+        </div>
+      </div>
     </div>
 
     <h3 v-if="pendingQuestions.length">待回答</h3>
@@ -144,6 +154,45 @@ onUnmounted(() => {
 .status-badge.pending { background: #fff3e0; color: #e65100; }
 .task-text { margin: 4px 0; font-size: 13px; }
 .task-meta { font-size: 11px; color: #999; }
+.task-jobs {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #eceff1;
+}
+.task-jobs-title {
+  font-size: 11px;
+  color: #607d8b;
+  margin-bottom: 6px;
+}
+.job-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.job-expert {
+  font-weight: 600;
+  color: #37474f;
+}
+.job-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #eceff1;
+  color: #455a64;
+}
+.job-status.running { background: #e8f5e9; color: #2e7d32; }
+.job-status.waiting { background: #fff3e0; color: #e65100; }
+.job-status.succeeded { background: #e3f2fd; color: #1565c0; }
+.job-status.failed,
+.job-status.aborted { background: #ffebee; color: #c62828; }
+.job-summary {
+  font-size: 11px;
+  color: #78909c;
+  margin-bottom: 4px;
+}
 .question-card { border: 1px solid #ff9800; border-radius: 6px; padding: 8px; margin-bottom: 8px; background: #fff8e1; }
 .question-text { font-size: 13px; margin-bottom: 6px; }
 .question-options { display: flex; gap: 6px; }

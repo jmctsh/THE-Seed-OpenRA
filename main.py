@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from dataclasses import asdict, is_dataclass
 from dataclasses import dataclass
 import logging
 import os
@@ -189,7 +190,7 @@ class RuntimeBridge(InboundHandler):
                 }
             )
             await self.ws_server.send_task_list(
-                [self._task_to_dict(task) for task in self.kernel.list_tasks()],
+                [self._task_to_dict(task, self.kernel.jobs_for_task(task.task_id)) for task in self.kernel.list_tasks()],
                 pending_questions=pending_questions,
             )
             await self._publish_task_updates()
@@ -290,8 +291,23 @@ class RuntimeBridge(InboundHandler):
     async def _publish_task_updates(self) -> None:
         assert self.ws_server is not None
         for task in self.kernel.list_tasks():
-            payload = self._task_to_dict(task)
-            fingerprint = tuple(payload.get(key) for key in ("task_id", "status", "priority", "timestamp", "raw_text"))
+            payload = self._task_to_dict(task, self.kernel.jobs_for_task(task.task_id))
+            fingerprint = (
+                payload.get("task_id"),
+                payload.get("status"),
+                payload.get("priority"),
+                payload.get("timestamp"),
+                payload.get("raw_text"),
+                tuple(
+                    (
+                        job.get("job_id"),
+                        job.get("expert_type"),
+                        job.get("status"),
+                        job.get("summary"),
+                    )
+                    for job in payload.get("jobs", [])
+                ),
+            )
             if self._task_fingerprints.get(task.task_id) == fingerprint:
                 continue
             self._task_fingerprints[task.task_id] = fingerprint
@@ -388,7 +404,8 @@ class RuntimeBridge(InboundHandler):
         await self.ws_server.send_query_response(payload)
 
     @staticmethod
-    def _task_to_dict(task: Any) -> dict[str, Any]:
+    def _task_to_dict(task: Any, jobs: Optional[list[Any]] = None) -> dict[str, Any]:
+        task_jobs = jobs or []
         return {
             "task_id": task.task_id,
             "raw_text": task.raw_text,
@@ -397,7 +414,55 @@ class RuntimeBridge(InboundHandler):
             "status": task.status.value,
             "timestamp": task.timestamp,
             "created_at": task.created_at,
+            "jobs": [RuntimeBridge._job_to_dict(job) for job in task_jobs],
+            "job_count": len(task_jobs),
         }
+
+    @staticmethod
+    def _job_to_dict(job: Any) -> dict[str, Any]:
+        return {
+            "job_id": job.job_id,
+            "expert_type": job.expert_type,
+            "status": job.status.value if hasattr(job.status, "value") else str(job.status),
+            "resources": list(getattr(job, "resources", []) or []),
+            "timestamp": getattr(job, "timestamp", None),
+            "summary": RuntimeBridge._describe_job(job),
+        }
+
+    @staticmethod
+    def _describe_job(job: Any) -> str:
+        config = getattr(job, "config", None)
+        if config is None:
+            return ""
+        if is_dataclass(config):
+            config_data = asdict(config)
+        elif isinstance(config, dict):
+            config_data = dict(config)
+        else:
+            return str(config)
+
+        expert_type = getattr(job, "expert_type", "")
+        if expert_type == "EconomyExpert":
+            unit_type = config_data.get("unit_type")
+            count = config_data.get("count")
+            queue_type = config_data.get("queue_type")
+            return f"{queue_type} · {unit_type} × {count}"
+        if expert_type in {"ReconExpert", "CombatExpert", "MovementExpert", "DeployExpert"}:
+            parts: list[str] = []
+            if "target_position" in config_data and config_data["target_position"] is not None:
+                parts.append(f"目标 {tuple(config_data['target_position'])}")
+            if "search_region" in config_data:
+                parts.append(f"区域 {config_data['search_region']}")
+            if "target_type" in config_data:
+                parts.append(f"目标类型 {config_data['target_type']}")
+            if "engagement_mode" in config_data:
+                parts.append(f"模式 {config_data['engagement_mode']}")
+            if "move_mode" in config_data:
+                parts.append(f"模式 {config_data['move_mode']}")
+            if "actor_id" in config_data and config_data["actor_id"] is not None:
+                parts.append(f"actor {config_data['actor_id']}")
+            return " · ".join(parts)
+        return ", ".join(f"{key}={value}" for key, value in config_data.items())
 
 
 class ApplicationRuntime:
