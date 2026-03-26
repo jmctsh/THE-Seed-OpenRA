@@ -207,10 +207,62 @@ def test_recon_job_retreats_when_hp_below_threshold() -> None:
     print("  PASS: recon_job_retreats_when_hp_below_threshold")
 
 
+def test_recon_job_keeps_same_destination_until_arrival() -> None:
+    api = MockGameAPI()
+    world = MockWorldModel()
+    signals = []
+    job = ReconJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(search_region="enemy_half"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["actor:57"])
+
+    job.tick()
+    first_move = api.moves[-1]["location"]
+    job.tick()
+
+    assert job.phase == "searching"
+    assert len(api.moves) == 1
+    assert api.moves[0]["location"] == first_move
+    print("  PASS: recon_job_keeps_same_destination_until_arrival")
+
+
+def test_recon_job_times_out_to_partial_when_no_base_found() -> None:
+    api = MockGameAPI()
+    world = MockWorldModel()
+    world.map_info["explored_pct"] = 0.20
+    signals = []
+    job = ReconJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(target_type="base"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["actor:57"])
+
+    job._created_at -= (job._max_search_duration_s + 1.0)
+    world.map_info["explored_pct"] = 0.24
+    job.tick()
+
+    assert job.status == JobStatus.SUCCEEDED
+    assert signals[-1].kind == SignalKind.TASK_COMPLETE
+    assert signals[-1].result == "partial"
+    assert signals[-1].data["explored_gain_pct"] >= 0.0
+    print("  PASS: recon_job_times_out_to_partial_when_no_base_found")
+
+
 if __name__ == "__main__":
     print("Running ReconExpert tests...\n")
     test_recon_expert_creates_job_with_fast_vehicle_need()
     test_recon_job_scores_search_and_moves_to_diagonal_waypoint()
     test_recon_job_tracks_clue_then_completes_on_base_found()
     test_recon_job_retreats_when_hp_below_threshold()
-    print("\nAll 4 ReconExpert tests passed!")
+    test_recon_job_keeps_same_destination_until_arrival()
+    test_recon_job_times_out_to_partial_when_no_base_found()
+    print("\nAll 6 ReconExpert tests passed!")

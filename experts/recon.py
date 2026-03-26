@@ -31,6 +31,8 @@ class ReconJob(BaseJob):
 
     tick_interval = 1.0
     _arrival_radius = 32.0
+    _max_search_duration_s = 30.0
+    _max_waypoint_dwell_s = 8.0
 
     def __init__(
         self,
@@ -55,8 +57,13 @@ class ReconJob(BaseJob):
         self.phase = "searching"
         self._search_index = 0
         self._last_destination: Optional[tuple[int, int]] = None
+        self._search_destination: Optional[tuple[int, int]] = None
+        self._search_destination_started_at = 0.0
         self._tracking_target: Optional[tuple[int, int]] = None
         self._tracking_summary_sent = False
+        self._initial_explored_pct: Optional[float] = None
+        self._best_explored_pct: Optional[float] = None
+        self._visited_waypoints = 0
 
     @property
     def expert_type(self) -> str:
@@ -79,6 +86,13 @@ class ReconJob(BaseJob):
         if actor is None:
             return
 
+        explored_pct = self._current_explored_pct()
+        if self._initial_explored_pct is None:
+            self._initial_explored_pct = explored_pct
+            self._best_explored_pct = explored_pct
+        else:
+            self._best_explored_pct = max(self._best_explored_pct or explored_pct, explored_pct)
+
         hp_ratio = self._hp_ratio(actor)
         if hp_ratio <= self.config.retreat_hp_pct:
             self._retreat(actor, hp_ratio)
@@ -92,6 +106,9 @@ class ReconJob(BaseJob):
         clue = self._find_tracking_clue()
         if clue is not None:
             self._track_clue(actor, clue)
+            return
+
+        if self._should_close_without_target():
             return
 
         self._search(actor)
@@ -110,7 +127,7 @@ class ReconJob(BaseJob):
     def _search(self, actor: dict[str, Any]) -> None:
         self.phase = "searching"
         with bm_span("expert_logic", name=f"recon:{self.job_id}:search_score"):
-            destination = self._choose_search_destination(actor)
+            destination = self._active_search_destination(actor)
         self._move(actor, destination, attack_move=False)
 
     def _track_clue(self, actor: dict[str, Any], clue: dict[str, Any]) -> None:
@@ -163,6 +180,29 @@ class ReconJob(BaseJob):
             expert_state={"phase": self.phase, "progress_pct": 1.0},
             result="succeeded",
             data=details,
+        )
+        self.status = JobStatus.SUCCEEDED
+
+    def _complete_timeout(self) -> None:
+        self.phase = "completed"
+        explored_pct = self._best_explored_pct or self._current_explored_pct()
+        explored_gain = max(0.0, explored_pct - (self._initial_explored_pct or explored_pct))
+        elapsed_s = round(max(0.0, self._elapsed_s()), 1)
+        self.emit_signal(
+            kind=SignalKind.TASK_COMPLETE,
+            summary=(
+                "侦察阶段结束，未发现目标；"
+                f"已扩大探索度 {explored_gain:.1%}，当前探索度 {explored_pct:.1%}"
+            ),
+            expert_state={"phase": self.phase, "progress_pct": 1.0},
+            result="partial",
+            data={
+                "target_type": self.config.target_type,
+                "explored_pct": round(explored_pct, 4),
+                "explored_gain_pct": round(explored_gain, 4),
+                "elapsed_s": elapsed_s,
+                "waypoints_visited": self._visited_waypoints,
+            },
         )
         self.status = JobStatus.SUCCEEDED
 
@@ -250,6 +290,31 @@ class ReconJob(BaseJob):
         harvesters.sort(key=lambda actor: actor["actor_id"])
         return harvesters[0]
 
+    def _active_search_destination(self, actor: dict[str, Any]) -> tuple[int, int]:
+        now = self._now()
+        if self._search_destination is None:
+            return self._advance_search_destination(actor, now)
+        if self._arrived(actor["position"], self._search_destination):
+            self._visited_waypoints += 1
+            return self._advance_search_destination(actor, now)
+        if (now - self._search_destination_started_at) >= self._max_waypoint_dwell_s:
+            return self._advance_search_destination(actor, now)
+        return self._search_destination
+
+    def _advance_search_destination(self, actor: dict[str, Any], now: float) -> tuple[int, int]:
+        destination = self._choose_search_destination(actor)
+        self._search_destination = destination
+        self._search_destination_started_at = now
+        return destination
+
+    def _should_close_without_target(self) -> bool:
+        if self.config.target_type != "base":
+            return False
+        if self._elapsed_s() < self._max_search_duration_s:
+            return False
+        self._complete_timeout()
+        return True
+
     def _safe_position(self, actor: dict[str, Any]) -> tuple[int, int]:
         buildings = self.world_model.query(
             "my_actors",
@@ -263,6 +328,10 @@ class ReconJob(BaseJob):
         height = int(map_info.get("height", 2000) or 2000)
         current_x, current_y = actor["position"]
         return (max(int(width * 0.15), int(current_x * 0.25)), min(int(height * 0.85), current_y))
+
+    def _current_explored_pct(self) -> float:
+        map_info = self.world_model.query("map")
+        return float(map_info.get("explored_pct", 0.0) or 0.0)
 
     def _move(self, actor: dict[str, Any], destination: tuple[int, int], *, attack_move: bool) -> None:
         if self._last_destination == destination and self.phase != "retreating":
@@ -292,6 +361,19 @@ class ReconJob(BaseJob):
         ax, ay = a
         bx, by = b
         return ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5
+
+    def _elapsed_s(self) -> float:
+        return self._now() - self._created_at
+
+    @staticmethod
+    def _arrived(a: tuple[int, int], b: tuple[int, int]) -> bool:
+        return ReconJob._distance(a, b) <= ReconJob._arrival_radius
+
+    @staticmethod
+    def _now() -> float:
+        from time import time as _time
+
+        return _time()
 
 
 class ReconExpert(ExecutionExpert):
