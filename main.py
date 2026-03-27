@@ -39,6 +39,7 @@ from logging_system import (
 )
 from models import PlayerResponse, TaskMessageType, TaskStatus
 from openra_api.game_api import GameAPI
+from queue_manager import QueueManager, QueueManagerConfig
 from task_agent import AgentConfig
 from unit_registry import UnitRegistry, set_default_registry
 from world_model import GameAPIWorldSource, RefreshPolicy, WorldModel, WorldModelSource
@@ -60,6 +61,8 @@ class RuntimeConfig:
     economy_refresh_s: float = 0.5
     map_refresh_s: float = 1.0
     review_interval: float = 10.0
+    queue_manager_mode: str = "auto_place"
+    queue_ready_timeout_s: float = 5.0
     llm_provider: str = "qwen"
     llm_model: str = "qwen-plus"
     adjutant_llm_provider: Optional[str] = None
@@ -566,10 +569,20 @@ class ApplicationRuntime:
             unit_registry=self.unit_registry,
             config=AdjutantConfig(default_task_kind="managed", default_task_priority=50),
         )
+        self.queue_manager = QueueManager(
+            world_model=self.world_model,
+            game_api=self.api,
+            notify=self.kernel.push_player_notification,
+            config=QueueManagerConfig(
+                mode=config.queue_manager_mode,  # type: ignore[arg-type]
+                ready_timeout_s=config.queue_ready_timeout_s,
+            ),
+        )
         self.game_loop = GameLoop(
             self.world_model,
             self.kernel,
             config=GameLoopConfig(tick_hz=config.tick_hz),
+            queue_manager=self.queue_manager,
         )
         self.bridge = RuntimeBridge(
             kernel=self.kernel,
@@ -740,6 +753,8 @@ def parse_args(argv: Optional[list[str]] = None) -> RuntimeConfig:
     parser.add_argument("--economy-refresh-s", type=float, default=float(os.environ.get("WORLD_ECONOMY_REFRESH_S", "0.5")))
     parser.add_argument("--map-refresh-s", type=float, default=float(os.environ.get("WORLD_MAP_REFRESH_S", "1.0")))
     parser.add_argument("--review-interval", type=float, default=float(os.environ.get("TASK_REVIEW_INTERVAL", "10.0")))
+    parser.add_argument("--queue-manager-mode", default=os.environ.get("QUEUE_MANAGER_MODE", "auto_place"))
+    parser.add_argument("--queue-ready-timeout-s", type=float, default=float(os.environ.get("QUEUE_READY_TIMEOUT_S", "5.0")))
     parser.add_argument("--llm-provider", default=os.environ.get("LLM_PROVIDER", "qwen"))
     parser.add_argument("--llm-model", default=os.environ.get("LLM_MODEL", "qwen-plus"))
     parser.add_argument("--adjutant-llm-provider", default=os.environ.get("ADJUTANT_LLM_PROVIDER"))
@@ -762,6 +777,8 @@ def parse_args(argv: Optional[list[str]] = None) -> RuntimeConfig:
         economy_refresh_s=args.economy_refresh_s,
         map_refresh_s=args.map_refresh_s,
         review_interval=args.review_interval,
+        queue_manager_mode=args.queue_manager_mode,
+        queue_ready_timeout_s=args.queue_ready_timeout_s,
         llm_provider=args.llm_provider,
         llm_model=args.llm_model,
         adjutant_llm_provider=args.adjutant_llm_provider,

@@ -16,6 +16,7 @@ class MockGameAPI:
     def __init__(self) -> None:
         self.produce_calls: list[dict] = []
         self.place_building_calls: list[dict] = []
+        self.manage_production_calls: list[dict] = []
         self.can_produce_value = True
         self.place_building_error: GameAPIError | None = None
 
@@ -36,6 +37,9 @@ class MockGameAPI:
         self.place_building_calls.append({"queue_type": queue_type, "location": location})
         if self.place_building_error is not None:
             raise self.place_building_error
+
+    def manage_production(self, queue_type: str, action: str) -> None:
+        self.manage_production_calls.append({"queue_type": queue_type, "action": action})
 
 
 class MockWorldModel:
@@ -245,6 +249,38 @@ def test_economy_job_can_build_power_while_low_power() -> None:
     ]
     assert signals == []
     print("  PASS: economy_job_can_build_power_while_low_power")
+
+
+def test_economy_job_abort_cleans_matching_front_queue_item() -> None:
+    api = MockGameAPI()
+    world = MockWorldModel()
+    world.queues = {
+        "Building": {
+            "queue_type": "Building",
+            "items": [
+                {"name": "barr", "display_name": "兵营", "done": True, "paused": False},
+                {"name": "proc", "display_name": "矿场", "done": False, "paused": False},
+            ],
+            "has_ready_item": True,
+        }
+    }
+    signals = []
+    job = EconomyJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(unit_type="barr", count=1, queue_type="Building"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+
+    job.abort()
+
+    assert api.manage_production_calls == [{"queue_type": "Building", "action": "cancel"}]
+    assert job.status == JobStatus.ABORTED
+    assert signals[-1].kind == SignalKind.TASK_COMPLETE
+    assert signals[-1].result == "aborted"
+    print("  PASS: economy_job_abort_cleans_matching_front_queue_item")
 
 
 def test_economy_job_matches_aliases_in_queue_and_completion_events() -> None:

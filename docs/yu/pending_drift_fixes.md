@@ -43,6 +43,10 @@ Pending fix direction:
 Pending fix direction:
 - Persist structured runtime logs or task traces to a rolling on-disk store for postmortem debugging across restarts.
 
+Additional notes from live investigation:
+- The Python/GameAPI/OpenCodeAlert code path does pass `autoPlaceBuilding=True` for building jobs; this is not a simple “flag never sent” bug.
+- The more likely failure class is workflow/state handling around the shared player build queue: aborted jobs can leave queued or ready items behind, and no singleton runtime manager currently cleans or escalates them.
+
 ## 4. Case study: Task003 composite-command drift
 
 - User-facing task: `Task003`
@@ -85,3 +89,33 @@ Pending fix direction:
   - `produce_units_then_recon`
   - `tech_up_then_recon`
 - Bound allowed experts per phase and require a clear transition condition before the next phase can begin.
+
+## 5. Shared build-queue cleanup and queue manager gap
+
+- `EconomyJob` currently controls production queue work, but shared player queues outlive individual jobs.
+- If a managed task drifts and aborts/replans, queued production items can remain in the shared queue after the original job is gone.
+- The current system has no singleton queue manager to:
+  - watch for ready buildings stuck at the top of the shared queue,
+  - auto-place them after a timeout,
+  - or switch to warn-only / off mode.
+
+Desired direction:
+- Add a singleton runtime `QueueManager` (not a per-task job) with modes:
+  - `off`
+  - `warn`
+  - `auto_place`
+- Default policy under discussion:
+  - if a ready building stays stuck for more than 5s, either auto-place it or emit a warning depending on mode
+- This manager should also emit explicit observability events / notifications such as:
+  - `queue_ready_stuck`
+  - `queue_auto_placed`
+  - `queue_auto_place_failed`
+
+## 6. EconomyJob abort cleanup gap
+
+- `Kernel.abort_job()` changes Job state and releases resources, but does not clean shared production queue state.
+- For `EconomyJob`, aborting after production has already been queued can leave stray items behind.
+
+Desired direction:
+- `EconomyJob.abort()` should attempt best-effort queue cleanup when the front of the matching queue still belongs to the same production intent.
+- Because the queue is shared and item provenance is not yet explicit, this cleanup can only be best-effort for now.

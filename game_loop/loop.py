@@ -49,6 +49,10 @@ class KernelInterface(Protocol):
     ) -> None: ...
 
 
+class QueueManagerInterface(Protocol):
+    def tick(self, *, now: float) -> None: ...
+
+
 # Dashboard push callback: (tick_number, timestamp) -> None
 DashboardCallback = Callable[[int, float], None]
 
@@ -94,11 +98,13 @@ class GameLoop:
         kernel: KernelInterface,
         config: Optional[GameLoopConfig] = None,
         dashboard_callback: Optional[DashboardCallback] = None,
+        queue_manager: Optional[QueueManagerInterface] = None,
     ) -> None:
         self.world_model = world_model
         self.kernel = kernel
         self.config = config or GameLoopConfig()
         self._dashboard_callback = dashboard_callback
+        self._queue_manager = queue_manager
 
         self._jobs: dict[str, _RegisteredJob] = {}
         self._agents: dict[str, _RegisteredAgent] = {}
@@ -222,7 +228,11 @@ class GameLoop:
             # 5. Check review_interval for Task Agents (1.8)
             self._check_agent_reviews(now)
 
-            # 6. Dashboard push (placeholder)
+            # 6. Shared queue manager
+            if self._queue_manager is not None:
+                self._queue_manager.tick(now=now)
+
+            # 7. Dashboard push (placeholder)
             if self._dashboard_callback:
                 self._dashboard_callback(self._tick_count, now)
 

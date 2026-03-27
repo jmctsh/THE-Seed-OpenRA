@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Optional, Protocol
 
 from benchmark import span as bm_span
@@ -18,6 +19,9 @@ from .knowledge import (
 )
 
 
+logger = logging.getLogger(__name__)
+
+
 class GameAPILike(Protocol):
     def can_produce(self, unit_type: str) -> bool:
         ...
@@ -26,6 +30,9 @@ class GameAPILike(Protocol):
         ...
 
     def place_building(self, queue_type: str, location: Any = None) -> None:
+        ...
+
+    def manage_production(self, queue_type: str, action: str) -> None:
         ...
 
 
@@ -88,6 +95,10 @@ class EconomyJob(BaseJob):
             return
         with bm_span("job_tick", name=f"{self.expert_type}:{self.job_id}"):
             self.tick()
+
+    def abort(self) -> None:
+        self._cleanup_queue_on_abort()
+        super().abort()
 
     def tick(self) -> None:
         queue = self._queue_state()
@@ -470,6 +481,51 @@ class EconomyJob(BaseJob):
                 continue
             items.append(dict(item))
         return items
+
+    def _cleanup_queue_on_abort(self) -> None:
+        queue = self._queue_state()
+        if queue is None:
+            return
+        items = list(queue.get("items", []))
+        if not items:
+            return
+        first_item = items[0]
+        if not production_name_matches(
+            self.config.unit_type,
+            first_item.get("name"),
+            first_item.get("display_name"),
+        ):
+            return
+        try:
+            self.game_api.manage_production(self.config.queue_type, "cancel")
+        except GameAPIError as exc:
+            logger.warning(
+                "EconomyJob abort queue cleanup failed: job_id=%s queue=%s unit=%s error=%s",
+                self.job_id,
+                self.config.queue_type,
+                self.config.unit_type,
+                exc,
+            )
+            slog.warn(
+                "Economy job abort queue cleanup failed",
+                event="economy_abort_queue_cleanup_failed",
+                job_id=self.job_id,
+                task_id=self.task_id,
+                queue_type=self.config.queue_type,
+                unit_type=self.config.unit_type,
+                error=str(exc),
+            )
+            return
+        slog.warn(
+            "Economy job cleaned queue item on abort",
+            event="economy_abort_queue_cleanup",
+            job_id=self.job_id,
+            task_id=self.task_id,
+            queue_type=self.config.queue_type,
+            unit_type=self.config.unit_type,
+            item_name=first_item.get("name"),
+            item_done=bool(first_item.get("done")),
+        )
 
 
 class EconomyExpert(ExecutionExpert):
