@@ -187,6 +187,13 @@ def test_llm_reasoning_is_logged():
     logs = logging_system.query(component="task_agent", event="llm_reasoning")
     assert len(logs) >= 1
     assert any("先观察敌情" in record.message for record in logs)
+    context_logs = logging_system.query(component="task_agent", event="context_snapshot")
+    assert len(context_logs) >= 1
+    assert context_logs[-1].data["packet"]["task"]["task_id"] == "t1"
+    input_logs = logging_system.query(component="task_agent", event="llm_input")
+    assert len(input_logs) >= 1
+    assert input_logs[-1].data["messages"][-1]["role"] == "user"
+    assert "context_packet" in input_logs[-1].data["messages"][-1]["content"]
     print("  PASS: llm_reasoning_is_logged")
 
 

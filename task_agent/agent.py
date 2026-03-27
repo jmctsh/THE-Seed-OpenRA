@@ -11,7 +11,7 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Optional
 
 from benchmark import span as bm_span
@@ -263,6 +263,13 @@ class TaskAgent:
             recent_signals=recent_signals,
             recent_events=events,
             open_decisions=open_decisions,
+        )
+        slog.info(
+            "TaskAgent context snapshot",
+            event="context_snapshot",
+            task_id=self.task.task_id,
+            wake=self._wake_count,
+            packet=asdict(packet),
         )
 
         # Inject context as user message
@@ -640,6 +647,15 @@ class TaskAgent:
         """Call the LLM with retry and timeout."""
         for attempt in range(1 + self.config.max_retries):
             try:
+                slog.info(
+                    "TaskAgent LLM input",
+                    event="llm_input",
+                    task_id=self.task.task_id,
+                    wake=self._wake_count,
+                    attempt=attempt + 1,
+                    messages=messages,
+                    tools=[tool["function"]["name"] for tool in TOOL_DEFINITIONS],
+                )
                 with bm_span("llm_call", name=f"task_agent:{self.task.task_id}"):
                     response = await asyncio.wait_for(
                         self.llm.chat(messages, tools=TOOL_DEFINITIONS),

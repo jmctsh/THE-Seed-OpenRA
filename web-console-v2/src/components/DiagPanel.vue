@@ -17,6 +17,7 @@
         <span v-if="entry.taskLabel" class="trace-task">{{ entry.taskLabel }}</span>
         <span v-if="entry.jobId" class="trace-job">{{ entry.jobId }}</span>
         <span class="trace-msg">{{ entry.message }}</span>
+        <pre v-if="entry.details" class="trace-details">{{ formatTraceDetails(entry.details) }}</pre>
       </div>
       <div v-if="!filteredTraceEntries.length" class="empty">当前没有可追踪的任务事件</div>
     </div>
@@ -147,6 +148,14 @@ function addTraceEntry(entry) {
   if (traceEntries.value.length > 800) traceEntries.value.splice(0, 200)
 }
 
+function formatTraceDetails(details) {
+  try {
+    return JSON.stringify(details, null, 2)
+  } catch {
+    return String(details)
+  }
+}
+
 function addLog(entry) {
   logEntries.value.push(entry)
   if (logEntries.value.length > 500) logEntries.value.splice(0, 100)
@@ -196,6 +205,7 @@ if (props.on) {
         taskLabel: taskId ? formatTaskLabel(taskId) : null,
         jobId,
         message: `[${entry.event || entry.level || 'log'}] ${message}`,
+        details: entry.data || null,
       })
     }
   })
@@ -220,6 +230,7 @@ if (props.on) {
       taskLabel: formatTaskLabel(task.task_id),
       jobId: null,
       message: `状态更新：${task.status}${task.raw_text ? ` · ${task.raw_text}` : ''}`,
+      details: task,
     })
   })
   props.on('query_response', (msg) => {
@@ -233,6 +244,7 @@ if (props.on) {
       taskLabel: formatTaskLabel(taskId),
       jobId: msg.data?.job_id || null,
       message: replaceTaskIdsWithLabels(msg.data?.answer || msg.data?.response_text || '收到副官回复'),
+      details: msg.data || null,
     })
   })
   props.on('player_notification', (msg) => {
@@ -246,6 +258,7 @@ if (props.on) {
       taskLabel: formatTaskLabel(taskId),
       jobId: null,
       message: replaceTaskIdsWithLabels(msg.data?.content || JSON.stringify(msg.data)),
+      details: msg.data || null,
     })
   })
 }
@@ -291,6 +304,17 @@ onMounted(() => {
 }
 .trace-entry {
   margin-bottom: 6px;
+}
+.trace-details {
+  margin: 4px 0 0 58px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #ffffff;
+  border: 1px solid #e0e6eb;
+  border-radius: 6px;
+  color: #37474f;
 }
 .trace-source { color: #455a64; margin-right: 6px; }
 .trace-task {
