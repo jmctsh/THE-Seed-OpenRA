@@ -71,6 +71,8 @@ def test_production_advisor_returns_power_tech_when_low_power() -> None:
     assert recommendation["unit_type"] == "powr"
     assert recommendation["queue_type"] == "Building"
     assert recommendation["reason"] == "low_power"
+    assert recommendation["roles"] == ["power_recovery"]
+    assert recommendation["downstream_unlocks"] == ["anypower"]
     print("  PASS: production_advisor_returns_power_tech_when_low_power")
 
 
@@ -109,6 +111,28 @@ def test_production_advisor_recommends_jeep_for_mobile_scout_need() -> None:
     print("  PASS: production_advisor_recommends_jeep_for_mobile_scout_need")
 
 
+def test_production_advisor_recommends_weap_before_mobile_scout_when_no_vehicle_gateway() -> None:
+    planner = ProductionAdvisor()
+
+    proposal = planner.plan(
+        "ProductionAdvisor",
+        {"intent": "recon", "need_mobile_scout": True},
+        make_world_state(
+            enemy_actors=[{"actor_id": 9}],
+            my_actors=[{"actor_id": 1, "name": "矿场", "display_name": "矿场", "category": "building"}],
+            queues={"Building": {"queue_type": "Building", "items": [], "has_ready_item": False}},
+        ),
+    )
+
+    recommendation = proposal["recommendation"]
+    assert recommendation["action"] == "tech_up"
+    assert recommendation["unit_type"] == "weap"
+    assert recommendation["reason"] == "need_vehicle_gateway"
+    assert recommendation["roles"] == ["vehicle_gateway", "tech_gateway"]
+    assert "mobile_scout_transition" in recommendation["downstream_unlocks"]
+    print("  PASS: production_advisor_recommends_weap_before_mobile_scout_when_no_vehicle_gateway")
+
+
 def test_query_planner_reports_not_supported_for_other_planners() -> None:
     proposal = query_planner("AttackRoutePlanner", {}, make_world_state())
 
@@ -123,5 +147,6 @@ if __name__ == "__main__":
     test_production_advisor_returns_power_tech_when_low_power()
     test_production_advisor_returns_hold_when_queue_blocked()
     test_production_advisor_recommends_jeep_for_mobile_scout_need()
+    test_production_advisor_recommends_weap_before_mobile_scout_when_no_vehicle_gateway()
     test_query_planner_reports_not_supported_for_other_planners()
-    print("\nAll 5 Planner tests passed!")
+    print("\nAll 6 Planner tests passed!")

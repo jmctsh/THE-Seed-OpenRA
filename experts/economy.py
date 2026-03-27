@@ -10,6 +10,12 @@ from openra_api.game_api import GameAPIError
 from openra_api.production_names import production_name_matches
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
+from .knowledge import (
+    buildable_economy_recovery_options,
+    buildable_power_recovery_options,
+    knowledge_for_target,
+    low_power_impacts,
+)
 
 
 class GameAPILike(Protocol):
@@ -60,6 +66,7 @@ class EconomyJob(BaseJob):
         self._waiting_reason: Optional[str] = None
         self._counted_ready_items_pending_placement = 0
         self._known_matching_actor_ids = self._matching_self_actor_ids()
+        self._knowledge = knowledge_for_target(self.config.unit_type, self.config.queue_type)
 
     @property
     def expert_type(self) -> str:
@@ -96,8 +103,15 @@ class EconomyJob(BaseJob):
         if placement_state == "placed":
             self.phase = "placing"
             self.status = JobStatus.RUNNING
-            return
+            queue = self._queue_state()
+            if self.produced_count >= self.config.count:
+                self._finish_succeeded()
+                return
         if placement_state == "blocked":
+            return
+
+        if self.produced_count >= self.config.count:
+            self._finish_succeeded()
             return
 
         reason = self._waiting_reason_for(queue, economy)
@@ -109,10 +123,6 @@ class EconomyJob(BaseJob):
             self.status = JobStatus.RUNNING
             self.phase = "producing"
             self._waiting_reason = None
-
-        if self.produced_count >= self.config.count:
-            self._finish_succeeded()
-            return
 
         active_items = self._matching_queue_items(queue, include_done=False)
         if active_items:
@@ -166,6 +176,8 @@ class EconomyJob(BaseJob):
                     "produced_count": self.produced_count,
                     "requested_count": self.config.count,
                     "queue_type": self.config.queue_type,
+                    "queue_scope": self._knowledge["queue_scope"],
+                    "roles": self._knowledge["roles"],
                 },
                 data={
                     "unit_type": name,
@@ -173,6 +185,7 @@ class EconomyJob(BaseJob):
                     "queue_type": queue_type,
                     "produced_count": self.produced_count,
                     "requested_count": self.config.count,
+                    "knowledge": self._knowledge,
                 },
             )
         if new_events:
@@ -208,16 +221,17 @@ class EconomyJob(BaseJob):
         if reason == self._waiting_reason:
             return
         self._waiting_reason = reason
+        guidance = self._guidance_for(reason)
         info_summary_map = {
             "queue_unassigned": "等待生产队列资源分配",
         }
         blocked_summary_map = {
             "queue_missing": f"生产队列 {self.config.queue_type} 不可用，等待工厂恢复",
-            "low_power": "电力不足，生产暂停等待恢复",
-            "no_funds": "资金不足，生产暂停等待资源恢复",
+            "low_power": guidance.get("summary") or "电力不足，生产暂停等待恢复",
+            "no_funds": guidance.get("summary") or "资金不足，生产暂停等待资源恢复",
             "cannot_produce": f"当前无法生产 {self.config.unit_type}，等待前置条件恢复",
             "queue_paused": f"{self.config.queue_type} 队列暂停，等待恢复",
-            "queue_ready_item_pending": "建造队列里有待放置建筑，等待先清空队列",
+            "queue_ready_item_pending": guidance.get("summary") or "建造队列里有待放置建筑，等待先清空队列",
             "ready_item_not_placeable": "建筑已就绪但无法自动放置，等待人工清理或腾出位置",
         }
         if reason in info_summary_map:
@@ -229,8 +243,15 @@ class EconomyJob(BaseJob):
                     "reason": reason,
                     "produced_count": self.produced_count,
                     "requested_count": self.config.count,
+                    "queue_scope": self._knowledge["queue_scope"],
+                    "roles": self._knowledge["roles"],
                 },
-                data={"reason": reason, "queue_type": self.config.queue_type},
+                data={
+                    "reason": reason,
+                    "queue_type": self.config.queue_type,
+                    "knowledge": self._knowledge,
+                    **guidance,
+                },
             )
             return
         self.emit_signal(
@@ -241,8 +262,15 @@ class EconomyJob(BaseJob):
                 "reason": reason,
                 "produced_count": self.produced_count,
                 "requested_count": self.config.count,
+                "queue_scope": self._knowledge["queue_scope"],
+                "roles": self._knowledge["roles"],
             },
-            data={"reason": reason, "queue_type": self.config.queue_type},
+            data={
+                "reason": reason,
+                "queue_type": self.config.queue_type,
+                "knowledge": self._knowledge,
+                **guidance,
+            },
         )
 
     def _finish_succeeded(self) -> None:
@@ -253,13 +281,19 @@ class EconomyJob(BaseJob):
         self.emit_signal(
             kind=SignalKind.TASK_COMPLETE,
             summary=f"生产完成 {self.produced_count}/{self.config.count}: {self.config.unit_type}",
-            expert_state={"phase": self.phase, "produced_count": self.produced_count},
+            expert_state={
+                "phase": self.phase,
+                "produced_count": self.produced_count,
+                "queue_scope": self._knowledge["queue_scope"],
+                "roles": self._knowledge["roles"],
+            },
             result="succeeded",
             data={
                 "unit_type": self.config.unit_type,
                 "queue_type": self.config.queue_type,
                 "produced_count": self.produced_count,
                 "repeat": self.config.repeat,
+                "knowledge": self._knowledge,
             },
         )
 
@@ -315,6 +349,8 @@ class EconomyJob(BaseJob):
                     "produced_count": self.produced_count,
                     "requested_count": self.config.count,
                     "queue_type": self.config.queue_type,
+                    "queue_scope": self._knowledge["queue_scope"],
+                    "roles": self._knowledge["roles"],
                 },
                 data={
                     "actor_id": actor_id,
@@ -322,6 +358,7 @@ class EconomyJob(BaseJob):
                     "queue_type": self.config.queue_type,
                     "produced_count": self.produced_count,
                     "requested_count": self.config.count,
+                    "knowledge": self._knowledge,
                 },
             )
 
@@ -338,6 +375,49 @@ class EconomyJob(BaseJob):
                 ("apwr", "高级发电厂"),
             )
         )
+
+    def _guidance_for(self, reason: str) -> dict[str, Any]:
+        if reason == "low_power":
+            recovery_options = buildable_power_recovery_options(self.game_api)
+            if recovery_options:
+                names = "或".join(option["display_name"] for option in recovery_options)
+                summary = f"电力不足，生产会变慢且部分建筑会离线，建议补建{names}"
+            else:
+                summary = "电力不足，生产会变慢且部分建筑会离线，建议优先恢复供电建筑"
+            return {
+                "summary": summary,
+                "impact": low_power_impacts(),
+                "recommendation": {
+                    "kind": "power_recovery",
+                    "queue_type": "Building",
+                    "queue_scope": self._knowledge["queue_scope"],
+                    "options": recovery_options,
+                },
+            }
+        if reason == "no_funds":
+            recovery_options = buildable_economy_recovery_options(self.game_api)
+            guidance: dict[str, Any] = {
+                "impact": {"kind": "economy_weak", "effects": ["income_insufficient"]},
+                "recommendation": {
+                    "kind": "econ_recovery",
+                    "queue_scope": self._knowledge["queue_scope"],
+                    "options": recovery_options,
+                },
+            }
+            if recovery_options:
+                names = "或".join(option["display_name"] for option in recovery_options)
+                guidance["summary"] = f"资金不足，建议优先恢复经济：{names}"
+            return guidance
+        if reason == "queue_ready_item_pending":
+            return {
+                "summary": "共享建造队列里有待放置建筑，建议先清空队列",
+                "impact": {"kind": "queue_blocked", "effects": ["ready_item_pending"]},
+                "recommendation": {
+                    "kind": "clear_ready_building",
+                    "queue_scope": self._knowledge["queue_scope"],
+                },
+            }
+        return {}
 
     def _maybe_place_ready_building(self, queue: Optional[dict[str, Any]]) -> Optional[str]:
         if self.config.queue_type != "Building" or queue is None:
@@ -362,12 +442,15 @@ class EconomyJob(BaseJob):
                     "produced_count": self.produced_count,
                     "requested_count": self.config.count,
                     "queue_type": self.config.queue_type,
+                    "queue_scope": self._knowledge["queue_scope"],
+                    "roles": self._knowledge["roles"],
                 },
                 data={
                     "unit_type": self.config.unit_type,
                     "queue_type": self.config.queue_type,
                     "produced_count": self.produced_count,
                     "requested_count": self.config.count,
+                    "knowledge": self._knowledge,
                 },
             )
         return "placed"

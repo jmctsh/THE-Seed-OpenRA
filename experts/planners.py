@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from .base import PlannerExpert
+from .knowledge import has_role, knowledge_for_target
 
 
 def _actors_from_payload(payload: Any) -> list[dict[str, Any]]:
@@ -61,7 +62,7 @@ class ProductionAdvisor(PlannerExpert):
         enemy_actors: list[dict[str, Any]],
     ) -> dict[str, Any]:
         if self._no_visible_enemy(params, enemy_actors):
-            return {
+            recommendation = {
                 "action": "scout_first",
                 "unit_type": None,
                 "queue_type": None,
@@ -69,9 +70,12 @@ class ProductionAdvisor(PlannerExpert):
                 "prerequisites": [],
                 "reason": "no_visible_enemy",
                 "recommended_expert": "ReconExpert",
+                "impact": {"kind": "target_visibility", "effects": ["no_visible_enemy"]},
             }
+            return recommendation
 
         if self._is_low_power(economy):
+            knowledge = knowledge_for_target("powr", "Building")
             return {
                 "action": "tech_up",
                 "unit_type": "powr",
@@ -80,6 +84,8 @@ class ProductionAdvisor(PlannerExpert):
                 "prerequisites": [],
                 "reason": "low_power",
                 "recommended_expert": "EconomyExpert",
+                "roles": knowledge["roles"],
+                "downstream_unlocks": knowledge["downstream_unlocks"],
             }
 
         if self._queue_blocked(summary, queues):
@@ -91,9 +97,25 @@ class ProductionAdvisor(PlannerExpert):
                 "prerequisites": [],
                 "reason": "queue_blocked",
                 "recommended_expert": None,
+                "queue_scope": "player_shared",
+            }
+
+        if self._needs_vehicle_gateway(params, my_actors, queues):
+            knowledge = knowledge_for_target("weap", "Building")
+            return {
+                "action": "tech_up",
+                "unit_type": "weap",
+                "queue_type": "Building",
+                "count": 1,
+                "prerequisites": ["proc"],
+                "reason": "need_vehicle_gateway",
+                "recommended_expert": "EconomyExpert",
+                "roles": knowledge["roles"],
+                "downstream_unlocks": knowledge["downstream_unlocks"],
             }
 
         if self._needs_mobile_scout(params, my_actors, queues):
+            knowledge = knowledge_for_target("jeep", "Vehicle")
             return {
                 "action": "produce",
                 "unit_type": "jeep",
@@ -102,6 +124,8 @@ class ProductionAdvisor(PlannerExpert):
                 "prerequisites": [],
                 "reason": "need_mobile_scout",
                 "recommended_expert": "EconomyExpert",
+                "roles": knowledge["roles"],
+                "downstream_unlocks": knowledge["downstream_unlocks"],
             }
 
         return {
@@ -163,6 +187,20 @@ class ProductionAdvisor(PlannerExpert):
                 continue
             return False
         return True
+
+    @staticmethod
+    def _needs_vehicle_gateway(
+        params: dict[str, Any],
+        my_actors: list[dict[str, Any]],
+        queues: dict[str, Any],
+    ) -> bool:
+        if not bool(params.get("need_mobile_scout", False)):
+            return False
+        if "Vehicle" in queues:
+            return False
+        has_economy_anchor = any(has_role(actor, "economy_anchor") for actor in my_actors)
+        has_vehicle_gateway = any(has_role(actor, "vehicle_gateway") for actor in my_actors)
+        return has_economy_anchor and not has_vehicle_gateway
 
 
 _PLANNER_REGISTRY: dict[str, PlannerExpert] = {

@@ -155,8 +155,16 @@ def test_economy_job_waits_on_low_power_and_recovers() -> None:
 
     job.do_tick()
     assert job.status == JobStatus.WAITING
-    assert signals[-1].kind == SignalKind.BLOCKED
+    assert signals[-1].kind.value == SignalKind.BLOCKED.value
     assert signals[-1].data["reason"] == "low_power"
+    assert signals[-1].data["impact"]["kind"] == "power_state"
+    assert signals[-1].data["impact"]["effects"] == ["queue_slowdown", "structure_disable_possible"]
+    assert signals[-1].data["recommendation"]["kind"] == "power_recovery"
+    assert signals[-1].data["recommendation"]["queue_scope"] == "player_shared"
+    assert signals[-1].data["knowledge"]["queue_scope"] == "player_shared"
+    assert [item["unit_type"] for item in signals[-1].data["recommendation"]["options"]] == ["powr", "apwr"]
+    assert "power_recovery" not in signals[-1].data["knowledge"]["roles"]
+    assert "建议补建" in signals[-1].summary
     assert api.produce_calls == []
 
     world.economy["low_power"] = False
@@ -185,7 +193,7 @@ def test_economy_job_waits_when_queue_missing() -> None:
 
     assert job.status == JobStatus.WAITING
     assert job.phase == "waiting"
-    assert signals[-1].kind == SignalKind.BLOCKED
+    assert signals[-1].kind.value == SignalKind.BLOCKED.value
     assert signals[-1].data["reason"] == "queue_missing"
     print("  PASS: economy_job_waits_when_queue_missing")
 
@@ -278,15 +286,8 @@ def test_economy_job_matches_aliases_in_queue_and_completion_events() -> None:
     }
     job.tick()
 
-    assert job.status == JobStatus.RUNNING
-    assert job.phase == "placing"
-    assert api.place_building_calls == [{"queue_type": "Building", "location": None}]
-    assert signals[-1].kind == SignalKind.PROGRESS
-
-    world.queues["Building"] = {"queue_type": "Building", "items": [], "has_ready_item": False}
-    job.tick()
-
     assert job.status == JobStatus.SUCCEEDED
+    assert api.place_building_calls == [{"queue_type": "Building", "location": None}]
     assert signals[-1].kind == SignalKind.TASK_COMPLETE
     print("  PASS: economy_job_matches_aliases_in_queue_and_completion_events")
 
@@ -298,7 +299,7 @@ def test_economy_job_auto_places_ready_buildings_and_blocks_foreign_ready_items(
     job = EconomyJob(
         job_id="j1",
         task_id="t1",
-        config=make_config(unit_type="PowerPlant", count=1, queue_type="Building"),
+        config=make_config(unit_type="PowerPlant", count=2, queue_type="Building"),
         signal_callback=signals.append,
         game_api=api,
         world_model=world,
@@ -314,7 +315,8 @@ def test_economy_job_auto_places_ready_buildings_and_blocks_foreign_ready_items(
     }
     job.tick()
     assert api.place_building_calls == [{"queue_type": "Building", "location": None}]
-    assert api.produce_calls == []
+    assert api.produce_calls == [{"unit_type": "PowerPlant", "quantity": 1, "auto_place_building": True}]
+    assert job.status == JobStatus.RUNNING
 
     world.queues["Building"] = {
         "queue_type": "Building",
@@ -322,8 +324,15 @@ def test_economy_job_auto_places_ready_buildings_and_blocks_foreign_ready_items(
         "has_ready_item": True,
     }
     job.tick()
-    assert signals[-1].kind == SignalKind.BLOCKED
-    assert signals[-1].data["reason"] == "queue_ready_item_pending"
+    blocked = [
+        signal for signal in signals
+        if signal.kind.value == SignalKind.BLOCKED.value
+        and signal.data
+        and signal.data.get("reason") == "queue_ready_item_pending"
+    ]
+    assert blocked
+    assert blocked[-1].data["recommendation"]["kind"] == "clear_ready_building"
+    assert blocked[-1].data["recommendation"]["queue_scope"] == "player_shared"
     print("  PASS: economy_job_auto_places_ready_buildings_and_blocks_foreign_ready_items")
 
 
@@ -353,11 +362,6 @@ def test_economy_job_counts_preexisting_ready_building_toward_completion() -> No
     assert api.place_building_calls == [{"queue_type": "Building", "location": None}]
     assert api.produce_calls == []
     assert job.produced_count == 1
-    assert signals[-1].kind == SignalKind.PROGRESS
-
-    world.queues["Building"] = {"queue_type": "Building", "items": [], "has_ready_item": False}
-    job.tick()
-
     assert job.status == JobStatus.SUCCEEDED
     assert signals[-1].kind == SignalKind.TASK_COMPLETE
     print("  PASS: economy_job_counts_preexisting_ready_building_toward_completion")
@@ -453,6 +457,55 @@ def test_economy_job_counts_direct_auto_placed_buildings_without_queue_done_even
     print("  PASS: economy_job_counts_direct_auto_placed_buildings_without_queue_done_event")
 
 
+def test_economy_job_completes_before_low_power_after_building_lands() -> None:
+    api = MockGameAPI()
+    world = MockWorldModel()
+    world.queues = {"Building": {"queue_type": "Building", "items": [], "has_ready_item": False}}
+    signals = []
+    job = EconomyJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(unit_type="dome", count=1, queue_type="Building"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["queue:Building"])
+
+    job.tick()
+    assert job.status == JobStatus.RUNNING
+
+    world.events = [
+        {
+            "type": "PRODUCTION_COMPLETE",
+            "timestamp": 10.0,
+            "data": {"queue_type": "Building", "name": "dome", "display_name": "雷达站"},
+        }
+    ]
+    world.actors = [
+        {
+            "actor_id": 235,
+            "name": "雷达站",
+            "display_name": "雷达站",
+            "category": "building",
+        }
+    ]
+    world.economy["low_power"] = True
+
+    job.tick()
+
+    assert job.status == JobStatus.SUCCEEDED
+    assert signals[-1].kind == SignalKind.TASK_COMPLETE
+    assert signals[-1].data["knowledge"]["roles"] == ["awareness_gateway", "tech_gateway"]
+    assert "atek" in signals[-1].data["knowledge"]["downstream_unlocks"]
+    assert signals[-1].result == "succeeded"
+    assert all(
+        not (signal.kind == SignalKind.BLOCKED and signal.data and signal.data.get("reason") == "low_power")
+        for signal in signals
+    )
+    print("  PASS: economy_job_completes_before_low_power_after_building_lands")
+
+
 if __name__ == "__main__":
     print("Running EconomyExpert tests...\n")
     test_economy_expert_creates_queue_job()
@@ -467,4 +520,5 @@ if __name__ == "__main__":
     test_economy_job_waits_when_ready_building_cannot_be_placed()
     test_economy_job_enables_auto_place_for_buildings()
     test_economy_job_counts_direct_auto_placed_buildings_without_queue_done_event()
-    print("\nAll 11 EconomyExpert tests passed!")
+    test_economy_job_completes_before_low_power_after_building_lands()
+    print("\nAll 12 EconomyExpert tests passed!")
