@@ -21,6 +21,7 @@ from openra_api.models import Actor, Location
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
 from .game_api_protocol import GameAPILike
+from .knowledge import recon_first_recommendation
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class CombatJob(BaseJob):
         self._initial_unit_count = 0
         self._pursuit_origin: Optional[tuple[int, int]] = None
         self._harass_disengage = False
+        self._has_seen_enemy = False
 
     @property
     def expert_type(self) -> str:
@@ -151,9 +153,20 @@ class CombatJob(BaseJob):
         enemies = self._find_enemies_near(config.target_position, _ENGAGE_RADIUS * 2)
 
         if not enemies:
-            # No enemies — area cleared
-            self._complete("succeeded", f"Area {config.target_position} cleared")
+            if self._has_seen_enemy:
+                self._complete("succeeded", f"Area {config.target_position} cleared")
+            else:
+                self._complete(
+                    "partial",
+                    "当前没有可见敌方目标，建议先执行侦察",
+                    extra_data={
+                        "impact": {"kind": "target_visibility", "effects": ["no_visible_enemy"]},
+                        "recommendation": recon_first_recommendation(),
+                    },
+                )
             return
+
+        self._has_seen_enemy = True
 
         if config.engagement_mode == EngagementMode.ASSAULT:
             self._engage_assault(actor_ids, enemies)
@@ -370,7 +383,7 @@ class CombatJob(BaseJob):
                 ratios.append(hp / hp_max if hp_max else 0.0)
         return sum(ratios) / len(ratios) if ratios else 1.0
 
-    def _complete(self, result: str, summary: str) -> None:
+    def _complete(self, result: str, summary: str, extra_data: Optional[dict[str, Any]] = None) -> None:
         """Complete the combat job."""
         self.phase = CombatPhase.COMPLETED
         if result == "succeeded":
@@ -388,6 +401,7 @@ class CombatJob(BaseJob):
                 "ticks": self._tick_count,
                 "units_remaining": len(self._get_actor_ids()),
                 "initial_units": self._initial_unit_count,
+                **(extra_data or {}),
             },
         )
 

@@ -144,6 +144,29 @@ def radar_loss_impact() -> dict[str, Any]:
     }
 
 
+def awareness_recovery_package() -> dict[str, Any]:
+    return {
+        "kind": "awareness_recovery",
+        "options": [{"unit_type": "dome", "display_name": "雷达站"}],
+    }
+
+
+def recon_first_recommendation(*, search_region: str = "enemy_half", target_type: str = "base") -> dict[str, Any]:
+    return {
+        "kind": "recon_first",
+        "expert_type": "ReconExpert",
+        "config_hint": {
+            "search_region": search_region,
+            "target_type": target_type,
+            "target_owner": "enemy",
+        },
+    }
+
+
+def has_awareness_gateway(actors: list[dict[str, Any]]) -> bool:
+    return any(has_role(actor, "awareness_gateway") for actor in actors)
+
+
 def _buildable_options(
     game_api: ProductionCapabilityAPI,
     candidates: tuple[tuple[str, str], ...],

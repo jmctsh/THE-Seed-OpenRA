@@ -9,6 +9,7 @@ from models import JobStatus, ReconJobConfig, ResourceKind, ResourceNeed, Signal
 from openra_api.models import Actor, Location
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
+from .knowledge import awareness_recovery_package, has_awareness_gateway, radar_loss_impact
 
 
 class GameAPILike(Protocol):
@@ -64,6 +65,7 @@ class ReconJob(BaseJob):
         self._initial_explored_pct: Optional[float] = None
         self._best_explored_pct: Optional[float] = None
         self._visited_waypoints = 0
+        self._awareness_reported = False
 
     @property
     def expert_type(self) -> str:
@@ -92,6 +94,8 @@ class ReconJob(BaseJob):
             self._best_explored_pct = explored_pct
         else:
             self._best_explored_pct = max(self._best_explored_pct or explored_pct, explored_pct)
+
+        self._maybe_emit_awareness_status(actor)
 
         hp_ratio = self._hp_ratio(actor)
         if hp_ratio <= self.config.retreat_hp_pct:
@@ -202,6 +206,8 @@ class ReconJob(BaseJob):
                 "explored_gain_pct": round(explored_gain, 4),
                 "elapsed_s": elapsed_s,
                 "waypoints_visited": self._visited_waypoints,
+                "awareness": self._awareness_status(),
+                "scout_policy": self._scout_policy(actor=None),
             },
         )
         self.status = JobStatus.SUCCEEDED
@@ -328,6 +334,47 @@ class ReconJob(BaseJob):
         height = int(map_info.get("height", 2000) or 2000)
         current_x, current_y = actor["position"]
         return (max(int(width * 0.15), int(current_x * 0.25)), min(int(height * 0.85), current_y))
+
+    def _awareness_status(self) -> dict[str, Any]:
+        payload = self.world_model.query("my_actors", {"category": "building"})
+        actors = payload.get("actors", []) if isinstance(payload, dict) else []
+        if has_awareness_gateway(list(actors)):
+            return {"status": "online", "impact": None, "recommendation": None}
+        return {
+            "status": "degraded",
+            "impact": radar_loss_impact(),
+            "recommendation": awareness_recovery_package(),
+        }
+
+    def _maybe_emit_awareness_status(self, actor: dict[str, Any]) -> None:
+        if self._awareness_reported:
+            return
+        awareness = self._awareness_status()
+        if awareness["status"] != "degraded":
+            return
+        self._awareness_reported = True
+        self.emit_signal(
+            kind=SignalKind.PROGRESS,
+            summary="当前缺少雷达支撑，侦察仅依赖前线视野",
+            expert_state={
+                "phase": self.phase,
+                "awareness_status": awareness["status"],
+                "scout_policy": self._scout_policy(actor),
+            },
+            data={"awareness": awareness},
+        )
+
+    @staticmethod
+    def _scout_policy(actor: Optional[dict[str, Any]]) -> dict[str, Any]:
+        if actor is None:
+            return {"stage": "report", "preferred_transition": "cheap_fast_vehicle"}
+        category = actor.get("category")
+        mobility = actor.get("mobility")
+        if category == "vehicle" and mobility == "fast":
+            return {"stage": "mobile_deep_recon", "preferred_transition": None}
+        if category == "infantry":
+            return {"stage": "initial_contact", "preferred_transition": "cheap_fast_vehicle"}
+        return {"stage": "fallback_recon", "preferred_transition": "cheap_fast_vehicle"}
 
     def _current_explored_pct(self) -> float:
         map_info = self.world_model.query("map")

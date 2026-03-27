@@ -124,7 +124,9 @@ def test_recon_job_scores_search_and_moves_to_diagonal_waypoint() -> None:
     x, y = api.moves[0]["location"]
     assert x > 1200
     assert y < 400
-    assert signals == []
+    assert signals[0].kind == SignalKind.PROGRESS
+    assert signals[0].data["awareness"]["status"] == "degraded"
+    assert signals[0].data["awareness"]["recommendation"]["kind"] == "awareness_recovery"
     print("  PASS: recon_job_scores_search_and_moves_to_diagonal_waypoint")
 
 
@@ -157,8 +159,11 @@ def test_recon_job_tracks_clue_then_completes_on_base_found() -> None:
     assert job.phase == "tracking"
     assert len(api.moves) == 1
     assert api.moves[0]["location"] == (1800, 420)
-    assert signals[0].kind == SignalKind.PROGRESS
-    assert signals[0].expert_state["phase"] == "tracking"
+    tracking_signals = [
+        signal for signal in signals
+        if signal.kind == SignalKind.PROGRESS and signal.expert_state.get("phase") == "tracking"
+    ]
+    assert tracking_signals
 
     world.enemy_actors = [
         {
@@ -254,7 +259,41 @@ def test_recon_job_times_out_to_partial_when_no_base_found() -> None:
     assert signals[-1].kind == SignalKind.TASK_COMPLETE
     assert signals[-1].result == "partial"
     assert signals[-1].data["explored_gain_pct"] >= 0.0
+    assert signals[-1].data["awareness"]["status"] == "degraded"
+    assert signals[-1].data["scout_policy"]["preferred_transition"] == "cheap_fast_vehicle"
     print("  PASS: recon_job_times_out_to_partial_when_no_base_found")
+
+
+def test_recon_job_reports_mobile_scout_policy_when_radar_exists() -> None:
+    api = MockGameAPI()
+    world = MockWorldModel()
+    world.self_actors[99] = {
+        "actor_id": 99,
+        "name": "雷达站",
+        "display_name": "雷达站",
+        "category": "building",
+        "position": [300, 760],
+        "hp": 100,
+        "hp_max": 100,
+        "mobility": "static",
+    }
+    signals = []
+    job = ReconJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(search_region="enemy_half"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["actor:57"])
+
+    job.tick()
+
+    assert api.moves[-1]["actor_ids"] == [57]
+    assert signals == []
+    assert job._scout_policy(world.self_actors[57])["stage"] == "mobile_deep_recon"
+    print("  PASS: recon_job_reports_mobile_scout_policy_when_radar_exists")
 
 
 if __name__ == "__main__":
@@ -265,4 +304,5 @@ if __name__ == "__main__":
     test_recon_job_retreats_when_hp_below_threshold()
     test_recon_job_keeps_same_destination_until_arrival()
     test_recon_job_times_out_to_partial_when_no_base_found()
-    print("\nAll 6 ReconExpert tests passed!")
+    test_recon_job_reports_mobile_scout_policy_when_radar_exists()
+    print("\nAll 7 ReconExpert tests passed!")

@@ -111,7 +111,7 @@ def test_approaching_to_engaging():
 
 
 def test_engaging_clears_area():
-    """When no enemies remain near target, job completes."""
+    """When no enemies were ever visible, combat falls back to recon-first."""
     job, signals, api, wm = make_job(target=(100, 100))
     wm.set_actor(57, (100, 100))
     wm.set_enemies([])  # No enemies
@@ -123,8 +123,26 @@ def test_engaging_clears_area():
 
     assert job.phase == CombatPhase.COMPLETED
     assert job.status == JobStatus.SUCCEEDED
-    assert any(s.result == "succeeded" for s in signals)
+    assert any(s.result == "partial" for s in signals)
+    assert signals[-1].data["recommendation"]["kind"] == "recon_first"
     print("  PASS: engaging_clears_area")
+
+
+def test_engaging_succeeds_after_enemy_contact_then_clear():
+    """If enemies were seen and then cleared, combat completes as succeeded."""
+    job, signals, api, wm = make_job(target=(100, 100))
+    wm.set_actor(57, (100, 100))
+    wm.set_enemies([{"actor_id": 201, "position": [110, 110]}])
+    job.on_resource_granted(["actor:57"])
+
+    job.do_tick()  # approaching -> engaging
+    job.do_tick()  # engaging with enemy present
+    wm.set_enemies([])
+    job.do_tick()  # now cleared after contact
+
+    assert job.phase == CombatPhase.COMPLETED
+    assert any(s.result == "succeeded" for s in signals)
+    print("  PASS: engaging_succeeds_after_enemy_contact_then_clear")
 
 
 def test_retreat_threshold():
@@ -286,6 +304,7 @@ if __name__ == "__main__":
 
     test_approaching_to_engaging()
     test_engaging_clears_area()
+    test_engaging_succeeds_after_enemy_contact_then_clear()
     test_retreat_threshold()
     test_assault_mode()
     test_hold_mode_no_pursuit()
@@ -295,4 +314,4 @@ if __name__ == "__main__":
     test_combat_expert_creates_job()
     test_progress_signal_emitted()
 
-    print(f"\nAll 10 tests passed!")
+    print(f"\nAll 11 tests passed!")
