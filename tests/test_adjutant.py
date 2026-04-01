@@ -187,6 +187,58 @@ def test_rule_routed_production_parses_count_and_skips_llm():
     print("  PASS: rule_routed_production_parses_count_and_skips_llm")
 
 
+def test_runtime_nlu_routes_shorthand_production_without_llm():
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("步兵3")
+        assert result["type"] == "command"
+        assert result["ok"] is True
+        assert result["routing"] == "nlu"
+        assert result["expert_type"] == "EconomyExpert"
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert len(kernel.created_tasks) == 1
+    assert len(kernel.started_jobs) == 1
+    assert kernel.started_jobs[0]["config"].unit_type == "e1"
+    assert kernel.started_jobs[0]["config"].count == 3
+    assert kernel.started_jobs[0]["config"].queue_type == "Infantry"
+    print("  PASS: runtime_nlu_routes_shorthand_production_without_llm")
+
+
+def test_runtime_nlu_routes_safe_composite_sequence_into_multiple_direct_jobs():
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("建造电厂，兵营，步兵")
+        assert result["type"] == "command"
+        assert result["ok"] is True
+        assert result["routing"] == "nlu"
+        assert len(result["task_ids"]) == 3
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert len(kernel.created_tasks) == 3
+    assert [job["expert_type"] for job in kernel.started_jobs] == [
+        "EconomyExpert",
+        "EconomyExpert",
+        "EconomyExpert",
+    ]
+    assert kernel.started_jobs[0]["config"].unit_type == "powr"
+    assert kernel.started_jobs[1]["config"].unit_type == "barr"
+    assert kernel.started_jobs[2]["config"].unit_type == "e1"
+    print("  PASS: runtime_nlu_routes_safe_composite_sequence_into_multiple_direct_jobs")
+
+
 def test_rule_routed_deploy_uses_mcv_query():
     mock_llm = MockProvider(responses=[])
     kernel = MockKernel()
@@ -637,6 +689,8 @@ if __name__ == "__main__":
     test_command_classification()
     test_rule_routed_build_skips_llm_and_starts_economy_job()
     test_rule_routed_production_parses_count_and_skips_llm()
+    test_runtime_nlu_routes_shorthand_production_without_llm()
+    test_runtime_nlu_routes_safe_composite_sequence_into_multiple_direct_jobs()
     test_rule_routed_deploy_uses_mcv_query()
     test_rule_routed_expand_mcv_uses_deploy_path()
     test_deploy_without_mcv_but_with_construction_yard_returns_immediate_feedback()
@@ -654,4 +708,4 @@ if __name__ == "__main__":
     test_notification_manager_poll_and_push()
     test_notification_manager_no_sink()
 
-    print(f"\nAll 19 tests passed!")
+    print(f"\nAll 21 tests passed!")

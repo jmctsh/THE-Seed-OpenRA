@@ -30,6 +30,7 @@ from models import (
 )
 from openra_api.production_names import normalize_production_name
 from unit_registry import UnitRegistry, get_default_registry
+from .runtime_nlu import DirectNLUStep, RuntimeNLUDecision, RuntimeNLURouter
 
 logger = logging.getLogger(__name__)
 slog = get_logger("adjutant")
@@ -149,6 +150,7 @@ class Adjutant:
         self.unit_registry = unit_registry or get_default_registry()
         self.config = config or AdjutantConfig()
         self._dialogue_history: list[dict[str, Any]] = []
+        self._runtime_nlu = RuntimeNLURouter(unit_registry=self.unit_registry)
 
     # --- Main entry point ---
 
@@ -167,6 +169,16 @@ class Adjutant:
                     self._record_dialogue("adjutant", deploy_feedback["response_text"])
                 deploy_feedback["timestamp"] = time.time()
                 return deploy_feedback
+            prefer_runtime_nlu = self._should_prefer_runtime_nlu(text)
+            if prefer_runtime_nlu:
+                runtime_nlu = self._try_runtime_nlu(text)
+                if runtime_nlu is not None:
+                    result = await self._handle_runtime_nlu(text, runtime_nlu)
+                    self._record_dialogue("player", text)
+                    if result.get("response_text"):
+                        self._record_dialogue("adjutant", result["response_text"])
+                    result["timestamp"] = time.time()
+                    return result
             rule_match = self._try_rule_match(text)
             if rule_match is not None:
                 result = await self._handle_rule_command(text, rule_match)
@@ -175,6 +187,15 @@ class Adjutant:
                     self._record_dialogue("adjutant", result["response_text"])
                 result["timestamp"] = time.time()
                 return result
+            if not prefer_runtime_nlu:
+                runtime_nlu = self._try_runtime_nlu(text)
+                if runtime_nlu is not None:
+                    result = await self._handle_runtime_nlu(text, runtime_nlu)
+                    self._record_dialogue("player", text)
+                    if result.get("response_text"):
+                        self._record_dialogue("adjutant", result["response_text"])
+                    result["timestamp"] = time.time()
+                    return result
             # Build context
             context = self._build_context(text)
 
@@ -231,6 +252,37 @@ class Adjutant:
             return recon
 
         return None
+
+    def _try_runtime_nlu(self, text: str) -> Optional[RuntimeNLUDecision]:
+        try:
+            decision = self._runtime_nlu.route(text)
+        except Exception:
+            logger.exception("Runtime NLU routing failed: %r", text)
+            return None
+        if decision is None:
+            return None
+        slog.info(
+            "Adjutant runtime NLU matched",
+            event="nlu_routed_command",
+            raw_text=text,
+            route_intent=decision.route_intent,
+            confidence=decision.confidence,
+            step_count=len(decision.steps),
+            reason=decision.reason,
+        )
+        return decision
+
+    def _should_prefer_runtime_nlu(self, text: str) -> bool:
+        normalized = re.sub(r"\s+", "", text.strip())
+        if not normalized or self._looks_like_query(normalized):
+            return False
+        if any(token in normalized for token in ("然后", "之后", "并且", "同时")):
+            return True
+        if any(token in normalized for token in ("，", ",", "、", ";", "；")):
+            return True
+        if re.search(r"[A-Za-z\u4e00-\u9fff]+[0-9一二三四五六七八九十两]+$", normalized):
+            return True
+        return False
 
     @staticmethod
     def _looks_like_query(text: str) -> bool:
@@ -399,12 +451,7 @@ class Adjutant:
 
     async def _handle_rule_command(self, text: str, match: RuleMatchResult) -> dict[str, Any]:
         try:
-            task = self.kernel.create_task(
-                raw_text=text,
-                kind=self.config.default_task_kind,
-                priority=self.config.default_task_priority,
-            )
-            job = self.kernel.start_job(task.task_id, match.expert_type, match.config)
+            task, job = self._start_direct_job(text, match.expert_type, match.config)
             slog.info(
                 "Adjutant rule matched",
                 event="rule_routed_command",
@@ -431,6 +478,94 @@ class Adjutant:
                 "response_text": f"规则执行失败: {e}",
                 "routing": "rule",
             }
+
+    async def _handle_runtime_nlu(self, text: str, decision: RuntimeNLUDecision) -> dict[str, Any]:
+        created: list[dict[str, str]] = []
+        try:
+            for step in decision.steps:
+                match = self._resolve_runtime_nlu_step(step)
+                task_text = step.source_text or text
+                task, job = self._start_direct_job(task_text, match.expert_type, match.config)
+                created.append(
+                    {
+                        "task_id": task.task_id,
+                        "job_id": job.job_id,
+                        "expert_type": match.expert_type,
+                        "intent": step.intent,
+                        "source_text": task_text,
+                    }
+                )
+            if len(created) == 1:
+                task = created[0]
+                return {
+                    "type": "command",
+                    "ok": True,
+                    "task_id": task["task_id"],
+                    "job_id": task["job_id"],
+                    "response_text": f"收到指令，已直接执行并创建任务 {task['task_id']}",
+                    "routing": "nlu",
+                    "expert_type": task["expert_type"],
+                    "nlu_route_intent": decision.route_intent,
+                    "nlu_confidence": decision.confidence,
+                }
+            task_ids = [item["task_id"] for item in created]
+            return {
+                "type": "command",
+                "ok": True,
+                "task_ids": task_ids,
+                "steps": created,
+                "response_text": f"收到指令，已拆解并直接执行 {len(created)} 个任务：{'、'.join(task_ids)}",
+                "routing": "nlu",
+                "nlu_route_intent": decision.route_intent,
+                "nlu_confidence": decision.confidence,
+            }
+        except Exception as exc:
+            logger.exception("Runtime NLU command failed: %r", text)
+            if created:
+                created_ids = "、".join(item["task_id"] for item in created)
+                return {
+                    "type": "command",
+                    "ok": False,
+                    "task_ids": [item["task_id"] for item in created],
+                    "response_text": f"NLU 执行中断：已启动 {created_ids}，后续步骤失败: {exc}",
+                    "routing": "nlu",
+                }
+            return {
+                "type": "command",
+                "ok": False,
+                "response_text": f"NLU 执行失败: {exc}",
+                "routing": "nlu",
+            }
+
+    def _resolve_runtime_nlu_step(self, step: DirectNLUStep) -> RuleMatchResult:
+        if step.intent != "deploy_mcv":
+            return RuleMatchResult(expert_type=step.expert_type, config=step.config, reason=step.reason)
+        if self._world_sync_is_stale():
+            raise RuntimeError("当前游戏状态同步异常，请稍后重试")
+        payload = self.world_model.query("my_actors", {"category": "mcv"})
+        actors = list((payload or {}).get("actors", [])) if isinstance(payload, dict) else []
+        if not actors:
+            base_payload = self.world_model.query("my_actors", {"type": "建造厂"})
+            bases = list((base_payload or {}).get("actors", [])) if isinstance(base_payload, dict) else []
+            if bases:
+                raise RuntimeError("建造厂已存在，当前无基地车可部署")
+            raise RuntimeError("当前没有可部署的基地车")
+        actor = actors[0]
+        position = tuple(actor.get("position") or [0, 0])
+        return RuleMatchResult(
+            expert_type="DeployExpert",
+            config=DeployJobConfig(actor_id=int(actor["actor_id"]), target_position=position),
+            reason=step.reason,
+        )
+
+    def _start_direct_job(self, raw_text: str, expert_type: str, config: Any) -> tuple[Any, Any]:
+        task = self.kernel.create_task(
+            raw_text=raw_text,
+            kind=self.config.default_task_kind,
+            priority=self.config.default_task_priority,
+        )
+        job = self.kernel.start_job(task.task_id, expert_type, config)
+        return task, job
 
     # --- Classification ---
 
