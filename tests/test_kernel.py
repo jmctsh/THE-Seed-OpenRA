@@ -305,6 +305,42 @@ def test_cancel_task_and_cancel_tasks_abort_jobs() -> None:
     print("  PASS: cancel_task_and_cancel_tasks_abort_jobs")
 
 
+def test_reset_session_clears_runtime_memory() -> None:
+    kernel = make_kernel()
+    task = kernel.create_task("侦察", TaskKind.MANAGED, 50)
+    kernel.start_job(
+        task.task_id,
+        "ReconExpert",
+        ReconJobConfig(search_region="enemy_half", target_type="base", target_owner="enemy"),
+    )
+    kernel.push_player_notification("info", "hello")
+    kernel.register_task_message(
+        TaskMessage(
+            message_id="msg_reset",
+            task_id=task.task_id,
+            type=TaskMessageType.TASK_INFO,
+            content="started",
+        )
+    )
+
+    assert kernel.list_tasks()
+    assert kernel.list_jobs()
+    assert kernel.list_player_notifications()
+    assert kernel.list_task_messages()
+
+    kernel.reset_session()
+
+    assert kernel.list_tasks() == []
+    assert kernel.list_jobs() == []
+    assert kernel.list_player_notifications() == []
+    assert kernel.list_task_messages() == []
+    assert kernel.list_pending_questions() == []
+    runtime = kernel.world_model.query("runtime_state")
+    assert runtime["active_tasks"] == {}
+    assert runtime["active_jobs"] == {}
+    print("  PASS: reset_session_clears_runtime_memory")
+
+
 def test_tool_handlers_complete_task_and_route_signal() -> None:
     kernel = make_kernel()
     task = kernel.create_task("侦察", TaskKind.MANAGED, 50)
@@ -752,6 +788,7 @@ def main() -> None:
     test_create_task_and_task_agent_registration()
     test_start_job_validates_and_lifecycle_controls()
     test_cancel_task_and_cancel_tasks_abort_jobs()
+    test_reset_session_clears_runtime_memory()
     test_tool_handlers_complete_task_and_route_signal()
     test_blocked_signal_registers_task_warning()
     test_complete_task_releases_resources_from_terminal_jobs()
@@ -766,7 +803,7 @@ def main() -> None:
     test_pending_question_timeout_and_late_reply()
     test_cancel_task_closes_pending_question()
     test_auto_response_rule_registration_and_base_under_attack_dedup()
-    print("OK: 15 Kernel tests passed")
+    print("OK: 16 Kernel tests passed")
 
 
 if __name__ == "__main__":

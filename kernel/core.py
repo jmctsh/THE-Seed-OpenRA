@@ -479,6 +479,32 @@ class Kernel:
             for item in pending
         ]
 
+    def reset_session(self) -> None:
+        for runtime in list(self._task_runtimes.values()):
+            runtime.agent.stop()
+            if runtime.runner is not None:
+                runtime.runner.cancel()
+
+        for controller in list(self._jobs.values()):
+            if not self._is_terminal_status(controller.status):
+                controller.abort()
+            if controller.resources:
+                self._release_job_resources(controller)
+
+        self.tasks.clear()
+        self._task_runtimes.clear()
+        self._jobs.clear()
+        self._constraints.clear()
+        self._resource_needs.clear()
+        self._resource_loss_notified.clear()
+        self.player_notifications.clear()
+        self.task_messages.clear()
+        self._pending_questions.clear()
+        self._timed_out_questions.clear()
+        self._closed_questions.clear()
+        self._delivered_player_responses.clear()
+        self._sync_world_runtime()
+
     def register_task_message(self, message: TaskMessage) -> bool:
         with bm_span("tool_exec", name=f"kernel:register_task_message:{message.type.value}"):
             task = self.tasks.get(message.task_id)

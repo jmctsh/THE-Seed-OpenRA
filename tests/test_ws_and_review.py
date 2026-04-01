@@ -180,6 +180,9 @@ def test_ws_client_connect_and_inbound():
     received_commands: list[str] = []
 
     class TestHandler:
+        def __init__(self):
+            self.session_clears = 0
+
         async def on_command_submit(self, text, client_id):
             received_commands.append(text)
 
@@ -195,9 +198,17 @@ def test_ws_client_connect_and_inbound():
         async def on_game_restart(self, save_path, client_id):
             received_commands.append(f"restart:{save_path}")
 
+        async def on_sync_request(self, client_id):
+            received_commands.append(f"sync:{client_id}")
+
+        async def on_session_clear(self, client_id):
+            self.session_clears += 1
+            received_commands.append(f"clear:{client_id}")
+
+    handler = TestHandler()
     server = WSServer(
         config=WSServerConfig(host="127.0.0.1", port=18766),
-        inbound_handler=TestHandler(),
+        inbound_handler=handler,
     )
 
     async def run():
@@ -219,6 +230,9 @@ def test_ws_client_connect_and_inbound():
                 await ws.send_str(json.dumps({"type": "game_restart", "save_path": "baseline.orasav"}))
                 await asyncio.sleep(0.05)
 
+                await ws.send_str(json.dumps({"type": "session_clear"}))
+                await asyncio.sleep(0.05)
+
         await server.stop()
 
     asyncio.run(run())
@@ -227,6 +241,8 @@ def test_ws_client_connect_and_inbound():
     assert "cancel:t1" in received_commands
     assert "mode:debug" in received_commands
     assert "restart:baseline.orasav" in received_commands
+    assert any(item.startswith("clear:client_") for item in received_commands)
+    assert handler.session_clears == 1
     print("  PASS: ws_client_connect_and_inbound")
 
 

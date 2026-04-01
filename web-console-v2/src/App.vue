@@ -13,7 +13,7 @@
         >
           {{ opsVisible ? '隐藏操作' : '显示操作' }}
         </button>
-        <button @click="clearUi" class="mode-btn" title="清空当前会话的聊天和历史任务展示">
+        <button @click="clearUi" class="mode-btn" title="清空当前这一局的前后端会话记忆">
           清空界面
         </button>
         <button @click="toggleMode" class="mode-btn">
@@ -71,13 +71,17 @@ function toggleOps() {
 }
 
 function clearUi() {
-  window.dispatchEvent(new CustomEvent('theseed:clear-ui'))
+  send('session_clear')
 }
 
 function setMode(m) {
   mode.value = m
   if (m === 'user') opsVisible.value = false
 }
+
+on('session_cleared', () => {
+  window.dispatchEvent(new CustomEvent('theseed:clear-ui'))
+})
 </script>
 
 <style>

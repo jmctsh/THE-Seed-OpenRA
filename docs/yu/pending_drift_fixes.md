@@ -42,6 +42,7 @@ Pending fix direction:
 
 Pending fix direction:
 - Persist structured runtime logs or task traces to a rolling on-disk store for postmortem debugging across restarts.
+- Once runtime logs/trace become durable, define whether `session_clear` should also prune persisted records for the current game session, or only reset in-memory state.
 
 Additional notes from live investigation:
 - The Python/GameAPI/OpenCodeAlert code path does pass `autoPlaceBuilding=True` for building jobs; this is not a simple “flag never sent” bug.

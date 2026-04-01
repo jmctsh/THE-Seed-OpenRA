@@ -32,6 +32,7 @@ from game_loop import GameLoop, GameLoopConfig
 from kernel import Kernel, KernelConfig, TaskAgentFactory
 from llm import AnthropicProvider, LLMProvider, MockProvider, QwenProvider
 from logging_system import (
+    clear as clear_logs,
     export_benchmark_report_json,
     export_json as export_log_json,
     get_logger,
@@ -285,6 +286,23 @@ class RuntimeBridge(InboundHandler):
         self.sync_runtime()
         await self.publish_dashboard()
         await self._replay_history(client_id)
+
+    async def on_session_clear(self, client_id: str) -> None:
+        del client_id
+        self.kernel.reset_session()
+        if self.adjutant is not None:
+            self.adjutant.clear_dialogue_history()
+        self._recent_responses.clear()
+        self._task_fingerprints.clear()
+        self._task_message_offset = 0
+        self._notification_offset = 0
+        self._log_offset = 0
+        clear_logs()
+        benchmark.clear()
+        self.sync_runtime()
+        if self.ws_server is not None and self.ws_server.is_running:
+            await self.ws_server.send_session_cleared()
+        await self.publish_dashboard()
 
     async def on_game_restart(self, save_path: Optional[str], client_id: str) -> None:
         del client_id

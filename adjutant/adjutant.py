@@ -613,6 +613,9 @@ class Adjutant:
         if len(self._dialogue_history) > self.config.max_dialogue_history * 2:
             self._dialogue_history = self._dialogue_history[-self.config.max_dialogue_history:]
 
+    def clear_dialogue_history(self) -> None:
+        self._dialogue_history = []
+
     # --- TaskMessage formatting ---
 
     @staticmethod
