@@ -29,7 +29,7 @@ class GameControlConfig:
     language: str = os.environ.get("OPENRA_LANGUAGE", "zh")
     mod: str = os.environ.get("OPENRA_MOD", "copilot")
     display: str = os.environ.get("DISPLAY", ":99")
-    debug: bool = _env_bool("OPENRA_COPILOT_DEBUG", True)
+    debug: bool = _env_bool("OPENRA_COPILOT_DEBUG", False)
     agent_mode: bool = _env_bool("OPENRA_AGENT_MODE", True)
     log_path: Path = Path(os.environ.get("OPENRA_LOG_PATH", "/tmp/openra.log"))
     process_pattern: str = os.environ.get("OPENRA_PROCESS_PATTERN", "OpenRA.dll")
