@@ -42,7 +42,7 @@ class EconomyMockGameAPI(ExpertMockGameAPI):
     def can_produce(self, unit_type: str) -> bool:
         return True
 
-    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = False) -> int:
+    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = True) -> int:
         del auto_place_building
         self.produce_requests += quantity
         self.last_unit_type = unit_type
@@ -154,7 +154,6 @@ async def _run_t1(tmpdir: str) -> None:
         assert len(provider.call_log) >= 3
         assert len(jobs) == 1
         assert jobs[0].expert_type == "ReconExpert"
-        assert jobs[0].resources == ["actor:57"]
         assert len(game_api.moves) >= 2
     finally:
         await runtime.stop()

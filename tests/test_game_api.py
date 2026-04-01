@@ -192,11 +192,13 @@ def test_game_api_normalizes_camel_case_can_produce_aliases() -> None:
 def test_game_api_normalizes_camel_case_produce_aliases() -> None:
     api = GameAPI("127.0.0.1", port=1)
     calls: list[str] = []
+    auto_place_flags: list[bool] = []
 
     def fake_send(command: str, params: dict) -> dict:
         assert command == "start_production"
         candidate = params["units"][0]["unit_type"]
         calls.append(candidate)
+        auto_place_flags.append(bool(params["autoPlaceBuilding"]))
         wait_id = None
         if candidate == "war factory":
             wait_id = 42
@@ -207,6 +209,7 @@ def test_game_api_normalizes_camel_case_produce_aliases() -> None:
 
     assert api.produce("WarFactory", 1) == 42
     assert calls == ["WarFactory", "war factory"]
+    assert auto_place_flags == [True, True]
     print("  PASS: game_api_normalizes_camel_case_produce_aliases")
 
 

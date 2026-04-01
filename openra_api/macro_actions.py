@@ -37,7 +37,7 @@ class MacroActions:
     # ----------------------------
     # 生产相关
     # ----------------------------
-    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = False) -> Optional[int]:
+    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = True) -> Optional[int]:
         """生产指定数量的 Actor（一次性下单，不等待）。
 
         Args:

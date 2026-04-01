@@ -23,7 +23,7 @@ class MockGameAPI:
     def can_produce(self, unit_type: str) -> bool:
         return self.can_produce_value
 
-    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = False) -> int:
+    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = True) -> int:
         self.produce_calls.append(
             {
                 "unit_type": unit_type,

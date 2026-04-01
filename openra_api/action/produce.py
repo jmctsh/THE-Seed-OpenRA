@@ -14,7 +14,7 @@ class ProduceAction(Action):
     api: GameAPI
     unit_type: str
     quantity: int = 1
-    auto_place_building: bool = False
+    auto_place_building: bool = True
 
     NAME = "produce"
 
@@ -38,5 +38,4 @@ class ProduceAction(Action):
             )
         except GameAPIError as exc:
             return ActionResult(ok=False, name=self.NAME, message="生产失败", error=str(exc))
-
 

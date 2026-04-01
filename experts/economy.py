@@ -26,7 +26,7 @@ class GameAPILike(Protocol):
     def can_produce(self, unit_type: str) -> bool:
         ...
 
-    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = False) -> Optional[int]:
+    def produce(self, unit_type: str, quantity: int, auto_place_building: bool = True) -> Optional[int]:
         ...
 
     def place_building(self, queue_type: str, location: Any = None) -> None:
