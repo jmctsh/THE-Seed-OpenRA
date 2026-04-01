@@ -106,6 +106,16 @@ class MockWorldModel:
             }
         return {"data": [], "timestamp": time.time()}
 
+    def refresh_health(self):
+        return {
+            "stale": False,
+            "consecutive_failures": 0,
+            "total_failures": 0,
+            "last_error": None,
+            "failure_threshold": 3,
+            "timestamp": time.time(),
+        }
+
 
 # --- Tests ---
 
@@ -274,6 +284,46 @@ def test_deploy_without_mcv_returns_missing_feedback():
     assert kernel.created_tasks == []
     assert kernel.started_jobs == []
     print("  PASS: deploy_without_mcv_returns_missing_feedback")
+
+
+def test_deploy_feedback_refuses_stale_world_assertions():
+    class StaleWorldModel(MockWorldModel):
+        def refresh_health(self):
+            return {
+                "stale": True,
+                "consecutive_failures": 12,
+                "total_failures": 12,
+                "last_error": "actors:COMMAND_EXECUTION_ERROR",
+                "failure_threshold": 3,
+                "timestamp": time.time(),
+            }
+
+        def query(self, query_type, params=None):
+            if query_type == "my_actors" and params == {"category": "mcv"}:
+                return {"actors": [], "timestamp": time.time()}
+            if query_type == "my_actors" and params == {"type": "建造厂"}:
+                return {"actors": [{"actor_id": 130, "type": "建造厂"}], "timestamp": time.time()}
+            return super().query(query_type, params)
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = StaleWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("展开基地车")
+        assert result["type"] == "command"
+        assert result["ok"] is False
+        assert result["routing"] == "rule"
+        assert result["reason"] == "world_sync_stale"
+        assert "状态同步异常" in result["response_text"]
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.created_tasks == []
+    assert kernel.started_jobs == []
+    print("  PASS: deploy_feedback_refuses_stale_world_assertions")
 
 
 def test_rule_routed_recon_skips_llm():
@@ -591,6 +641,7 @@ if __name__ == "__main__":
     test_rule_routed_expand_mcv_uses_deploy_path()
     test_deploy_without_mcv_but_with_construction_yard_returns_immediate_feedback()
     test_deploy_without_mcv_returns_missing_feedback()
+    test_deploy_feedback_refuses_stale_world_assertions()
     test_rule_routed_recon_skips_llm()
     test_unmatched_command_still_uses_llm_path()
     test_reply_classification()
@@ -603,4 +654,4 @@ if __name__ == "__main__":
     test_notification_manager_poll_and_push()
     test_notification_manager_no_sink()
 
-    print(f"\nAll 18 tests passed!")
+    print(f"\nAll 19 tests passed!")

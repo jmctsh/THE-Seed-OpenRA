@@ -57,6 +57,7 @@ class KernelLike(Protocol):
 class WorldModelLike(Protocol):
     def world_summary(self) -> dict[str, Any]: ...
     def query(self, query_type: str, params: Optional[dict[str, Any]] = None) -> Any: ...
+    def refresh_health(self) -> dict[str, Any]: ...
 
 
 # --- Classification result ---
@@ -246,6 +247,14 @@ class Adjutant:
             return None
         if self._looks_like_complex_command(normalized):
             return None
+        if self._world_sync_is_stale():
+            return {
+                "type": "command",
+                "ok": False,
+                "response_text": "当前游戏状态同步异常，请稍后重试",
+                "routing": "rule",
+                "reason": "world_sync_stale",
+            }
 
         payload = self.world_model.query("my_actors", {"category": "mcv"})
         actors = list((payload or {}).get("actors", [])) if isinstance(payload, dict) else []
@@ -296,6 +305,17 @@ class Adjutant:
     def _looks_like_deploy_command(normalized: str) -> bool:
         lowered = normalized.lower()
         return any(keyword in normalized or keyword in lowered for keyword in _DEPLOY_KEYWORDS)
+
+    def _world_sync_is_stale(self) -> bool:
+        refresh_health = getattr(self.world_model, "refresh_health", None)
+        if not callable(refresh_health):
+            return False
+        try:
+            health = refresh_health() or {}
+        except Exception:
+            logger.exception("Failed to read world refresh health")
+            return False
+        return bool(health.get("stale"))
 
     def _match_build(self, normalized: str) -> Optional[RuleMatchResult]:
         if not normalized.startswith(("建造", "修建", "造")):
