@@ -319,6 +319,36 @@ def test_build_provider_fails_fast_when_anthropic_dependency_missing() -> None:
         main_module.importlib.util.find_spec = original_find_spec  # type: ignore[assignment]
 
 
+def test_build_provider_fails_fast_when_socks_proxy_support_missing() -> None:
+    original_find_spec = main_module.importlib.util.find_spec
+    original_all_proxy = os.environ.get("ALL_PROXY")
+    try:
+        os.environ["ALL_PROXY"] = "socks5://127.0.0.1:7890"
+
+        def fake_find_spec(name):
+            if name == "openai":
+                return object()
+            if name == "socksio":
+                return None
+            return original_find_spec(name)
+
+        main_module.importlib.util.find_spec = fake_find_spec  # type: ignore[assignment]
+
+        try:
+            main_module._build_provider("qwen", "qwen-plus")
+            raise AssertionError("expected RuntimeError for missing socksio dependency")
+        except RuntimeError as exc:
+            assert "SOCKS proxy" in str(exc)
+            assert "socksio" in str(exc)
+        print("  PASS: build_provider_fails_fast_when_socks_proxy_support_missing")
+    finally:
+        main_module.importlib.util.find_spec = original_find_spec  # type: ignore[assignment]
+        if original_all_proxy is None:
+            os.environ.pop("ALL_PROXY", None)
+        else:
+            os.environ["ALL_PROXY"] = original_all_proxy
+
+
 if __name__ == "__main__":
     print("Running game control tests...\n")
     test_start_game_passes_baseline_save()
@@ -329,4 +359,5 @@ if __name__ == "__main__":
     test_runtime_bridge_question_reply_success_is_visible()
     test_build_provider_fails_fast_when_qwen_dependency_missing()
     test_build_provider_fails_fast_when_anthropic_dependency_missing()
+    test_build_provider_fails_fast_when_socks_proxy_support_missing()
     print("\nAll 8 tests passed!")

@@ -42,6 +42,26 @@ def _require_dependency(module_name: str, provider_name: str) -> None:
     )
 
 
+def _socks_proxy_configured() -> bool:
+    proxy_keys = ("ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
+    for key in proxy_keys:
+        value = os.environ.get(key, "").strip().lower()
+        if value.startswith("socks"):
+            return True
+    return False
+
+
+def _require_socks_support_if_needed(provider_name: str) -> None:
+    if not _socks_proxy_configured():
+        return
+    if importlib.util.find_spec("socksio") is not None:
+        return
+    raise RuntimeError(
+        f"LLM provider '{provider_name}' is running behind a SOCKS proxy, but Python package 'socksio' "
+        "is not installed in the backend runtime environment. Install it before starting main.py."
+    )
+
+
 class LLMProvider(ABC):
     """Abstract base for LLM providers. All LLM usage in the system goes through this."""
 
@@ -95,6 +115,7 @@ class QwenProvider(LLMProvider):
     def _get_client(self) -> Any:
         if self._client is None:
             _require_dependency("openai", "qwen")
+            _require_socks_support_if_needed("qwen")
             from openai import AsyncOpenAI
 
             self._client = AsyncOpenAI(

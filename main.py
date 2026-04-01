@@ -108,6 +108,14 @@ def _build_provider(provider_name: str, model: str) -> LLMProvider:
                 "LLM provider 'qwen' requires Python package 'openai' in the backend runtime environment. "
                 "Install it before starting main.py."
             )
+        proxy_keys = ("ALL_PROXY", "all_proxy", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy")
+        if any(os.environ.get(key, "").strip().lower().startswith("socks") for key in proxy_keys):
+            if importlib.util.find_spec("socksio") is None:
+                raise RuntimeError(
+                    "LLM provider 'qwen' is configured to use a SOCKS proxy via proxy environment variables, "
+                    "but Python package 'socksio' is not installed in the backend runtime environment. "
+                    "Install it before starting main.py."
+                )
         return QwenProvider(model=model)
     if normalized == "anthropic":
         if importlib.util.find_spec("anthropic") is None:
