@@ -103,12 +103,20 @@ def test_persistent_log_session_writes_all_and_task_files() -> None:
         logging_system.stop_persistence_session()
 
         session_meta = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+        latest = Path(tmpdir, "latest.txt").read_text(encoding="utf-8").strip()
         all_lines = (session_dir / "all.jsonl").read_text(encoding="utf-8").strip().splitlines()
         task_lines = (session_dir / "tasks" / "t_1.jsonl").read_text(encoding="utf-8").strip().splitlines()
+        component_lines = (session_dir / "components" / "kernel.jsonl").read_text(encoding="utf-8").strip().splitlines()
 
     assert session_meta["metadata"]["source"] == "unit-test"
+    assert session_meta["record_count"] == 2
+    assert session_meta["task_counts"]["t_1"] == 1
+    assert session_meta["component_counts"]["kernel"] == 2
+    assert "ended_at" in session_meta
+    assert latest == str(session_dir)
     assert len(all_lines) == 2
     assert len(task_lines) == 1
+    assert len(component_lines) == 2
     assert json.loads(task_lines[0])["data"]["task_id"] == "t_1"
 
 

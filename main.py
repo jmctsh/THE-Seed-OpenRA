@@ -876,10 +876,15 @@ async def run_runtime(config: RuntimeConfig) -> int:
     finally:
         if not runtime._shutdown_event.is_set():
             await runtime.stop()
+        session_dir_now = current_session_dir()
+        if session_dir_now is not None:
+            benchmark.export_json(session_dir_now / "benchmark_records.json", slowest_first=False)
+            export_benchmark_report_json(session_dir_now / "benchmark_summary.json")
+            export_log_json(session_dir_now / "all.pretty.json")
         slog.info(
             "Persistent log session stopped",
             event="log_session_stopped",
-            session_dir=str(current_session_dir()) if current_session_dir() is not None else None,
+            session_dir=str(session_dir_now) if session_dir_now is not None else None,
         )
         stop_persistence_session()
     return 0

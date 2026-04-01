@@ -34,20 +34,45 @@ class PersistentLogSession:
     def __init__(self, session_dir: Path) -> None:
         self.session_dir = session_dir
         self.tasks_dir = session_dir / "tasks"
+        self.components_dir = session_dir / "components"
         self.all_path = session_dir / "all.jsonl"
+        self.metadata_path = session_dir / "session.json"
         self.tasks_dir.mkdir(parents=True, exist_ok=True)
+        self.components_dir.mkdir(parents=True, exist_ok=True)
+        self.record_count = 0
+        self.task_counts: dict[str, int] = {}
+        self.component_counts: dict[str, int] = {}
 
     def append(self, record: "LogRecord") -> None:
         payload = record.to_json() + "\n"
         self.all_path.parent.mkdir(parents=True, exist_ok=True)
         with self.all_path.open("a", encoding="utf-8") as handle:
             handle.write(payload)
+        self.record_count += 1
+
+        component_name = _safe_filename(record.component)
+        component_path = self.components_dir / f"{component_name}.jsonl"
+        with component_path.open("a", encoding="utf-8") as handle:
+            handle.write(payload)
+        self.component_counts[record.component] = self.component_counts.get(record.component, 0) + 1
 
         task_id = record.data.get("task_id")
         if isinstance(task_id, str) and task_id:
             task_path = self.tasks_dir / f"{_safe_filename(task_id)}.jsonl"
             with task_path.open("a", encoding="utf-8") as handle:
                 handle.write(payload)
+            self.task_counts[task_id] = self.task_counts.get(task_id, 0) + 1
+
+    def finalize(self) -> None:
+        if not self.metadata_path.exists():
+            return
+        payload = json.loads(self.metadata_path.read_text(encoding="utf-8"))
+        payload["ended_at"] = datetime.now(timezone.utc).isoformat()
+        payload["record_count"] = self.record_count
+        payload["component_counts"] = dict(sorted(self.component_counts.items()))
+        payload["task_counts"] = dict(sorted(self.task_counts.items()))
+        payload["task_file_count"] = len(self.task_counts)
+        self.metadata_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
 
 
 def _normalize_time(value: Optional[Union[datetime, float, int]]) -> Optional[float]:
@@ -223,13 +248,17 @@ class LogStore:
             "metadata": _serialize(metadata or {}),
         }
         metadata_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+        (base / "latest.txt").write_text(str(session_dir) + "\n", encoding="utf-8")
         with self._lock:
             self._persistent_session = PersistentLogSession(session_dir)
         return session_dir
 
     def stop_persistence_session(self) -> None:
         with self._lock:
+            session = self._persistent_session
             self._persistent_session = None
+        if session is not None:
+            session.finalize()
 
     def current_session_dir(self) -> Optional[Path]:
         with self._lock:
