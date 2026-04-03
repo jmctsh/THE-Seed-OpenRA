@@ -288,3 +288,9 @@ Round 7 期间修复：
 - 移入 archive: 23 个 xi_* 审计文件、7 个已完成调查文件、4 个 benchmark 数据文件、1 个重复 feedback 文件
 - 根目录: FIXES_SUMMARY.md + FIX_LLM_STATS.md → docs/archive/（过时的 2026-01 修复记录）
 - 保留 15 个活跃文档：design.md、dev_progress.md、implementation_plan.md、research docs、system analysis 等
+
+## [2026-04-04 00:30] DONE — 开发进度深度整理
+- 分析最近 100 个 git commit (2026-03-20 ~ 2026-04-04)
+- dev_progress.md 补充 Phase 2-9 完整进度（之前只有 Phase 0-1）
+- 100 commits = 50 fix + 20 feat + 19 docs + 7 chore + 3 test + 1 refactor
+- 覆盖：Xi Live集成 → 基础设施硬化 → Live测试Rounds 3-7 → 架构Hardening → Expert知识集成 → NLU完整接入
