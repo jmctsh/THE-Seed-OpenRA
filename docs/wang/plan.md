@@ -1,22 +1,10 @@
 ## Current
-★ 项目完成 — Phase 0-7 全部关闭，里程碑 1/2/3/4 全部达成
-
-## 工作流调整
-**先开发后审计**：同批次开发全部完成后再集中交叉审计，不边开发边审。
-
-## Phase 1 分批计划
-- **Batch 1**：yu: 1.1 WorldModel（开发中）/ xi: 1.4 Task Agent ✅
-- **提前启动**：xi: 2.1 Expert/Job 基类（开发中，不依赖 1.1）
-- **Batch 2**（1.1 完成后）：yu: 1.3a Kernel lifecycle / xi: 1.2 GameLoop
-- **集中审计**：1.1 + 2.1 + 1.2 + 1.3a 一起交叉审计
-- **Batch 3**：yu: 1.3b+1.3c / xi: 1.5 Task tools + 1.7 timestamp
-- **Batch 4**：yu: 1.3d+1.3e / xi: 1.6 WS + 1.8 review_interval
-- **Batch 5**：1.3f error recovery（跨组件协调）
+文档整理 + 开发进度梳理 + 系统审计报告
 
 ## Queue
-1. 等 yu 1.1 + xi 2.1 完成 → 分配 Batch 2
-2. Batch 2 完成 → 集中审计 1.1 / 2.1 / 1.2 / 1.3a
-3. Phase 1 全部完成 → Phase 2 (Expert)
+1. 根据最近 100 个 git commit 深度整理开发进度
+2. 研读 Yu 的 task_agent_prompt_runtime_report.md，审计系统问题和 agent 设计缺陷
+3. 深度审计 log 系统和运行日志，定位设计漂移，写完整报告
 
 ## Blocked
-- 无
+- xi 暂停分配（用户要求节省 token）
