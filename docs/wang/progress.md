@@ -307,3 +307,15 @@ Round 7 期间修复：
   - complete_task 无 hard guard
 - 已修复 10 项 vs 仍未修 10 项
 - 输出：docs/wang/system_issues_and_design_gaps.md
+
+## [2026-04-04 02:00] DONE — Log 系统审计与设计漂移定位
+- 审计 logging_system、benchmark、Diagnostics 基础设施 → 评分 8.5/10
+- Log 基础架构优秀：统一 slog API、JSONL 持久化、按任务分流、benchmark 分离
+- 深度分析 session-20260401T190855Z runtime 日志 (14,277 条)
+- 定位 8 处设计漂移，核心证据：
+  - Task #001 "展开": 40 次 LLM 调用 (设计期望 2)，8 个 Job (期望 1)，虚假 succeeded
+  - 89% wakes 是定时轮询 (设计要求"事件驱动，收到 Signal 才醒来")
+  - resource_lost 在 6/8 jobs 中先于 job_started (信号顺序反直觉)
+  - 0 条 task→player 消息 (设计要求通过 Adjutant 结构化通信)
+  - Conversation 从 4.6K 膨胀到 79K 字符 (设计要求"压缩摘要")
+- 输出：docs/wang/log_audit_and_design_drift_report.md
