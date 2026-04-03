@@ -319,3 +319,9 @@ Round 7 期间修复：
   - 0 条 task→player 消息 (设计要求通过 Adjutant 结构化通信)
   - Conversation 从 4.6K 膨胀到 79K 字符 (设计要求"压缩摘要")
 - 输出：docs/wang/log_audit_and_design_drift_report.md
+
+## [2026-04-04 03:00] DONE — 文档二次精简 + 优化任务文档
+- docs/wang/ 从 17 文件精简到 6 文件（agents/design/dev_progress/optimization_tasks/plan/progress）
+- 归档：10 个旧研究/分析文件 + 2 个审计报告（发现已整合进任务文档）
+- 调研 OpenRA 专家知识集成现状：P0 全部完成，缺 soft strategy（开局模板、科技前置、放置策略）
+- 输出：optimization_tasks.md — 10 个任务（T1-T10），含问题/目标/具体改动/验收/依赖关系
