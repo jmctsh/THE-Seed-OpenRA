@@ -89,3 +89,11 @@ Implemented adjutant/adjutant.py:
 - ws_server/server.py: aiohttp WS server, inbound routing (command_submit/cancel/mode_switch), outbound broadcast (6 types), multi-client, JSON+timestamp
 - game_loop/loop.py: register_agent/unregister_agent, _check_agent_reviews per tick, initialized last_review_at to now
 - tests/test_ws_and_review.py: 7 tests (review wake, register/unregister agent, multi-agent intervals, WS start/stop, inbound, outbound broadcast, multi-client)
+
+## [2026-04-04 19:30] DONE — Full system audit: 15 items (10 modules + 5 dimensions)
+Read-only audit against design.md. Output: docs/xi/full_audit_report.md
+50 sub-items audited: 31 ✅, 14 ⚠️, 5 ❌
+P0 findings: LLM provider no timeout(9b), no retry(9c), escalate enforcement dead code(12b)
+P1 findings: ChatView missing pending_question text mode, 4/5 Experts ignore constraints,
+rule-based fallback can't classify "reply", find_actors missing mobility filter,
+WS frequency not throttled to 1Hz, NotificationManager dead code, command_cancel no UI
