@@ -294,3 +294,16 @@ Round 7 期间修复：
 - dev_progress.md 补充 Phase 2-9 完整进度（之前只有 Phase 0-1）
 - 100 commits = 50 fix + 20 feat + 19 docs + 7 chore + 3 test + 1 refactor
 - 覆盖：Xi Live集成 → 基础设施硬化 → Live测试Rounds 3-7 → 架构Hardening → Expert知识集成 → NLU完整接入
+
+## [2026-04-04 01:00] DONE — 系统问题与 Agent 设计缺口审计
+- 研读 Yu 的 task_agent_prompt_runtime_report.md（Task #001 深度分析）
+- 对比 design.md + 当前代码，识别 10 个设计缺口（3 Critical / 3 High / 4 Medium）
+- 关键发现：
+  - Phase Policy 完全缺失（所有非 rule-routed 任务都会漂移）
+  - Task→Player 对话工具未实现（design.md §6 核心能力）
+  - Context 无结构化 runtime facts，LLM 靠猜
+  - Conversation history 无限增长（Task #001 膨胀到 79K 字符）
+  - DeployExpert fire-and-forget 无验证
+  - complete_task 无 hard guard
+- 已修复 10 项 vs 仍未修 10 项
+- 输出：docs/wang/system_issues_and_design_gaps.md
