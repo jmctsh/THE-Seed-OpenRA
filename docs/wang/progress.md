@@ -325,3 +325,11 @@ Round 7 期间修复：
 - 归档：10 个旧研究/分析文件 + 2 个审计报告（发现已整合进任务文档）
 - 调研 OpenRA 专家知识集成现状：P0 全部完成，缺 soft strategy（开局模板、科技前置、放置策略）
 - 输出：optimization_tasks.md — 10 个任务（T1-T10），含问题/目标/具体改动/验收/依赖关系
+
+## [2026-04-04 04:00] DONE — 审计覆盖地图 + Xi 补全任务
+- 绘制完整审计覆盖地图：活跃代码 ~13,300 行 Python + ~1,200 行 Vue/JS
+- 已深审 37% (task_agent/experts/models/logging)，中度审 20%，未审 42%
+- 识别 15 项遗漏：10 个模块级 + 5 个维度级
+  - 模块：main.py、game_loop、kernel(cancel/preemption/event routing)、world_model(分层刷新/事件检测)、adjutant(query/pending_question/NLU)、game_api、ws_server、queue_manager、llm/provider、前端
+  - 维度：错误恢复、Constraint 系统、ResourceNeed 声明式模型、Adjutant 对话管理、主动通知链
+- 输出：audit_coverage_and_xi_task.md
