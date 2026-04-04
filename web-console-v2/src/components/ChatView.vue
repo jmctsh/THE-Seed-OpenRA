@@ -123,7 +123,15 @@ async function playTts(text) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, format: 'mp3' }),
     })
-    if (!resp.ok) return
+    if (!resp.ok) {
+      // Failure: server returns JSON error — consume silently (non-fatal)
+      return
+    }
+    const ct = resp.headers.get('Content-Type') || ''
+    if (!ct.startsWith('audio/')) {
+      // Unexpected content type (e.g. JSON on partial error) — skip playback
+      return
+    }
     const blob = await resp.blob()
     const url = URL.createObjectURL(blob)
     const audio = new Audio(url)

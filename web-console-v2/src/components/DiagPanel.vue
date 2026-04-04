@@ -9,6 +9,9 @@
           {{ task.label }} · {{ task.raw_text || '未命名任务' }}
         </option>
       </select>
+      <div v-if="selectedTaskLogPath" class="task-log-path" :title="selectedTaskLogPath">
+        📄 {{ selectedTaskLogPath }}
+      </div>
     </div>
     <div class="trace-stream">
       <div v-for="(entry, i) in filteredTraceEntries" :key="`trace-${i}`" class="trace-entry">
@@ -105,6 +108,12 @@ const filteredTraceEntries = computed(() => {
   return items.slice(-120)
 })
 
+const selectedTaskLogPath = computed(() => {
+  if (selectedTaskId.value === 'ALL') return null
+  const task = knownTasks.value.find(t => t.task_id === selectedTaskId.value)
+  return task?.log_path || null
+})
+
 const displayedBenchmarks = computed(() =>
   Object.entries(benchmarkStats)
     .sort(([, left], [, right]) => {
@@ -132,6 +141,7 @@ function normalizeTaskCatalog(tasks) {
     .map((task) => ({
       ...task,
       label: formatTaskLabel(task.task_id),
+      log_path: task.log_path || null,
     }))
 }
 
@@ -292,7 +302,9 @@ onMounted(() => {
   font-size: 12px;
 }
 .trace-stream {
-  max-height: 180px;
+  flex: 1;
+  min-height: 250px;
+  max-height: 40vh;
   overflow-y: auto;
   margin-bottom: 10px;
   padding: 8px;
@@ -301,6 +313,18 @@ onMounted(() => {
   background: #fafbfc;
   font-family: monospace;
   font-size: 12px;
+}
+.task-log-path {
+  font-size: 10px;
+  color: #607d8b;
+  font-family: monospace;
+  word-break: break-all;
+  padding: 2px 4px;
+  background: #f5f5f5;
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .trace-entry {
   margin-bottom: 6px;
