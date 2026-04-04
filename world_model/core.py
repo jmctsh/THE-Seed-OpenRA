@@ -804,9 +804,6 @@ class WorldModel:
             "explored_pct": round(explored_pct, 4),
             "remaining_resources": remaining_resources,
             "timestamp": timestamp,
-            # Raw IsExplored grid (list-of-lists of bool) for expert-level exploration algorithms.
-            # Empty list when unavailable.
-            "is_explored": list(getattr(map_info, "IsExplored", []) or []),
         }
 
     def _normalize_queues(self, queues: Mapping[str, dict[str, Any]], timestamp: float) -> dict[str, dict[str, Any]]:
