@@ -352,14 +352,13 @@ class TaskAgent:
 
         # Build context packet
         jobs = self._jobs_provider(self.task.task_id)
-        if self._maybe_attach_existing_rule_job(jobs):
-            return
-        if await self._maybe_bootstrap_structure_build(jobs):
-            return
-        if await self._maybe_bootstrap_simple_production(jobs):
-            return
-        if self._bootstrap_job_id is not None:
-            return
+        # Bootstrap functions run for their side effects (job pre-creation,
+        # _bootstrap_job_id assignment) but never block the LLM.  The LLM
+        # must run every wake so it can handle DECISION_REQUEST signals,
+        # correct misfired bootstraps, and complete compound commands.
+        self._maybe_attach_existing_rule_job(jobs)
+        await self._maybe_bootstrap_structure_build(jobs)
+        await self._maybe_bootstrap_simple_production(jobs)
 
         # Smart wake: skip LLM when there is no new information.
         # Only applies once at least one job exists (first wake must always
@@ -430,15 +429,31 @@ class TaskAgent:
             # LLM succeeded — reset failure counter
             self._consecutive_failures = 0
             self._total_llm_calls += 1
+            # Extract reasoning_content from raw provider response (Qwen3 thinking mode)
+            _raw = response.raw
+            _reasoning = None
+            if _raw is not None:
+                # Qwen3: choices[0].message.reasoning_content
+                try:
+                    _reasoning = _raw.choices[0].message.reasoning_content or None
+                except Exception:
+                    pass
+                if not _reasoning:
+                    try:
+                        _reasoning = _raw.get("reasoning_content") or None
+                    except Exception:
+                        pass
             slog.info(
                 "TaskAgent LLM call succeeded",
                 event="llm_succeeded",
                 task_id=self.task.task_id,
+                model=response.model,
+                usage=response.usage,
                 tool_calls=len(response.tool_calls),
-                has_text=bool(response.text),
-                response_text_preview=(response.text or "")[:200] or None,
+                response_text=response.text or None,
+                reasoning_content=_reasoning,
                 tool_calls_detail=[
-                    {"name": tc.name, "args": str(tc.arguments)[:120]}
+                    {"name": tc.name, "arguments": tc.arguments}
                     for tc in response.tool_calls
                 ],
             )
@@ -505,6 +520,8 @@ class TaskAgent:
         recon/expansion or unit production. For simple, first-turn structure
         build commands we bootstrap the correct EconomyExpert job directly.
         """
+        if self._bootstrap_job_id is not None:
+            return False  # already bootstrapped; do not create a duplicate
         if jobs:
             return False
 
@@ -571,6 +588,8 @@ class TaskAgent:
         "生产/造/训练 + <unit>" path, bootstrap directly into the correct
         EconomyExpert config instead of spending LLM turns guessing ids.
         """
+        if self._bootstrap_job_id is not None:
+            return False  # already bootstrapped; do not create a duplicate
         if jobs:
             return False
 

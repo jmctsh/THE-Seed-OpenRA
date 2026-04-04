@@ -725,13 +725,10 @@ def test_bootstrap_structure_build_maps_refinery_to_proc() -> None:
     print("  PASS: bootstrap_structure_build_maps_refinery_to_proc")
 
 
-def test_bootstrap_structure_build_completes_without_llm_drift() -> None:
+def test_bootstrap_structure_build_completes_with_llm_running() -> None:
+    """Bootstrap pre-creates job AND LLM runs; completion via finalize path."""
     captured_start_jobs: list[dict] = []
     captured_completions: list[dict] = []
-
-    class NoLlmNeededProvider(MockProvider):
-        async def chat(self, messages, **kwargs):
-            raise AssertionError("Bootstrap structure-build path should not call the LLM")
 
     async def start_job_handler(_name: str, args: dict) -> dict:
         captured_start_jobs.append(args)
@@ -753,13 +750,14 @@ def test_bootstrap_structure_build_completes_without_llm_drift() -> None:
 
     agent = TaskAgent(
         task=make_task(raw_text="建造兵营"),
-        llm=NoLlmNeededProvider(),
+        llm=MockProvider([LLMResponse(text="正在监控兵营建造", model="mock")]),
         tool_executor=executor,
         jobs_provider=noop_jobs_provider,
         world_summary_provider=noop_world_provider,
     )
 
     async def run():
+        # Wake 1: bootstrap pre-creates job, LLM also runs
         await agent._wake_cycle(trigger="init")
         agent.push_signal(
             ExpertSignal(
@@ -770,6 +768,7 @@ def test_bootstrap_structure_build_completes_without_llm_drift() -> None:
                 result="succeeded",
             )
         )
+        # Wake 2: _maybe_finalize_bootstrap_task handles completion, LLM not reached
         await agent._wake_cycle(trigger="event")
 
     asyncio.run(run())
@@ -789,8 +788,9 @@ def test_bootstrap_structure_build_completes_without_llm_drift() -> None:
     assert captured_completions[0]["result"] == "succeeded"
     assert "建造兵营" in captured_completions[0]["summary"]
     assert agent._task_completed is True
-    assert agent._total_llm_calls == 0
-    print("  PASS: bootstrap_structure_build_completes_without_llm_drift")
+    # LLM runs on wake 1 (bootstrap no longer blocks LLM)
+    assert agent._total_llm_calls >= 1
+    print("  PASS: bootstrap_structure_build_completes_with_llm_running")
 
 
 def test_bootstrap_simple_production_maps_basic_infantry_to_e1() -> None:
@@ -838,13 +838,10 @@ def test_bootstrap_simple_production_maps_basic_infantry_to_e1() -> None:
     print("  PASS: bootstrap_simple_production_maps_basic_infantry_to_e1")
 
 
-def test_bootstrap_simple_production_completes_without_llm_drift() -> None:
+def test_bootstrap_simple_production_completes_with_llm_running() -> None:
+    """Bootstrap pre-creates production job AND LLM runs; completion via finalize path."""
     captured_start_jobs: list[dict] = []
     captured_completions: list[dict] = []
-
-    class NoLlmNeededProvider(MockProvider):
-        async def chat(self, messages, **kwargs):
-            raise AssertionError("Bootstrap simple-production path should not call the LLM")
 
     async def start_job_handler(_name: str, args: dict) -> dict:
         captured_start_jobs.append(args)
@@ -866,13 +863,14 @@ def test_bootstrap_simple_production_completes_without_llm_drift() -> None:
 
     agent = TaskAgent(
         task=make_task(raw_text="生产3个步兵"),
-        llm=NoLlmNeededProvider(),
+        llm=MockProvider([LLMResponse(text="正在监控步兵生产", model="mock")]),
         tool_executor=executor,
         jobs_provider=noop_jobs_provider,
         world_summary_provider=noop_world_provider,
     )
 
     async def run():
+        # Wake 1: bootstrap pre-creates production job, LLM also runs
         await agent._wake_cycle(trigger="init")
         agent.push_signal(
             ExpertSignal(
@@ -883,6 +881,7 @@ def test_bootstrap_simple_production_completes_without_llm_drift() -> None:
                 result="succeeded",
             )
         )
+        # Wake 2: _maybe_finalize_bootstrap_task handles completion, LLM not reached
         await agent._wake_cycle(trigger="event")
 
     asyncio.run(run())
@@ -902,21 +901,19 @@ def test_bootstrap_simple_production_completes_without_llm_drift() -> None:
     assert captured_completions[0]["result"] == "succeeded"
     assert "生产3个步兵" in captured_completions[0]["summary"]
     assert agent._task_completed is True
-    assert agent._total_llm_calls == 0
-    print("  PASS: bootstrap_simple_production_completes_without_llm_drift")
+    # LLM runs on wake 1 (bootstrap no longer blocks LLM)
+    assert agent._total_llm_calls >= 1
+    print("  PASS: bootstrap_simple_production_completes_with_llm_running")
 
 
-def test_existing_rule_routed_recon_job_is_monitor_only() -> None:
-    class NoLlmNeededProvider(MockProvider):
-        async def chat(self, messages, **kwargs):
-            raise AssertionError("Rule-routed recon monitor path should not call the LLM")
-
+def test_existing_rule_routed_recon_job_attaches_and_llm_runs() -> None:
+    """Rule-routed recon job is attached to bootstrap tracker AND LLM runs."""
     task = make_task(raw_text="探索地图")
     job = make_job(job_id="j_rule_recon", task_id=task.task_id)
 
     agent = TaskAgent(
         task=task,
-        llm=NoLlmNeededProvider(),
+        llm=MockProvider([LLMResponse(text="正在监控侦察任务", model="mock")]),
         tool_executor=make_executor(),
         jobs_provider=lambda _tid: [job],
         world_summary_provider=noop_world_provider,
@@ -927,9 +924,64 @@ def test_existing_rule_routed_recon_job_is_monitor_only() -> None:
 
     asyncio.run(run())
 
+    # Job is still attached for finalization tracking
     assert agent._bootstrap_job_id == "j_rule_recon"
-    assert agent._total_llm_calls == 0
-    print("  PASS: existing_rule_routed_recon_job_is_monitor_only")
+    # LLM runs so it can handle signals, fix compound commands, etc.
+    assert agent._total_llm_calls >= 1
+    print("  PASS: existing_rule_routed_recon_job_attaches_and_llm_runs")
+
+
+def test_bootstrap_job_decision_request_reaches_llm() -> None:
+    """DECISION_REQUEST signal must reach LLM even when bootstrap job is active."""
+    decision_in_context = []
+
+    class CapturingProvider(MockProvider):
+        async def chat(self, messages, **kwargs):
+            # Record whether a decision_request appeared in context
+            for msg in messages:
+                content = msg.get("content", "")
+                if "decision_request" in content or "DECISION_REQUEST" in content:
+                    decision_in_context.append(content)
+            return await super().chat(messages, **kwargs)
+
+    task = make_task(raw_text="探索地图")
+    job = make_job(job_id="j_rule_recon", task_id=task.task_id)
+
+    agent = TaskAgent(
+        task=task,
+        llm=CapturingProvider([
+            LLMResponse(text="正在处理侦察任务", model="mock"),  # wake 1: attach + LLM
+            LLMResponse(text="侦察队遇险，继续等待", model="mock"),  # wake 2: decision
+        ]),
+        tool_executor=make_executor(),
+        jobs_provider=lambda _tid: [job],
+        world_summary_provider=noop_world_provider,
+    )
+
+    async def run():
+        # Wake 1: attach bootstrap job, LLM runs
+        await agent._wake_cycle(trigger="init")
+
+        # Push a DECISION_REQUEST from the running recon job
+        agent.push_signal(ExpertSignal(
+            task_id="t1",
+            job_id="j_rule_recon",
+            kind=SignalKind.DECISION_REQUEST,
+            summary="侦察队失联，是否等待？",
+            decision={
+                "options": ["wait", "abort"],
+                "default_if_timeout": "wait",
+            },
+        ))
+        # Wake 2: DECISION_REQUEST must reach LLM
+        await agent._wake_cycle(trigger="signal")
+
+    asyncio.run(run())
+
+    assert agent._total_llm_calls >= 2
+    # The second wake's context must have contained the decision_request
+    assert len(decision_in_context) >= 1
+    print("  PASS: bootstrap_job_decision_request_reaches_llm")
 
 
 def test_system_prompt_pins_structure_build_commands_to_economy() -> None:
