@@ -13,6 +13,7 @@ class ReconJobConfig:
     target_owner: str  # enemy
     retreat_hp_pct: float = 0.3
     avoid_combat: bool = True
+    scout_count: int = 1  # number of actors to allocate for parallel scouting
 
 
 @dataclass

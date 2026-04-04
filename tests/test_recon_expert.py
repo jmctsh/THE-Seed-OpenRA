@@ -1,4 +1,4 @@
-"""Tests for ReconExpert and ReconJob."""
+"""Tests for ReconExpert and ReconJob — random-ray exploration algorithm."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models import JobStatus, ResourceKind, SignalKind, ReconJobConfig
-from experts.recon import ReconExpert, ReconJob
+from experts.recon import ReconExpert, ReconJob, _ScoutState, _is_explored_cell, _bresenham_pts, _unexplored_ratio
 
 
 class MockGameAPI:
@@ -25,9 +25,18 @@ class MockGameAPI:
         )
 
 
+def _make_is_explored(width: int, height: int, explored_fn) -> list:
+    """Build an is_explored grid (row-major: rows[y][x]) using a predicate."""
+    return [[explored_fn(x, y) for x in range(width)] for y in range(height)]
+
+
 class MockWorldModel:
     def __init__(self) -> None:
-        self.map_info = {"width": 2000, "height": 1000, "explored_pct": 0.2, "visible_pct": 0.1}
+        self.map_info = {
+            "width": 2000, "height": 1000,
+            "explored_pct": 0.2, "visible_pct": 0.1,
+            "is_explored": [],   # empty by default — algorithm treats all cells as unexplored
+        }
         self.self_actors = {
             57: {
                 "actor_id": 57,
@@ -58,12 +67,12 @@ class MockWorldModel:
             actor = self.self_actors.get(params["actor_id"])
             return {"actor": dict(actor) if actor else None, "timestamp": 1.0}
         if query_type == "enemy_actors":
-            return {"actors": [dict(actor) for actor in self.enemy_actors], "timestamp": 1.0}
+            return {"actors": [dict(a) for a in self.enemy_actors], "timestamp": 1.0}
         if query_type == "my_actors":
-            actors = [dict(actor) for actor in self.self_actors.values()]
+            actors = [dict(a) for a in self.self_actors.values()]
             category = params.get("category")
             if category is not None:
-                actors = [actor for actor in actors if actor.get("category") == category]
+                actors = [a for a in actors if a.get("category") == category]
             return {"actors": actors, "timestamp": 1.0}
         if query_type == "map":
             return dict(self.map_info)
@@ -82,6 +91,54 @@ def make_config(**overrides) -> ReconJobConfig:
     return ReconJobConfig(**base)
 
 
+# -----------------------------------------------------------------------
+# Grid helper unit tests
+# -----------------------------------------------------------------------
+
+def test_grid_helpers_is_explored_cell() -> None:
+    """_is_explored_cell correctly indexes into row-major and col-major grids."""
+    # Row-major: exp[y][x]
+    exp_rm = [[False, False, True], [True, True, False]]  # h=2, w=3
+    assert not _is_explored_cell(exp_rm, 0, 0, 3, 2, "row_major")
+    assert _is_explored_cell(exp_rm, 2, 0, 3, 2, "row_major")   # exp_rm[0][2]=True
+    assert _is_explored_cell(exp_rm, 0, 1, 3, 2, "row_major")   # exp_rm[1][0]=True
+
+    # Out-of-bounds returns False
+    assert not _is_explored_cell(exp_rm, -1, 0, 3, 2, "row_major")
+    assert not _is_explored_cell(exp_rm, 0, 5, 3, 2, "row_major")
+    print("  PASS: grid_helpers_is_explored_cell")
+
+
+def test_grid_helpers_bresenham() -> None:
+    """_bresenham_pts includes start, end, and intermediate cells."""
+    pts = _bresenham_pts(0, 0, 3, 0)
+    assert pts == [(0, 0), (1, 0), (2, 0), (3, 0)]
+    pts_diag = _bresenham_pts(0, 0, 2, 2)
+    assert (0, 0) in pts_diag
+    assert (2, 2) in pts_diag
+    print("  PASS: grid_helpers_bresenham")
+
+
+def test_grid_helpers_unexplored_ratio() -> None:
+    """_unexplored_ratio returns fraction of unexplored cells on the path."""
+    w, h = 10, 10
+    # Row-major grid: all explored
+    exp_all = [[True] * w for _ in range(h)]
+    ratio_all = _unexplored_ratio(exp_all, w, h, "row_major", 0, (0, 0), (5, 0))
+    assert ratio_all == 0.0
+
+    # All unexplored
+    exp_none = [[False] * w for _ in range(h)]
+    ratio_none = _unexplored_ratio(exp_none, w, h, "row_major", 0, (0, 0), (5, 0))
+    assert ratio_none == 1.0
+
+    print("  PASS: grid_helpers_unexplored_ratio")
+
+
+# -----------------------------------------------------------------------
+# ReconExpert factory
+# -----------------------------------------------------------------------
+
 def test_recon_expert_creates_job_with_fast_vehicle_need() -> None:
     api = MockGameAPI()
     world = MockWorldModel()
@@ -95,13 +152,31 @@ def test_recon_expert_creates_job_with_fast_vehicle_need() -> None:
     needs = job.get_resource_needs()
     assert len(needs) == 1
     assert needs[0].kind == ResourceKind.ACTOR
-    assert needs[0].count == 1
-    assert needs[0].predicates == {"owner": "self"}  # Soft constraint: any mobile unit
+    assert needs[0].count == 1           # scout_count defaults to 1
+    assert needs[0].predicates == {"owner": "self"}
     assert job.tick_interval == 1.0
     print("  PASS: recon_expert_creates_job_with_fast_vehicle_need")
 
 
-def test_recon_job_scores_search_and_moves_to_diagonal_waypoint() -> None:
+def test_recon_job_scout_count_controls_resource_needs() -> None:
+    """scout_count in config determines how many actors are requested."""
+    api = MockGameAPI()
+    world = MockWorldModel()
+    expert = ReconExpert(game_api=api, world_model=world)
+    signals = []
+
+    job = expert.create_job("t1", make_config(scout_count=3), signals.append)
+    needs = job.get_resource_needs()
+    assert needs[0].count == 3
+    print("  PASS: recon_job_scout_count_controls_resource_needs")
+
+
+# -----------------------------------------------------------------------
+# Search behaviour
+# -----------------------------------------------------------------------
+
+def test_recon_job_searches_and_issues_move() -> None:
+    """Searching phase issues a move command to the actor."""
     api = MockGameAPI()
     world = MockWorldModel()
     signals = []
@@ -121,14 +196,158 @@ def test_recon_job_scores_search_and_moves_to_diagonal_waypoint() -> None:
     assert len(api.moves) == 1
     assert api.moves[0]["actor_ids"] == [57]
     assert api.moves[0]["attack_move"] is False
-    x, y = api.moves[0]["location"]
-    assert x > 1200
-    assert y < 400
+    # Awareness signal emitted (no radar in mock)
     assert signals[0].kind == SignalKind.PROGRESS
     assert signals[0].data["awareness"]["status"] == "degraded"
-    assert signals[0].data["awareness"]["recommendation"]["kind"] == "awareness_recovery"
-    print("  PASS: recon_job_scores_search_and_moves_to_diagonal_waypoint")
+    print("  PASS: recon_job_searches_and_issues_move")
 
+
+def test_recon_job_random_ray_targets_unexplored_area() -> None:
+    """Random-ray algorithm picks a target in the unexplored portion of the map."""
+    api = MockGameAPI()
+    world = MockWorldModel()
+
+    # Small map: 40×20, left half explored, right half unexplored
+    W, H = 40, 20
+    world.map_info = {
+        "width": W, "height": H,
+        "explored_pct": 0.5, "visible_pct": 0.3,
+        "is_explored": _make_is_explored(W, H, lambda x, y: x < W // 2),
+    }
+    # Actor near the explored/unexplored boundary, slightly left
+    world.self_actors = {
+        5: {
+            "actor_id": 5,
+            "name": "jeep", "display_name": "Jeep", "category": "vehicle",
+            "position": [8, 10],   # left side (explored area)
+            "hp": 100, "hp_max": 100, "mobility": "fast",
+        },
+    }
+    world.self_actors[11] = {
+        "actor_id": 11, "name": "proc", "display_name": "Refinery",
+        "category": "building", "position": [5, 15],
+        "hp": 100, "hp_max": 100, "mobility": "static",
+    }
+
+    signals = []
+    job = ReconJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(search_region="northeast"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["actor:5"])
+
+    job.tick()
+
+    assert job.phase == "searching"
+    assert len(api.moves) >= 1
+    x, y = api.moves[0]["location"]
+    # Target must be in the unexplored right half (x >= W//2)
+    assert x >= W // 2, f"Expected target in unexplored half (x >= {W//2}), got x={x}"
+    print(f"  PASS: recon_job_random_ray_targets_unexplored_area (target=({x},{y}))")
+
+
+def test_recon_job_keeps_same_destination_until_arrival() -> None:
+    """Scout holds the same target across ticks until it arrives."""
+    api = MockGameAPI()
+    world = MockWorldModel()
+    signals = []
+    job = ReconJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(search_region="enemy_half"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["actor:57"])
+
+    job.tick()
+    first_move = api.moves[-1]["location"]
+    job.tick()   # actor still far from target → same destination
+
+    assert job.phase == "searching"
+    assert len(api.moves) == 1   # no second move issued (same destination dedup)
+    assert api.moves[0]["location"] == first_move
+    print("  PASS: recon_job_keeps_same_destination_until_arrival")
+
+
+def test_recon_job_stuck_detection_forces_retarget() -> None:
+    """Stuck for _stuck_threshold_ticks ticks causes the actor to abandon target."""
+    api = MockGameAPI()
+    world = MockWorldModel()
+    signals = []
+    job = ReconJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(search_region="full_map"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["actor:57"])
+
+    # First tick picks a target
+    job.tick()
+    assert len(api.moves) == 1
+    first_target = api.moves[0]["location"]
+
+    # Simulate stuck: actor doesn't move (position unchanged for threshold ticks)
+    st = job._scout_states[57]
+    st.stuck_ticks = job._stuck_threshold_ticks  # trigger retarget on next tick
+
+    # Clear last_destination so the move is re-issued even if to same coords
+    job._last_destinations.clear()
+    job.tick()
+
+    # Should have picked a new target and issued a new move
+    assert len(api.moves) == 2
+    print(f"  PASS: recon_job_stuck_detection_forces_retarget")
+
+
+def test_recon_job_multi_actor_repulsion() -> None:
+    """Two actors get different targets due to repulsion."""
+    api = MockGameAPI()
+    world = MockWorldModel()
+
+    # Add a second actor close to first
+    world.self_actors[83] = {
+        "actor_id": 83,
+        "name": "jeep", "display_name": "Jeep", "category": "vehicle",
+        "position": [140, 820],
+        "hp": 100, "hp_max": 100, "mobility": "fast",
+    }
+
+    signals = []
+    job = ReconJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(search_region="full_map", scout_count=2),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+    job.on_resource_granted(["actor:57", "actor:83"])
+
+    job.tick()
+
+    # Both actors should have received move orders
+    actor_ids_moved = {m["actor_ids"][0] for m in api.moves}
+    assert 57 in actor_ids_moved
+    assert 83 in actor_ids_moved
+
+    # Their targets should differ
+    targets = [m["location"] for m in api.moves]
+    assert targets[0] != targets[1], f"Expected different targets, both got {targets[0]}"
+    print(f"  PASS: recon_job_multi_actor_repulsion (targets={targets})")
+
+
+# -----------------------------------------------------------------------
+# Tracking / retreat / completion (unchanged behaviour)
+# -----------------------------------------------------------------------
 
 def test_recon_job_tracks_clue_then_completes_on_base_found() -> None:
     api = MockGameAPI()
@@ -160,8 +379,8 @@ def test_recon_job_tracks_clue_then_completes_on_base_found() -> None:
     assert len(api.moves) == 1
     assert api.moves[0]["location"] == (1800, 420)
     tracking_signals = [
-        signal for signal in signals
-        if signal.kind == SignalKind.PROGRESS and signal.expert_state.get("phase") == "tracking"
+        s for s in signals
+        if s.kind == SignalKind.PROGRESS and s.expert_state.get("phase") == "tracking"
     ]
     assert tracking_signals
 
@@ -210,30 +429,6 @@ def test_recon_job_retreats_when_hp_below_threshold() -> None:
     assert signals[-1].kind == SignalKind.RISK_ALERT
     assert signals[-1].data["hp_ratio"] == 0.2
     print("  PASS: recon_job_retreats_when_hp_below_threshold")
-
-
-def test_recon_job_keeps_same_destination_until_arrival() -> None:
-    api = MockGameAPI()
-    world = MockWorldModel()
-    signals = []
-    job = ReconJob(
-        job_id="j1",
-        task_id="t1",
-        config=make_config(search_region="enemy_half"),
-        signal_callback=signals.append,
-        game_api=api,
-        world_model=world,
-    )
-    job.on_resource_granted(["actor:57"])
-
-    job.tick()
-    first_move = api.moves[-1]["location"]
-    job.tick()
-
-    assert job.phase == "searching"
-    assert len(api.moves) == 1
-    assert api.moves[0]["location"] == first_move
-    print("  PASS: recon_job_keeps_same_destination_until_arrival")
 
 
 def test_recon_job_times_out_to_partial_when_no_base_found() -> None:
@@ -298,11 +493,22 @@ def test_recon_job_reports_mobile_scout_policy_when_radar_exists() -> None:
 
 if __name__ == "__main__":
     print("Running ReconExpert tests...\n")
+    # Grid helpers
+    test_grid_helpers_is_explored_cell()
+    test_grid_helpers_bresenham()
+    test_grid_helpers_unexplored_ratio()
+    # Factory
     test_recon_expert_creates_job_with_fast_vehicle_need()
-    test_recon_job_scores_search_and_moves_to_diagonal_waypoint()
+    test_recon_job_scout_count_controls_resource_needs()
+    # Search algorithm
+    test_recon_job_searches_and_issues_move()
+    test_recon_job_random_ray_targets_unexplored_area()
+    test_recon_job_keeps_same_destination_until_arrival()
+    test_recon_job_stuck_detection_forces_retarget()
+    test_recon_job_multi_actor_repulsion()
+    # Unchanged behaviour
     test_recon_job_tracks_clue_then_completes_on_base_found()
     test_recon_job_retreats_when_hp_below_threshold()
-    test_recon_job_keeps_same_destination_until_arrival()
     test_recon_job_times_out_to_partial_when_no_base_found()
     test_recon_job_reports_mobile_scout_policy_when_radar_exists()
-    print("\nAll 7 ReconExpert tests passed!")
+    print("\nAll 14 ReconExpert tests passed!")
