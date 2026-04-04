@@ -167,6 +167,12 @@ class Adjutant:
             slog.info("Handling player input", event="player_input", text=text)
             deploy_feedback = self._maybe_handle_deploy_feedback(text)
             if deploy_feedback is not None:
+                slog.info(
+                    "Deploy feedback short-circuit",
+                    event="deploy_feedback_shortcircuit",
+                    ok=deploy_feedback.get("ok"),
+                    reason=deploy_feedback.get("reason"),
+                )
                 self._record_dialogue("player", text)
                 if deploy_feedback.get("response_text"):
                     self._record_dialogue("adjutant", deploy_feedback["response_text"])
@@ -175,6 +181,13 @@ class Adjutant:
             runtime_nlu = self._try_runtime_nlu(text)
             if runtime_nlu is not None:
                 result = await self._handle_runtime_nlu(text, runtime_nlu)
+                slog.info(
+                    "NLU route result",
+                    event="route_result",
+                    routing="nlu",
+                    ok=result.get("ok"),
+                    steps=len(runtime_nlu.steps),
+                )
                 self._record_dialogue("player", text)
                 if result.get("response_text"):
                     self._record_dialogue("adjutant", result["response_text"])
@@ -183,6 +196,13 @@ class Adjutant:
             rule_match = self._try_rule_match(text)
             if rule_match is not None:
                 result = await self._handle_rule_command(text, rule_match)
+                slog.info(
+                    "Rule route result",
+                    event="route_result",
+                    routing="rule",
+                    ok=result.get("ok"),
+                    expert_type=rule_match.expert_type,
+                )
                 self._record_dialogue("player", text)
                 if result.get("response_text"):
                     self._record_dialogue("adjutant", result["response_text"])
@@ -204,10 +224,19 @@ class Adjutant:
 
             # Route based on classification
             if classification.input_type == InputType.REPLY:
+                slog.info(
+                    "Routing to reply handler",
+                    event="route_decision",
+                    input_type=InputType.REPLY,
+                    message_id=classification.target_message_id,
+                    task_id=classification.target_task_id,
+                )
                 result = await self._handle_reply(classification)
             elif classification.input_type == InputType.QUERY:
+                slog.info("Routing to query handler", event="route_decision", input_type=InputType.QUERY)
                 result = await self._handle_query(text, context)
             else:
+                slog.info("Routing to command handler", event="route_decision", input_type=InputType.COMMAND)
                 result = await self._handle_command(text)
 
             # Record in dialogue history

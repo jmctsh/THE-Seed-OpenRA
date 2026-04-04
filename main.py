@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 import benchmark
 
-from adjutant import Adjutant, AdjutantConfig
+from adjutant import Adjutant, AdjutantConfig, NotificationManager
 from experts.base import ExecutionExpert
 from experts.combat import CombatExpert
 from experts.deploy import DeployExpert
@@ -164,7 +164,7 @@ class RuntimeBridge(InboundHandler):
         self._registered_jobs: set[str] = set()
         self._task_fingerprints: dict[str, tuple[Any, ...]] = {}
         self._task_message_offset = 0
-        self._notification_offset = 0
+        self._notification_manager: Optional[NotificationManager] = None
         self._log_offset = 0
         self._recent_responses: list[dict[str, Any]] = []
         self._publish_lock = asyncio.Lock()
@@ -320,7 +320,7 @@ class RuntimeBridge(InboundHandler):
         self._recent_responses.clear()
         self._task_fingerprints.clear()
         self._task_message_offset = 0
-        self._notification_offset = 0
+        self._notification_manager = None  # reset so new manager is created on next publish
         self._log_offset = 0
         clear_logs()
         benchmark.clear()
@@ -384,11 +384,12 @@ class RuntimeBridge(InboundHandler):
 
     async def _publish_notifications(self) -> None:
         assert self.ws_server is not None
-        notifications = self.kernel.list_player_notifications()
-        new_notifications = notifications[self._notification_offset :]
-        self._notification_offset = len(notifications)
-        for notification in new_notifications:
-            await self.ws_server.send_player_notification(notification)
+        if self._notification_manager is None:
+            self._notification_manager = NotificationManager(
+                kernel=self.kernel,
+                sink=self.ws_server.send_player_notification,
+            )
+        await self._notification_manager.poll_and_push()
 
     async def _publish_logs(self) -> None:
         assert self.ws_server is not None

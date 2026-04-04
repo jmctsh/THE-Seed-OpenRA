@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Any, Optional
 
+import logging_system
 from llm import LLMResponse, MockProvider
 from models import PlayerResponse, Task, TaskKind, TaskMessage, TaskMessageType, TaskStatus
 from adjutant import (
@@ -925,6 +926,89 @@ def test_rule_based_classify_reply_highest_priority():
     print("  PASS: rule_based_classify_reply_highest_priority")
 
 
+# --- T9: Observability — slog coverage ---
+
+def _events_from_log(before_count: int) -> list[str]:
+    """Collect event names from structured log records added after before_count."""
+    all_records = logging_system.records()
+    return [getattr(r, "event", None) for r in all_records[before_count:] if getattr(r, "event", None)]
+
+
+def test_observability_nlu_path_has_three_logs():
+    """NLU path: player_input + nlu_routed_command + route_result ≥ 3 logs."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    adjutant = Adjutant(llm=MockProvider(), kernel=kernel, world_model=wm)
+
+    before = len(logging_system.records())
+
+    async def run():
+        await adjutant.handle_player_input("侦察敌方基地")
+
+    asyncio.run(run())
+
+    events = _events_from_log(before)
+    assert "player_input" in events, f"player_input missing: {events}"
+    assert "nlu_routed_command" in events, f"nlu_routed_command missing: {events}"
+    assert "route_result" in events, f"route_result missing: {events}"
+    assert len(events) >= 3, f"Expected ≥3 events, got {len(events)}: {events}"
+    print("  PASS: observability_nlu_path_has_three_logs")
+
+
+def test_observability_llm_path_has_three_logs():
+    """LLM classification path: player_input + input_classified + route_decision ≥ 3 logs."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    mock_llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"command","confidence":0.9}', model="mock"),
+        LLMResponse(text="任务执行中", model="mock"),
+    ])
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    before = len(logging_system.records())
+
+    async def run():
+        # Long compound input — bypasses NLU and rule matchers
+        await adjutant.handle_player_input("打下右边那个基地然后再扩张一下经济吧")
+
+    asyncio.run(run())
+
+    events = _events_from_log(before)
+    assert "player_input" in events, f"player_input missing: {events}"
+    assert "input_classified" in events, f"input_classified missing: {events}"
+    assert "route_decision" in events, f"route_decision missing: {events}"
+    assert len(events) >= 3, f"Expected ≥3 events, got {len(events)}: {events}"
+    print("  PASS: observability_llm_path_has_three_logs")
+
+
+def test_observability_rule_path_has_three_logs():
+    """Rule path: player_input + rule_routed_command + route_result ≥ 3 logs.
+
+    Uses a subclass that forces NLU to return None so _try_rule_match runs.
+    """
+    class NoNLUAdjutant(Adjutant):
+        def _try_runtime_nlu(self, text):
+            return None  # force rule path
+
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    adjutant = NoNLUAdjutant(llm=MockProvider(), kernel=kernel, world_model=wm)
+
+    before = len(logging_system.records())
+
+    async def run():
+        await adjutant.handle_player_input("建造矿场")  # triggers _match_build
+
+    asyncio.run(run())
+
+    events = _events_from_log(before)
+    assert "player_input" in events, f"player_input missing: {events}"
+    assert "rule_routed_command" in events, f"rule_routed_command missing: {events}"
+    assert "route_result" in events, f"route_result missing: {events}"
+    assert len(events) >= 3, f"Expected ≥3 events, got {len(events)}: {events}"
+    print("  PASS: observability_rule_path_has_three_logs")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -959,5 +1043,8 @@ if __name__ == "__main__":
     test_rule_based_classify_no_pending_command()
     test_rule_based_classify_query_fallback()
     test_rule_based_classify_reply_highest_priority()
+    test_observability_nlu_path_has_three_logs()
+    test_observability_llm_path_has_three_logs()
+    test_observability_rule_path_has_three_logs()
 
-    print(f"\nAll 29 tests passed!")
+    print(f"\nAll 32 tests passed!")
