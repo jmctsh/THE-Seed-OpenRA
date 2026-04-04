@@ -16,7 +16,8 @@ import logging_system
 from llm import LLMResponse, MockProvider
 from models import PlayerResponse, Task, TaskKind, TaskMessage, TaskMessageType, TaskStatus
 from adjutant import (
-    Adjutant, AdjutantConfig, InputType,
+    Adjutant, AdjutantConfig, AdjutantContext, InputType,
+    CLASSIFICATION_SYSTEM_PROMPT,
     NotificationManager, format_notification, notification_to_text, notification_to_dict,
 )
 
@@ -44,7 +45,7 @@ class MockKernel:
         self._task_counter = 0
         self._job_counter = 0
 
-    def create_task(self, raw_text, kind, priority):
+    def create_task(self, raw_text, kind, priority, info_subscriptions=None):
         self._task_counter += 1
         task = MockTask(f"t_{self._task_counter}", raw_text)
         self.created_tasks.append({"raw_text": raw_text, "kind": kind, "priority": priority})
@@ -1009,6 +1010,89 @@ def test_observability_rule_path_has_three_logs():
     print("  PASS: observability_rule_path_has_three_logs")
 
 
+# --- Dialogue context enhancement tests ---
+
+def test_notify_task_completed_records_in_dialogue_history():
+    """notify_task_completed appends a system entry to dialogue history."""
+    adjutant = Adjutant(llm=MockProvider(), kernel=MockKernel(), world_model=MockWorldModel())
+    assert adjutant._dialogue_history == []
+    adjutant.notify_task_completed(label="005", raw_text="发展科技", result="failed", summary="前置建筑不满足")
+    assert len(adjutant._dialogue_history) == 1
+    entry = adjutant._dialogue_history[0]
+    assert entry["from"] == "system"
+    assert "005" in entry["content"]
+    assert "发展科技" in entry["content"]
+    assert "failed" in entry["content"]
+    assert "前置建筑不满足" in entry["content"]
+    print("  PASS: notify_task_completed_records_in_dialogue_history")
+
+
+def test_notify_task_completed_caps_recent_completed_at_five():
+    """_recent_completed keeps only the last 5 entries."""
+    adjutant = Adjutant(llm=MockProvider(), kernel=MockKernel(), world_model=MockWorldModel())
+    for i in range(7):
+        adjutant.notify_task_completed(label=f"{i:03d}", raw_text=f"task {i}", result="succeeded", summary="ok")
+    assert len(adjutant._recent_completed) == 5
+    # Most recent 5
+    assert adjutant._recent_completed[0]["label"] == "002"
+    assert adjutant._recent_completed[-1]["label"] == "006"
+    print("  PASS: notify_task_completed_caps_recent_completed_at_five")
+
+
+def test_build_context_includes_recent_completed_tasks():
+    """_build_context returns recent_completed_tasks from _recent_completed."""
+    adjutant = Adjutant(llm=MockProvider(), kernel=MockKernel(), world_model=MockWorldModel())
+    adjutant.notify_task_completed(label="001", raw_text="建造兵营", result="succeeded", summary="兵营已建完")
+    adjutant.notify_task_completed(label="002", raw_text="发展科技", result="failed", summary="前置建筑不满足")
+    ctx = adjutant._build_context("你根据需求建造啊")
+    assert len(ctx.recent_completed_tasks) == 2
+    assert ctx.recent_completed_tasks[0]["label"] == "001"
+    assert ctx.recent_completed_tasks[1]["result"] == "failed"
+    print("  PASS: build_context_includes_recent_completed_tasks")
+
+
+def test_classify_input_sends_recent_completed_to_llm():
+    """_classify_input includes recent_completed_tasks in the JSON sent to LLM."""
+    captured: list[dict] = []
+
+    class CapturingProvider:
+        async def chat(self, messages, **_kw):
+            captured.extend(messages)
+            return LLMResponse(text='{"type":"command","confidence":0.9}', model="mock")
+
+    # Subclass to force LLM path (bypass NLU / rule matching)
+    class LLMOnlyAdjutant(Adjutant):
+        def _try_runtime_nlu(self, text):
+            return None
+        def _try_rule_match(self, text):
+            return None
+
+    adjutant = LLMOnlyAdjutant(llm=CapturingProvider(), kernel=MockKernel(), world_model=MockWorldModel())
+    adjutant.notify_task_completed(label="003", raw_text="发展科技", result="failed", summary="缺雷达站")
+
+    async def run():
+        await adjutant.handle_player_input("你根据需求处理吧")
+
+    asyncio.run(run())
+    assert len(captured) >= 2, f"Expected LLM to be called, captured={captured}"
+    user_msg = next(m for m in captured if m["role"] == "user")
+    payload = json.loads(user_msg["content"])
+    assert "recent_completed_tasks" in payload
+    completed = payload["recent_completed_tasks"]
+    assert len(completed) == 1
+    assert completed[0]["label"] == "003"
+    assert completed[0]["result"] == "failed"
+    print("  PASS: classify_input_sends_recent_completed_to_llm")
+
+
+def test_system_prompt_has_dialogue_context_awareness_section():
+    """CLASSIFICATION_SYSTEM_PROMPT contains the dialogue context awareness section."""
+    assert "Dialogue context awareness" in CLASSIFICATION_SYSTEM_PROMPT
+    assert "recent_completed_tasks" in CLASSIFICATION_SYSTEM_PROMPT
+    assert "failed" in CLASSIFICATION_SYSTEM_PROMPT
+    print("  PASS: system_prompt_has_dialogue_context_awareness_section")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -1046,5 +1130,10 @@ if __name__ == "__main__":
     test_observability_nlu_path_has_three_logs()
     test_observability_llm_path_has_three_logs()
     test_observability_rule_path_has_three_logs()
+    test_notify_task_completed_records_in_dialogue_history()
+    test_notify_task_completed_caps_recent_completed_at_five()
+    test_build_context_includes_recent_completed_tasks()
+    test_classify_input_sends_recent_completed_to_llm()
+    test_system_prompt_has_dialogue_context_awareness_section()
 
-    print(f"\nAll 32 tests passed!")
+    print(f"\nAll 37 tests passed!")

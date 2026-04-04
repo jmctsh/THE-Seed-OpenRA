@@ -385,6 +385,15 @@ class RuntimeBridge(InboundHandler):
             if message.default_option is not None:
                 payload["default_option"] = message.default_option
             await self.ws_server.send_task_message(payload)
+            if message.type == TaskMessageType.TASK_COMPLETE_REPORT and self.adjutant is not None:
+                task_obj = next((t for t in self.kernel.list_tasks() if t.task_id == message.task_id), None)
+                if task_obj is not None:
+                    self.adjutant.notify_task_completed(
+                        label=getattr(task_obj, "label", message.task_id),
+                        raw_text=task_obj.raw_text,
+                        result=task_obj.status.value,
+                        summary=message.content,
+                    )
 
     async def _publish_notifications(self) -> None:
         assert self.ws_server is not None

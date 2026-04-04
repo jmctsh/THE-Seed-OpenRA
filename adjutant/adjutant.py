@@ -106,13 +106,14 @@ class AdjutantContext:
     pending_questions: list[dict[str, Any]]
     recent_dialogue: list[dict[str, Any]]
     player_input: str
+    recent_completed_tasks: list[dict[str, Any]] = field(default_factory=list)
     timestamp: float = field(default_factory=time.time)
 
 
 CLASSIFICATION_SYSTEM_PROMPT = """\
 You are the Adjutant (副官) in a real-time strategy game. Your job is to classify player input.
 
-Given the current context (active tasks, pending questions, recent dialogue), classify the input as ONE of:
+Given the current context (active tasks, pending questions, recent dialogue, recent completed tasks), classify the input as ONE of:
 1. "reply" — the player is answering a pending question from a task
 2. "command" — the player is giving a new order/instruction
 3. "query" — the player is asking for information (战况, 建议, etc.)
@@ -128,6 +129,13 @@ Rules:
 - Commands are instructions to execute (attack, build, produce, explore, retreat, etc.)
 - "cancel" applies when the player explicitly wants to stop an existing task; set target_task_id to the task label or id mentioned (e.g. "001", "002")
 - Active tasks are listed in the context — use their labels to resolve "取消001" → target_task_id="001"
+
+Dialogue context awareness:
+- Check recent_completed_tasks for context when the player's input is short or vague.
+- If a task recently failed and the player's input seems to be a reaction to that failure (e.g., "那你就建需要的", "你根据需求建造啊"), classify as "command" and understand it as a follow-up to that specific failed task.
+- Short ambiguous phrases (e.g., "雷达呢？") that look like queries may actually be commands ("建雷达") when recent context involves building or the player seems to be following up on a task — use recent_completed_tasks and recent_dialogue to decide.
+- When input contains both frustration and a command (e.g., "怎么一个都没来？发展科技"), extract and classify by the command portion.
+- If recent_completed_tasks shows a "failed" task, lean toward "command" for vague follow-up inputs rather than "query".
 """
 
 QUERY_SYSTEM_PROMPT = """\
@@ -167,6 +175,7 @@ class Adjutant:
         self.unit_registry = unit_registry or get_default_registry()
         self.config = config or AdjutantConfig()
         self._dialogue_history: list[dict[str, Any]] = []
+        self._recent_completed: list[dict[str, Any]] = []
         self._runtime_nlu = RuntimeNLURouter(unit_registry=self.unit_registry)
 
     # --- Main entry point ---
@@ -781,6 +790,7 @@ class Adjutant:
             "active_tasks": context.active_tasks,
             "pending_questions": context.pending_questions,
             "recent_dialogue": context.recent_dialogue[-5:],
+            "recent_completed_tasks": context.recent_completed_tasks,
             "player_input": context.player_input,
         }, ensure_ascii=False)
 
@@ -1049,6 +1059,7 @@ class Adjutant:
             pending_questions=pending_questions,
             recent_dialogue=self._dialogue_history[-self.config.max_dialogue_history:],
             player_input=player_input,
+            recent_completed_tasks=list(self._recent_completed),
         )
 
     def _record_dialogue(self, speaker: str, text: str) -> None:
@@ -1062,8 +1073,21 @@ class Adjutant:
         if len(self._dialogue_history) > self.config.max_dialogue_history * 2:
             self._dialogue_history = self._dialogue_history[-self.config.max_dialogue_history:]
 
+    def notify_task_completed(self, label: str, raw_text: str, result: str, summary: str) -> None:
+        """Record a task completion into dialogue history and recent_completed buffer.
+
+        Called by the Bridge when a TASK_COMPLETE_REPORT message is published,
+        so the next LLM classification can see recent task outcomes in context.
+        """
+        entry = {"label": label, "raw_text": raw_text, "result": result, "summary": summary}
+        self._recent_completed.append(entry)
+        if len(self._recent_completed) > 5:
+            self._recent_completed = self._recent_completed[-5:]
+        self._record_dialogue("system", f"任务 #{label}（{raw_text}）{result}: {summary}")
+
     def clear_dialogue_history(self) -> None:
         self._dialogue_history = []
+        self._recent_completed = []
 
     # --- TaskMessage formatting ---
     # NOTE: format_task_message() is a utility retained for tests and external callers.

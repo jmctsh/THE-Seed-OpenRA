@@ -1,6 +1,6 @@
 # Adjutant — player interaction layer, routing, dialogue state
 
-from .adjutant import Adjutant, AdjutantConfig, AdjutantContext, ClassificationResult, InputType
+from .adjutant import Adjutant, AdjutantConfig, AdjutantContext, ClassificationResult, InputType, CLASSIFICATION_SYSTEM_PROMPT
 from .notifications import (
     FormattedNotification,
     NotificationManager,
@@ -15,6 +15,7 @@ __all__ = [
     "AdjutantContext",
     "ClassificationResult",
     "InputType",
+    "CLASSIFICATION_SYSTEM_PROMPT",
     "NotificationManager",
     "FormattedNotification",
     "format_notification",
