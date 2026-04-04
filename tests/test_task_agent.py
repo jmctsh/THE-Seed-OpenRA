@@ -1156,6 +1156,102 @@ def test_start_job_removed_from_tool_definitions() -> None:
     print("  PASS: start_job_removed_from_tool_definitions")
 
 
+def test_execute_tools_parallel() -> None:
+    """_execute_tools runs all tool calls concurrently, not serially."""
+    import time as _time
+
+    call_order: list[str] = []
+    start_times: dict[str, float] = {}
+
+    async def slow_handler(name: str, args: dict) -> dict:
+        start_times[name] = _time.monotonic()
+        await asyncio.sleep(0.05)  # 50 ms simulated I/O
+        call_order.append(name)
+        return {"job_id": f"j_{name}", "status": "running", "timestamp": _time.time()}
+
+    executor = ToolExecutor()
+    executor.register("scout_map", slow_handler)
+    executor.register("produce_units", slow_handler)
+
+    agent = TaskAgent(
+        task=make_task(),
+        llm=MockProvider([LLMResponse(text="done", model="mock")]),
+        tool_executor=executor,
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+    )
+
+    async def run():
+        response = LLMResponse(
+            tool_calls=[
+                ToolCall(id="tc1", name="scout_map",
+                         arguments='{"search_region":"enemy_half","target_type":"base"}'),
+                ToolCall(id="tc2", name="produce_units",
+                         arguments='{"unit_type":"e1","count":3,"queue_type":"Infantry"}'),
+            ],
+            model="mock",
+        )
+        t0 = _time.monotonic()
+        results = await agent._execute_tools(response)
+        elapsed = _time.monotonic() - t0
+
+        assert len(results) == 2
+        assert all(r.error is None for r in results), f"unexpected errors: {[r.error for r in results]}"
+        # Both tools started before either finished (parallel, not serial)
+        gap = abs(start_times["scout_map"] - start_times["produce_units"])
+        assert gap < 0.03, f"tools started {gap:.3f}s apart — likely serial, not parallel"
+        # Total elapsed should be ~50ms, not ~100ms (serial would take ≥100ms)
+        assert elapsed < 0.09, f"elapsed {elapsed:.3f}s is too slow for parallel execution"
+
+    asyncio.run(run())
+    print("  PASS: execute_tools_parallel")
+
+
+def test_execute_tools_exception_isolation() -> None:
+    """An exception in one tool must not cancel or corrupt sibling tool results."""
+
+    async def failing_handler(name: str, args: dict) -> dict:
+        raise RuntimeError("tool crashed!")
+
+    async def ok_handler(name: str, args: dict) -> dict:
+        return {"job_id": "j_ok", "status": "running", "timestamp": 0.0}
+
+    executor = ToolExecutor()
+    executor.register("scout_map", failing_handler)
+    executor.register("produce_units", ok_handler)
+
+    agent = TaskAgent(
+        task=make_task(),
+        llm=MockProvider([LLMResponse(text="done", model="mock")]),
+        tool_executor=executor,
+        jobs_provider=noop_jobs_provider,
+        world_summary_provider=noop_world_provider,
+    )
+
+    async def run():
+        response = LLMResponse(
+            tool_calls=[
+                ToolCall(id="tc1", name="scout_map",
+                         arguments='{"search_region":"enemy_half","target_type":"base"}'),
+                ToolCall(id="tc2", name="produce_units",
+                         arguments='{"unit_type":"e1","count":2,"queue_type":"Infantry"}'),
+            ],
+            model="mock",
+        )
+        results = await agent._execute_tools(response)
+
+        assert len(results) == 2
+        # First tool failed
+        assert results[0].error is not None
+        assert "tool crashed" in results[0].error
+        # Second tool succeeded despite first failing
+        assert results[1].error is None
+        assert results[1].result["job_id"] == "j_ok"
+
+    asyncio.run(run())
+    print("  PASS: execute_tools_exception_isolation")
+
+
 # --- Conversation compression tests ---
 
 def _make_ctx_msg(n: int) -> dict:
@@ -1544,6 +1640,9 @@ if __name__ == "__main__":
     test_move_units_handler_creates_movement_job()
     test_deploy_mcv_handler_creates_deploy_job()
     test_start_job_removed_from_tool_definitions()
+    # Parallel tool execution tests
+    test_execute_tools_parallel()
+    test_execute_tools_exception_isolation()
     # Conversation compression tests
     test_trim_conversation_keeps_last_n_turns()
     test_trim_conversation_no_op_when_within_window()
@@ -1560,4 +1659,4 @@ if __name__ == "__main__":
     test_smart_wake_no_skip_when_no_jobs()
     test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 42 tests passed!")
+    print(f"\nAll 44 tests passed!")

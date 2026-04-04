@@ -814,21 +814,42 @@ class TaskAgent:
                 )
         return None
 
+    # Names of Expert action tools whose success warrants a progress message.
+    _EXPERT_TOOL_NAMES = frozenset({"deploy_mcv", "scout_map", "produce_units", "move_units", "attack"})
+
     async def _execute_tools(self, response: LLMResponse) -> list[ToolResult]:
-        """Execute all tool calls from an LLM response."""
-        results = []
-        for tc in response.tool_calls:
-            result = await self.tool_executor.execute(tc.id, tc.name, tc.arguments)
-            results.append(result)
-            # Emit progress feedback for key tool calls
-            if tc.name == "create_job" and result.error is None:
-                try:
-                    import json as _json
-                    args = _json.loads(tc.arguments) if isinstance(tc.arguments, str) else tc.arguments
-                    expert = args.get("expert_type", "Expert")
-                    self._send_info_message(f"正在部署 {expert}...")
-                except Exception:
-                    pass
+        """Execute all tool calls in parallel and return results in call order.
+
+        asyncio.gather runs all coroutines concurrently on the same event loop.
+        kernel.start_job is synchronous so two simultaneous Expert tool calls
+        (e.g. scout_map + produce_units) interleave safely.  Exceptions from
+        individual tools are caught and wrapped as ToolResult(error=...) so
+        they never cancel sibling executions.
+        """
+        coros = [
+            self.tool_executor.execute(tc.id, tc.name, tc.arguments)
+            for tc in response.tool_calls
+        ]
+        raw = await asyncio.gather(*coros, return_exceptions=True)
+
+        results: list[ToolResult] = []
+        for tc, outcome in zip(response.tool_calls, raw):
+            if isinstance(outcome, ToolResult):
+                results.append(outcome)
+            else:
+                # asyncio.gather caught an exception — wrap it
+                results.append(ToolResult(
+                    tool_call_id=tc.id,
+                    name=tc.name,
+                    result={},
+                    error=str(outcome),
+                ))
+
+        # Emit progress feedback for successful Expert tool calls
+        for tc, result in zip(response.tool_calls, results):
+            if tc.name in self._EXPERT_TOOL_NAMES and result.error is None:
+                self._send_info_message(f"正在部署 {tc.name}...")
+
         return results
 
     def _send_info_message(self, content: str) -> None:
