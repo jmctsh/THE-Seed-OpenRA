@@ -76,6 +76,12 @@ class MockKernel:
         self.cancelled_filters.append(filters)
         return 1
 
+    def jobs_for_task(self, task_id: str) -> list[Job]:
+        return []
+
+    def register_task_message(self, message: Any) -> bool:
+        return True
+
 
 class MockWorldModel:
     def __init__(self):
@@ -103,7 +109,7 @@ def test_handlers_register_all():
     """TaskToolHandlers registers all 11 handlers."""
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -118,7 +124,7 @@ def test_start_job_handler():
     """start_job handler calls Kernel.start_job with correct config."""
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -143,7 +149,7 @@ def test_patch_pause_resume_abort_handlers():
     """Job lifecycle handlers call Kernel correctly."""
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -172,7 +178,7 @@ def test_complete_task_handler():
     """complete_task handler calls Kernel.complete_task."""
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -189,7 +195,7 @@ def test_query_world_handler():
     """query_world handler calls WorldModel.query with correct mapping."""
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -211,7 +217,7 @@ def test_query_world_handler():
 def test_query_planner_handler_routes_to_production_advisor() -> None:
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -225,8 +231,8 @@ def test_query_planner_handler_routes_to_production_advisor() -> None:
         proposal = r.result["proposal"]
         assert proposal["status"] == "ok"
         assert proposal["planner_type"] == "ProductionAdvisor"
-        assert proposal["recommendation"]["action"] == "scout_first"
-        assert proposal["recommendation"]["reason"] == "no_visible_enemy"
+        assert proposal["recommendation"]["action"] == "build_opening"
+        assert proposal["recommendation"]["reason"] == "empty_base_power_first"
         assert "timestamp" in r.result
 
     asyncio.run(run())
@@ -239,7 +245,7 @@ def test_cancel_tasks_handler():
     """cancel_tasks handler calls Kernel.cancel_tasks."""
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -257,7 +263,7 @@ def test_all_responses_have_timestamp():
     """Every handler response includes a timestamp field."""
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -287,7 +293,7 @@ def test_constraint_handlers_side_effects():
     """create/remove_constraint handlers actually update WorldModel state."""
     kernel = MockKernel()
     wm = MockWorldModel()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
@@ -333,7 +339,7 @@ def test_end_to_end_agent_with_handlers():
 
     # Set up handlers + executor
     executor = ToolExecutor()
-    handlers = TaskToolHandlers(task_id="t1", kernel=kernel, world_model=wm)
+    handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     handlers.register_all(executor)
 
     # Mock LLM: query_world → start_job → text
