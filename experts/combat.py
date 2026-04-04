@@ -47,6 +47,12 @@ _PURSUIT_LOST_RADIUS = 200.0  # Distance beyond which pursuit is abandoned
 _HARASS_DISENGAGE_HP = 0.6  # HP ratio to disengage in harass mode
 _SURROUND_ANGLES = [0, 90, 180, 270]  # Degrees for surround flanks
 _SURROUND_OFFSET = 80  # Distance from target for surround approach points
+_MAX_ADVANCE_TICKS = 20  # Ticks to advance without seeing an enemy before giving up
+_ADVANCE_STEP = 8  # How far each advance tick moves toward threat direction
+# Per-unit scatter offsets when advancing (avoids all units stacking on one point)
+_ADVANCE_OFFSETS: list[tuple[int, int]] = [
+    (0, 0), (5, 0), (-5, 0), (0, 5), (0, -5), (5, 5), (-5, -5), (5, -5)
+]
 
 
 class CombatJob(BaseJob):
@@ -80,6 +86,7 @@ class CombatJob(BaseJob):
         self._pursuit_origin: Optional[tuple[int, int]] = None
         self._harass_disengage = False
         self._has_seen_enemy = False
+        self._advance_ticks = 0
 
     @property
     def expert_type(self) -> str:
@@ -155,7 +162,8 @@ class CombatJob(BaseJob):
         if not enemies:
             if self._has_seen_enemy:
                 self._complete("succeeded", f"Area {config.target_position} cleared")
-            else:
+            elif config.engagement_mode == EngagementMode.HOLD:
+                # Hold mode never advances — give up immediately
                 self._complete(
                     "partial",
                     "当前没有可见敌方目标，建议先执行侦察",
@@ -164,9 +172,24 @@ class CombatJob(BaseJob):
                         "recommendation": recon_first_recommendation(),
                     },
                 )
+            else:
+                # Advance toward threat direction; give up after MAX_ADVANCE_TICKS
+                self._advance_ticks += 1
+                if self._advance_ticks > _MAX_ADVANCE_TICKS:
+                    self._complete(
+                        "partial",
+                        "推进后未发现敌方目标，建议先执行侦察",
+                        extra_data={
+                            "impact": {"kind": "target_visibility", "effects": ["no_visible_enemy"]},
+                            "recommendation": recon_first_recommendation(),
+                        },
+                    )
+                else:
+                    self._advance_toward_threat(actor_ids, config)
             return
 
         self._has_seen_enemy = True
+        self._advance_ticks = 0  # reset on contact
 
         if config.engagement_mode == EngagementMode.ASSAULT:
             self._engage_assault(actor_ids, enemies)
@@ -227,16 +250,27 @@ class CombatJob(BaseJob):
     # --- Engagement mode implementations ---
 
     def _engage_assault(self, actor_ids: list[int], enemies: list[dict]) -> None:
-        """Assault: all units attack the closest enemy."""
-        target = enemies[0]
-        target_id = target.get("actor_id")
-        if target_id is not None:
-            try:
-                self._attack_unit(actor_ids, target_id)
-            except Exception:
-                # Fallback to attack-move toward enemy position
-                pos = tuple(target.get("position", [0, 0]))
-                self._move_units(actor_ids, pos, attack_move=True)
+        """Assault: each unit independently attacks its nearest enemy."""
+        for aid in actor_ids:
+            result = self.world_model.query("actor_by_id", {"actor_id": aid})
+            actor = result.get("actor") if isinstance(result, dict) else None
+            actor_pos = tuple(actor["position"]) if actor and actor.get("position") else None
+
+            if actor_pos is not None:
+                nearest = min(
+                    enemies,
+                    key=lambda e: self._distance(tuple(e.get("position", [0, 0])), actor_pos),
+                )
+            else:
+                nearest = enemies[0]
+
+            target_id = nearest.get("actor_id")
+            if target_id is not None:
+                try:
+                    self._attack_unit([aid], target_id)
+                except Exception:
+                    pos = tuple(nearest.get("position", [0, 0]))
+                    self._move_units([aid], pos, attack_move=True)
 
     def _engage_harass(self, actor_ids: list[int], enemies: list[dict], config: CombatJobConfig) -> None:
         """Harass: attack then disengage if pressured."""
@@ -303,6 +337,49 @@ class CombatJob(BaseJob):
                 int(target_pos[1] + _SURROUND_OFFSET * 1.5 * math.sin(angle_rad)),
             )
             self._move_units(group, approach_pos, attack_move=True)
+
+    # --- Advance helpers ---
+
+    def _advance_toward_threat(self, actor_ids: list[int], config: CombatJobConfig) -> None:
+        """Attack-move each unit toward threat direction with scatter offsets."""
+        threat = self._choose_threat_direction(config.target_position)
+        centroid = self._unit_centroid(actor_ids) or config.target_position
+        anchor = self._step_toward(centroid, threat, _ADVANCE_STEP)
+        for i, aid in enumerate(actor_ids):
+            dx, dy = _ADVANCE_OFFSETS[i % len(_ADVANCE_OFFSETS)]
+            dest = (anchor[0] + dx, anchor[1] + dy)
+            self._move_units([aid], dest, attack_move=True)
+
+    def _choose_threat_direction(self, fallback_pos: tuple[int, int]) -> tuple[int, int]:
+        """Return the best guess at where enemies are. Priority: known positions → map center → fallback."""
+        # Priority 1: known enemy actor positions centroid
+        result = self.world_model.query("enemy_actors")
+        actors = result.get("actors", []) if isinstance(result, dict) else []
+        if actors:
+            xs = [a["position"][0] for a in actors if a.get("position")]
+            ys = [a["position"][1] for a in actors if a.get("position")]
+            if xs and ys:
+                return (sum(xs) // len(xs), sum(ys) // len(ys))
+
+        # Priority 2: map center
+        map_info = self.world_model.query("map")
+        if isinstance(map_info, dict):
+            w = map_info.get("width", 0)
+            h = map_info.get("height", 0)
+            if w and h:
+                return (w // 2, h // 2)
+
+        # Fallback: target_position + slight advance
+        return (fallback_pos[0] + 20, fallback_pos[1] + 20)
+
+    @staticmethod
+    def _step_toward(start: tuple[int, int], goal: tuple[int, int], step: int) -> tuple[int, int]:
+        """Move one step from start toward goal (Manhattan direction)."""
+        dx = goal[0] - start[0]
+        dy = goal[1] - start[1]
+        if abs(dx) > abs(dy):
+            return (start[0] + (step if dx > 0 else -step), start[1])
+        return (start[0], start[1] + (step if dy > 0 else -step))
 
     # --- Helpers ---
 

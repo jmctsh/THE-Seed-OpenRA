@@ -111,15 +111,15 @@ def test_approaching_to_engaging():
 
 
 def test_engaging_clears_area():
-    """When no enemies were ever visible, combat falls back to recon-first."""
-    job, signals, api, wm = make_job(target=(100, 100))
+    """Hold mode: when no enemies ever visible, immediately falls back to recon-first."""
+    job, signals, api, wm = make_job(engagement_mode=EngagementMode.HOLD, target=(100, 100))
     wm.set_actor(57, (100, 100))
     wm.set_enemies([])  # No enemies
     job.on_resource_granted(["actor:57"])
 
-    # Start near target → engaging → no enemies → completed
+    # Start near target → engaging → no enemies → hold doesn't advance → completed
     job.do_tick()  # approaching → engaging (close enough)
-    job.do_tick()  # engaging → no enemies → completed
+    job.do_tick()  # engaging → no enemies → hold immediately completes partial
 
     assert job.phase == CombatPhase.COMPLETED
     assert job.status == JobStatus.SUCCEEDED
@@ -281,6 +281,63 @@ def test_combat_expert_creates_job():
     print("  PASS: combat_expert_creates_job")
 
 
+def test_assault_advances_when_no_enemy():
+    """Assault mode: when no enemies visible, issues attack-move advance instead of completing."""
+    job, signals, api, wm = make_job(engagement_mode=EngagementMode.ASSAULT, target=(100, 100))
+    wm.set_actor(57, (100, 100))
+    wm.set_enemies([])  # No enemies visible
+    job.on_resource_granted(["actor:57"])
+
+    job.do_tick()  # approaching → engaging
+    job.do_tick()  # engaging: no enemies → advance (NOT complete)
+
+    assert job.phase != CombatPhase.COMPLETED, "Assault should advance, not immediately complete"
+    # Should have issued an attack-move
+    advance_moves = [c for c in api.move_calls if c["attack_move"]]
+    assert len(advance_moves) >= 1, "Expected at least one attack-move advance"
+    print("  PASS: assault_advances_when_no_enemy")
+
+
+def test_assault_completes_partial_after_max_advance():
+    """Assault mode: completes partial after _MAX_ADVANCE_TICKS of advancing with no enemy."""
+    from experts.combat import _MAX_ADVANCE_TICKS
+    job, signals, api, wm = make_job(engagement_mode=EngagementMode.ASSAULT, target=(100, 100))
+    wm.set_actor(57, (100, 100))
+    wm.set_enemies([])
+    job.on_resource_granted(["actor:57"])
+
+    job.do_tick()  # approaching → engaging
+    for _ in range(_MAX_ADVANCE_TICKS + 2):
+        job.do_tick()
+
+    assert job.phase == CombatPhase.COMPLETED
+    assert any(s.result == "partial" for s in signals)
+    assert signals[-1].data["recommendation"]["kind"] == "recon_first"
+    print("  PASS: assault_completes_partial_after_max_advance")
+
+
+def test_assault_per_unit_nearest_enemy_targeting():
+    """Assault mode: each unit attacks its own nearest enemy, not all the same target."""
+    job, signals, api, wm = make_job(engagement_mode=EngagementMode.ASSAULT, target=(100, 100))
+    # Unit 57 is near enemy 201; unit 58 is near enemy 202
+    wm.set_actor(57, (90, 90))
+    wm.set_actor(58, (180, 180))
+    wm.set_enemies([
+        {"actor_id": 201, "position": [95, 95]},    # close to unit 57
+        {"actor_id": 202, "position": [175, 175]},  # close to unit 58
+    ])
+    job.on_resource_granted(["actor:57", "actor:58"])
+
+    job.do_tick()  # approaching → engaging (both units near target)
+    job.do_tick()  # engaging: per-unit targeting
+
+    targets_used = {c["target"] for c in api.attack_calls}
+    # Both enemies should be targeted
+    assert 201 in targets_used, f"Unit 57 should target nearby enemy 201, got {targets_used}"
+    assert 202 in targets_used, f"Unit 58 should target nearby enemy 202, got {targets_used}"
+    print("  PASS: assault_per_unit_nearest_enemy_targeting")
+
+
 def test_progress_signal_emitted():
     """Progress signals are emitted periodically."""
     job, signals, api, wm = make_job(target=(500, 500))
@@ -313,5 +370,8 @@ if __name__ == "__main__":
     test_chase_distance_constraint_clamp()
     test_combat_expert_creates_job()
     test_progress_signal_emitted()
+    test_assault_advances_when_no_enemy()
+    test_assault_completes_partial_after_max_advance()
+    test_assault_per_unit_nearest_enemy_targeting()
 
-    print(f"\nAll 11 tests passed!")
+    print(f"\nAll 14 tests passed!")
