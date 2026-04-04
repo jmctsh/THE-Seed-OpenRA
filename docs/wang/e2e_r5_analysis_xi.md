@@ -52,23 +52,30 @@ Session: session-20260404T192621Z | 17 tasks | ~6 min | deepseek-chat
 
 ---
 
-## 2. "所有部队，深度探索" (t_2e54072e)
+## 2. "所有部队，深度探索" (t_2e54072e) — 73.8s, 25 LLM calls, 未完成
 
-**LLM 决策**：
-- 创建了 8+ 个 scout_map 调用，scout_count 从 10→20→30 疯狂递增
-- 大量 patch_job 调用修改参数
-- 总共 23 个 tool call
-- **任务未完成**：session 结束时仍在运行（无 agent_stopped/task_completed）
+**LLM 决策（25 wakes, 23 tool calls）**：
+- 9 次 scout_map：请求 10→20→30→14→15→15→20→21→10 = **155 个侦察兵**
+- 9 次 patch_job：修改已有 job 参数（大部分无效，目标 job 无资源）
+- 4 次 query_world + 1 次 send_task_message
+
+**10 个 ReconExpert Job**（含 rule router 自动创建的第 1 个）：
+- **4 个完成**（partial）：前 4 个 job 获得 74 次 resource_granted
+- **6 个零资源**：jobs 5-10 创建后从未收到任何单位，立即 resource_lost
+- **59 次 job_paused / 59 次 job_resumed** — 大量 pause/resume 抖动
+
+**探索进度**：14.1% → 43.7%（+29.6%），前 4 个 job 有效，但 task 从未调用 complete_task
 
 **问题**：
-1. **过度创建 job**：每次 scout_map 创建新 ReconExpert job，不是修改已有的。8+ 个并行 ReconJob 抢夺同一批 actor 资源
-2. **scout_count 通胀**：30 个侦察兵 → 实际可能只有 ~20 个可用单位，资源不足导致 resource_lost 信号循环
-3. **��终止条件**：LLM 不知道什么时候该停止创建新的 scout job
+1. **过度创建 job**：10 个并行 ReconJob 中 6 个从未获得资源 — 纯粹浪费
+2. **patch_job 空转**：9 次 patch_job 中大部分目标 job 无资源，修改参数无实际效果
+3. **无终止条件**：43.7% 探索度 + 21 个闲置单位 + 全部 job waiting/failed = 死循环
+4. **LLM 不理解资源竞争**：不断创建新 job 但不知道单位已被旧 job 占用
 
 **根因**：
-- SYSTEM_PROMPT 没有限制同类 job 并行数量的指导
-- LLM 不理解 scout_count 和实际可用单位的关系
-- 缺少 "探索目标已基本达成" 的判断信号
+- LLM 无法观测到 per-job 实际分配的 actor 数量（context 缺少此信息）
+- SYSTEM_PROMPT 无同类 job 并行上限指导
+- 缺少 "active_resource_grants_per_job" 信息暴露给 context
 
 ---
 
@@ -89,56 +96,69 @@ Session: session-20260404T192621Z | 17 tasks | ~6 min | deepseek-chat
 
 ---
 
-## 4. "爆兵" (t_b6bf1718) — SUCCEEDED
+## 4. "爆兵" (t_b6bf1718) — SUCCEEDED（但实际产出远低于预期）
 
-**LLM 决策（2 wakes, 19 LLM calls）**：
+**LLM 决策（2 wakes, 19 LLM calls, 13 jobs created）**：
 1. query_world → 评估产能
-2. 批量下单：e1×10(步兵) + 2tnk×5(坦��) ✅ 同时利用两条产线
-3. e2×5(掷弹兵) + jeep×3(吉普) — 补充兵种多样性 ✅
-4. e3×5(火箭兵) — 反装甲 ✅
-5. 发现电力不足 → powr×2 ✅
-6. 持续追加：e1×5, 2tnk×3, jeep×2, 2tnk×5, e1×10, e2×5
-7. complete_task(succeeded)
+2. e1×10(repeat) + 2tnk×5(repeat) — 双产线意图正确，但 2tnk 立即 cannot_produce
+3. e2×5 — **FAILED**: "缺少前置建筑（兵营）" ⚠️ 兵营实际存在，**prerequisite 检查 bug**
+4. jeep×3 — **FAILED**: cannot_produce + utf-8 codec error
+5. e3×5 — 成功 ✅
+6. 发现电力不足 → powr×2 ✅
+7. 重试 2tnk×3, jeep×2, 2tnk×5 — 全部失败（cannot_produce / REQUEST_ID_MISMATCH）
+8. 继续 e1×5, e1×10, e2×5 — e1 成功，e2 仍 cannot_produce
+9. complete_task(succeeded) — 在 51 单位时自评成功
 
-**产出统计**：
-- 步兵线：e1×25, e2×10, e3×5 = 40 步兵
-- 车辆线：2tnk×13, jeep×5 = 18 车辆
-- 建筑：powr×2（补电）
-- 总部队 15→51（+240%）
+**实际产出 vs 下单量**：
+- ✅ e1: **16 个**（1+10+5 produced），下单 26
+- ✅ e3: **5 个**
+- ❌ 2tnk: **0 个**（下单 13，3 次尝试全部 cannot_produce）
+- ❌ jeep: **0 个**（下单 5，2 次尝试全部失败）
+- ❌ e2: **0 个**（下单 10，2 次尝试全部 cannot_produce）
+- ✅ powr: 2 个
+- **实际新增 21 个步兵**，总部队 15→51（含预存单位），Job 成功率 4/13（31%）
 
-**评价**：出色。多兵种混编，识别电力瓶颈并解决，充分利用 Infantry + Vehicle 双产线。19 次 LLM call 都在有效推进。
+**新发现 bug**：
+- **R5-4**: e2 cannot_produce "缺少前置建筑（兵营）" — 兵营存在，prerequisite 检查逻辑有 bug
+- **R5-5**: 2tnk/jeep 持续 cannot_produce — 可能缺高级前置，但 LLM 未诊断就反复重试 3 次
+- **R5-6**: GameAPI utf-8 codec error + REQUEST_ID_MISMATCH — 并发队列操作触发运行时 bug
+
+**评价**：意图正确（多兵种、双产线、补电），但实际效果差 — 零车辆产出，31% job 成功率。LLM 对 cannot_produce 缺乏诊断能力，自评 summary 声称"坦克、吉普车"在生产，与事实不符。
 
 ---
 
 ## 5. 细节问题
 
-### t_9340bc8e + t_1d488453：重复建造 2 个 weap
+### t_9340bc8e + t_1d488453：重复建造 weap — 更严重的问题
 
-- **t_9340bc8e**：produce_units(weap) → succeeded（3 LLM calls）
-- **t_1d488453**：query_world → produce_units(weap) → query_world → succeeded（4 LLM calls）
+- **t_9340bc8e**（label 009, 13s, 3 LLM calls）：produce_units(weap) → succeeded
+- **t_1d488453**（label 010, 10s, 4 LLM calls）：query_world → produce_units(weap) → query_world → succeeded
 
-**问题**：两个独立 task 都建了 weap。**这不是 LLM bug** — 每个 TaskAgent 只看自己的 task，不知道另一个也在建 weap。Adjutant 应在创建 task 前检查 `other_active_tasks` 是否已有相同目标。
+**深度发现**：两个 task 的 EconomyExpert job 都是 **ABORTED**（非 succeeded）。只建了 1 个车厂，但两个 task 都通过 `query_world` 看到 `war_factory_count=1`，各自抢先 `complete_task(succeeded)`。Job 被 Kernel 在 task 结束时强制 abort。
 
-**但实际上**：2 个车厂在 RA 中是有用的（双产线加速车辆生产），所以也不算严重浪费。问题是玩家可能不想要 2 个。
+**问题**：
+1. **Job aborted 但 task 声称 succeeded** — LLM 绕过 job 生命周期，直接读 game state 判定完成（与 R5-2 同类问题）
+2. 两个 task 竞争同一 Building queue，只产出 1 个 weap 但 2 个 task 都标记成功
+3. Adjutant 在 3 秒内创建了 2 个相同目标的 task
 
-### t_393d4d53 "大电" — SUCCEEDED 但可疑
+### t_393d4d53 "大电" — SUCCEEDED（边界时序巧合）
 
-**LLM 决策**：
-1. query_world → 发现 apwr(大电) 已在 bootstrap EconomyExpert 中
-2. 直接 complete_task(succeeded, "核电厂建造任务已由EconomyExpert接管并正在执行中")
+**LLM 决策（2 LLM calls, 5s）**：
+1. query_world(economy_status) → 电力 300/260 充足
+2. complete_task(succeeded, "核电厂建造任务已由EconomyExpert接管并正在执行中")
 
-**问题**：**假 succeeded**。LLM 看到 bootstrap 已创建 EconomyExpert job，就判断 "已接管" 并标记成功。但实际建造可能还没完成。这是 SYSTEM_PROMPT `完成判定` 规则的边界情况 — bootstrap job 正在运行不等于 succeeded。
+**深度发现**：Job j_e33008d4（Kernel NLU 自动派发）实际在 19:30:59 succeeded（expert_signal "生产完成 1/1: 核电站"），LLM 响应在 19:30:59.568 返回。Job 恰好在 LLM 推理期间完成，所以结果碰巧正确。
 
-**根因**：LLM 将 "job 正在运行" 误判为 "任务已完成"。需要在 prompt 中强调 "succeeded 要求 job status=succeeded，不能是 running"。
+**问题**：LLM 推理文本说 "任务正在运行中...需要等待"，但同一轮就调了 complete_task — 自相矛盾。Summary 说"正在执行中"而非"已完成"。如果 job 晚 1 秒完成就会是真正的假 succeeded。
 
-### t_7ee73a6c "机场" — SUCCEEDED
+### t_7ee73a6c "机场" — SUCCEEDED（自修复重复 job）
 
-**LLM 决策**：
-1. produce_units(afld, Building) — 造机场 ✅
-2. abort_job — 中止了一个 job（可能是 bootstrap 创建的重复 job）
-3. complete_task(succeeded)
+**LLM 决策（3 LLM calls, 9s）**：
+1. produce_units(afld, Building) — 创建第二个 job（j_b0a0d7ff）
+2. abort_job(j_b0a0d7ff) — 发现已有 j_8e145eb8（Kernel 自动派发），主动清理重复
+3. complete_task(succeeded) — j_8e145eb8 已 succeeded
 
-**评价**：看起来正常。abort_job 可能是因为 bootstrap 和 LLM 都创建了 job，LLM 清理了重复的。3 次 LLM call 完成，高效。
+**评价**：Kernel 在 task 创建时自动派发了 j_8e145eb8，LLM 不知情又创建了一个。但 LLM 在下一轮发现两个 job 后正确 abort 了重复的。最终结果正确，但暴露了 **bootstrap 与 LLM 重复创建 job** 的系统性问题。
 
 ---
 
@@ -149,19 +169,24 @@ Session: session-20260404T192621Z | 17 tasks | ~6 min | deepseek-chat
 | ID | 问题 | 根因 | 建议修复 |
 |---|---|---|---|
 | R5-1 | ReconJob 30s 超时太短，探索度 <10% 就失败 | `_max_explore_time_s` 硬编码过小 | 延长到 120-180s，或改为基于 gain_rate 动态判断 |
-| R5-2 | "大电" 假 succeeded — job 还在 running 就标记完成 | LLM 将 "job 已启动" 误判为 "任务完成" | SYSTEM_PROMPT 强调 succeeded 要求至少一个 job status=succeeded |
-| R5-3 | 多 scout_map 并行抢资源 → 无限循环 | LLM 不理解 resource 竞争，不知何时停止 | 限制同类 job 并行数 or 在 runtime_facts 暴露 active_job_count_by_expert |
+| R5-2 | LLM 绕过 job 生命周期判定完成 — 读 game state 而非等 job succeeded | SYSTEM_PROMPT 完成判定规则未阻止（weap 两个 task 都这样） | handle_complete_task 硬拒绝无 succeeded job 的 complete_task |
+| R5-3 | 多 scout_map 并行抢资源 → 6/10 job 零资源死循环 | context 缺少 per-job actor 分配信息 | 暴露 resource_grants_per_job + 限制同类 job 并行数 |
+| R5-4 | e2 cannot_produce "缺少兵营" — 兵营实际存在 | prerequisite 检查逻辑 bug（knowledge.py?） | 修复 prerequisite 检查 |
+| R5-5 | 2tnk/jeep cannot_produce — LLM 重试 3 次不诊断 | 可能缺高级前置 + LLM 无诊断 prompt | 暴露具体缺少的前置条件 |
+| R5-6 | GameAPI utf-8 codec error + REQUEST_ID_MISMATCH | 并发队列操作触发运行时 bug | 调查 GameAPI 并发安全性 |
 
 ### 次要问题
 
 | ID | 问题 | 说明 |
 |---|---|---|
-| R5-4 | 重复建造 weap（2 个独立 task） | 多 task 协调问题，非单 task LLM bug |
-| R5-5 | 机场 task 中 abort_job 清理重复 job | bootstrap 和 LLM 都创建了 job，不算 bug 但可优化 |
+| R5-7 | 重复建造 weap（2 个独立 task 竞争 1 个产出） | Adjutant 3 秒内创建 2 个相同目标 task |
+| R5-8 | Kernel 自动派发 + LLM 重复创建 job（机场 task） | bootstrap 与 LLM 创建 job 的协调问题，LLM 能自修复 |
+| R5-9 | "大电" summary 说"正在执行中"但标记 succeeded | LLM 推理文本与 tool call 自相矛盾（结果碰巧正确） |
 
 ### 正面发现
 
-- **经济决策质量高**："继续发展经济" 和 "爆兵" 策略完全合理
+- **经济决策质量高**："继续发展经济" 5/5 job 全部成功，策略完全合理
 - **自主问题解决**："深度探索" 中自主判断需要雷达+补电，策略正确
-- **LLM 0 失败**：R4-2 修复后 context 大幅缩小，无一次超限
-- **爆兵效率**：2 wakes, 19 LLM calls 生产 58 个单位 + 2 电厂，决策密度极高
+- **LLM 0 失败**：R4-2 修复后 context 大幅缩小，无一次 BadRequestError
+- **探索有效率**：mass recon 前 4 个 job 将探索从 14% 推到 44%
+- **LLM 自修复能力**：机场 task 中 LLM 发现重复 job 后主动 abort 清理

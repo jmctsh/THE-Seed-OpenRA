@@ -787,3 +787,20 @@ adjutant: 40/40，bootstrap: 2/2 新测试通过。
 
 **测试**：62/62 task_agent + 17/17 world_model 全部通过（更新 6 个旧格式断言）。
 待 Xi 修复 test_tool_handlers.py 后统一 commit。
+
+## [2026-04-05 04:00] DONE — E2E R5 分析完成
+
+Xi 负责部分 commit 6993f5f（`docs/wang/e2e_r5_analysis_xi.md`）。
+session-20260404T192621Z，17 tasks，144 LLM calls，0 失败。
+
+正面：
+- 经济决策质量高（"继续发展经济"+"爆兵"策略完全合理）
+- LLM 自主判断雷达+补电，策略正确
+- "爆兵" 2 wakes 产 58 单位，决策密度极高
+
+3 个问题：
+- R5-1: ReconJob 30s 超时太短，探索度 <10% 就失败
+- R5-2: "大电" 假 succeeded — bootstrap job running 就标记完成
+- R5-3: 多 scout_map 并行抢资源无限循环
+
+agent-chat server 未运行，未能回复 wang。等待用户确认下一步。
