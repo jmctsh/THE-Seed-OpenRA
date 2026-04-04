@@ -1108,6 +1108,189 @@ def test_conversation_window_bounds_message_size() -> None:
     print("  PASS: conversation_window_bounds_message_size")
 
 
+# --- Smart wake tests ---
+
+def test_smart_wake_skips_llm_when_no_new_info() -> None:
+    """Timer wake with no new signals and unchanged job statuses skips LLM."""
+    task = make_task()
+    provider = MockProvider()
+    # Only one LLM response — second wake should be skipped
+    provider.add_response(LLMResponse(text="monitoring, no action", model="mock"))
+
+    job = make_job()
+    calls_to_jobs_provider = [0]
+
+    def jobs_provider(task_id):
+        calls_to_jobs_provider[0] += 1
+        return [job]
+
+    agent = TaskAgent(
+        task=task,
+        llm=provider,
+        tool_executor=make_executor(),
+        jobs_provider=jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.001, max_turns=1),
+    )
+
+    async def run():
+        # Wake 1: has job, no snapshot yet → runs LLM, sets snapshot
+        await agent._wake_cycle(trigger="init")
+        assert provider._call_count == 1
+
+        # Wake 2: same job, no signals → smart skip
+        await agent._wake_cycle(trigger="timer")
+        assert provider._call_count == 1  # LLM NOT called again
+
+    asyncio.run(run())
+    print("  PASS: smart_wake_skips_llm_when_no_new_info")
+
+
+def test_smart_wake_runs_llm_when_signal_arrives() -> None:
+    """Wake with a new signal must NOT be skipped."""
+    task = make_task()
+    provider = MockProvider()
+    provider.add_response(LLMResponse(text="processing signal", model="mock"))
+    provider.add_response(LLMResponse(text="processing signal 2", model="mock"))
+
+    job = make_job()
+
+    agent = TaskAgent(
+        task=task,
+        llm=provider,
+        tool_executor=make_executor(),
+        jobs_provider=lambda _: [job],
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.001, max_turns=1),
+    )
+
+    async def run():
+        # Wake 1: first wake, runs LLM
+        await agent._wake_cycle(trigger="init")
+        assert provider._call_count == 1
+
+        # Push a signal before wake 2
+        agent.queue.push(ExpertSignal(
+            task_id=task.task_id, job_id=job.job_id,
+            kind=SignalKind.RESOURCE_LOST, summary="actor lost",
+        ))
+
+        # Wake 2: has signal → must NOT skip
+        await agent._wake_cycle(trigger="event_or_review")
+        assert provider._call_count == 2
+
+    asyncio.run(run())
+    print("  PASS: smart_wake_runs_llm_when_signal_arrives")
+
+
+def test_smart_wake_runs_llm_when_job_status_changes() -> None:
+    """Wake with changed job status must NOT be skipped."""
+    task = make_task()
+    provider = MockProvider()
+    provider.add_response(LLMResponse(text="ok", model="mock"))
+    provider.add_response(LLMResponse(text="job changed", model="mock"))
+
+    from models import JobStatus
+    job = make_job()
+
+    job_status = ["running"]
+
+    def jobs_provider(_):
+        j = make_job()
+        j.status = JobStatus(job_status[0])
+        return [j]
+
+    agent = TaskAgent(
+        task=task,
+        llm=provider,
+        tool_executor=make_executor(),
+        jobs_provider=jobs_provider,
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.001, max_turns=1),
+    )
+
+    async def run():
+        # Wake 1: sets snapshot to {j1: running}
+        await agent._wake_cycle(trigger="init")
+        assert provider._call_count == 1
+
+        # Job status changes to waiting
+        job_status[0] = "waiting"
+
+        # Wake 2: snapshot differs → must NOT skip
+        await agent._wake_cycle(trigger="timer")
+        assert provider._call_count == 2
+
+    asyncio.run(run())
+    print("  PASS: smart_wake_runs_llm_when_job_status_changes")
+
+
+def test_smart_wake_no_skip_when_no_jobs() -> None:
+    """Wake with no jobs (agent needs to start some) is never skipped."""
+    task = make_task()
+    provider = MockProvider()
+    provider.add_response(LLMResponse(text="will start job", model="mock"))
+    provider.add_response(LLMResponse(text="still no job", model="mock"))
+
+    agent = TaskAgent(
+        task=task,
+        llm=provider,
+        tool_executor=make_executor(),
+        jobs_provider=lambda _: [],  # never any jobs
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.001, max_turns=1),
+    )
+
+    async def run():
+        await agent._wake_cycle(trigger="init")
+        assert provider._call_count == 1
+
+        # Wake 2: still no jobs → should NOT skip (agent may need to retry)
+        await agent._wake_cycle(trigger="timer")
+        assert provider._call_count == 2
+
+    asyncio.run(run())
+    print("  PASS: smart_wake_no_skip_when_no_jobs")
+
+
+def test_smart_wake_trigger_label_refined() -> None:
+    """Trigger is refined to 'event'/'review'/'timer' based on drained items."""
+    import logging_system
+    logging_system.clear()
+
+    task = make_task()
+    provider = MockProvider()
+    provider.add_response(LLMResponse(text="ok", model="mock"))
+
+    job = make_job()
+    agent = TaskAgent(
+        task=task,
+        llm=provider,
+        tool_executor=make_executor(),
+        jobs_provider=lambda _: [job],
+        world_summary_provider=noop_world_provider,
+        config=AgentConfig(review_interval=0.001, max_turns=1),
+    )
+
+    async def run():
+        # First wake sets snapshot
+        await agent._wake_cycle(trigger="init")
+
+        # Review wake (sentinel) with no real items → trigger should be "review"
+        # Since job snapshot matches, this will be skipped after refinement
+        agent.queue.trigger_review()
+        await agent._wake_cycle(trigger="event_or_review")
+
+        # Check slog for wake_skipped with trigger=review
+        records = logging_system.records()
+        skipped = [r for r in records if getattr(r, "event", None) == "wake_skipped"]
+        assert skipped, "Expected wake_skipped log entry"
+        assert skipped[-1].data.get("trigger") == "review"
+
+    asyncio.run(run())
+    print("  PASS: smart_wake_trigger_label_refined")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -1145,5 +1328,10 @@ if __name__ == "__main__":
     test_truncate_tool_result_summarises_large_data_list()
     test_truncate_tool_result_hard_truncates_large_non_list()
     test_conversation_window_bounds_message_size()
+    test_smart_wake_skips_llm_when_no_new_info()
+    test_smart_wake_runs_llm_when_signal_arrives()
+    test_smart_wake_runs_llm_when_job_status_changes()
+    test_smart_wake_no_skip_when_no_jobs()
+    test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 30 tests passed!")
+    print(f"\nAll 35 tests passed!")

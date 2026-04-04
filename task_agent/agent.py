@@ -225,6 +225,8 @@ class TaskAgent:
         self._last_llm_error: str = ""
         self._bootstrap_job_id: Optional[str] = None
         self._bootstrap_raw_text: Optional[str] = None
+        # Smart wake: skip LLM when there is no new information
+        self._last_job_snapshot: Optional[dict[str, str]] = None
 
     def set_runtime_facts_provider(self, provider: RuntimeFactsProvider) -> None:
         """Wire the runtime facts provider after construction (called by Kernel)."""
@@ -271,7 +273,10 @@ class TaskAgent:
                 )
                 if not self._running:
                     break
-                trigger = "event" if woken_by_event else "timer"
+                # Trigger label resolved after drain in _wake_cycle;
+                # pass raw woken_by_event flag so the cycle can distinguish
+                # review-sentinel wakes from real event wakes.
+                trigger = "event_or_review" if woken_by_event else "timer"
                 await self._safe_wake_cycle(trigger=trigger)
         except asyncio.CancelledError:
             logger.info("TaskAgent cancelled: task_id=%s", self.task.task_id)
@@ -317,13 +322,22 @@ class TaskAgent:
     async def _wake_cycle(self, trigger: str) -> None:
         """One wake cycle: drain queue → context → multi-turn LLM loop."""
         self._wake_count += 1
-        logger.debug("Wake #%d trigger=%s task_id=%s", self._wake_count, trigger, self.task.task_id)
-        slog.debug("TaskAgent wake", event="agent_wake", task_id=self.task.task_id, wake=self._wake_count, trigger=trigger)
 
         # Drain pending signals and events
         items = self.queue.drain()
         signals = [i for i in items if isinstance(i, ExpertSignal)]
         events = [i for i in items if isinstance(i, Event)]
+
+        # Refine trigger label now that we know what arrived
+        if signals or events:
+            effective_trigger = "event"
+        elif trigger == "event_or_review":
+            effective_trigger = "review"
+        else:
+            effective_trigger = "timer"
+
+        logger.debug("Wake #%d trigger=%s task_id=%s", self._wake_count, effective_trigger, self.task.task_id)
+        slog.debug("TaskAgent wake", event="agent_wake", task_id=self.task.task_id, wake=self._wake_count, trigger=effective_trigger)
 
         # Separate open decisions (decision_request signals)
         open_decisions = [s for s in signals if s.kind == SignalKind.DECISION_REQUEST]
@@ -342,6 +356,24 @@ class TaskAgent:
             return
         if self._bootstrap_job_id is not None:
             return
+
+        # Smart wake: skip LLM when there is no new information.
+        # Only applies once at least one job exists (first wake must always
+        # reach the LLM so it can start jobs).
+        if not signals and not events and jobs:
+            current_snapshot = {j.job_id: j.status.value for j in jobs}
+            if current_snapshot == self._last_job_snapshot:
+                slog.debug(
+                    "TaskAgent wake skipped: no new signals/events, job statuses unchanged",
+                    event="wake_skipped",
+                    task_id=self.task.task_id,
+                    wake=self._wake_count,
+                    trigger=effective_trigger,
+                )
+                return
+
+        # Update job snapshot — recorded just before we commit to an LLM call
+        self._last_job_snapshot = {j.job_id: j.status.value for j in jobs}
 
         world = self._world_provider()
         facts = self._runtime_facts_provider(self.task.task_id) if self._runtime_facts_provider else {}
