@@ -49,7 +49,7 @@ _DEPLOY_KEYWORDS = (
 # --- Protocol interfaces ---
 
 class KernelLike(Protocol):
-    def create_task(self, raw_text: str, kind: str, priority: int) -> Any: ...
+    def create_task(self, raw_text: str, kind: str, priority: int, info_subscriptions: Optional[list] = None) -> Any: ...
     def start_job(self, task_id: str, expert_type: str, config: Any) -> Any: ...
     def submit_player_response(self, response: PlayerResponse, *, now: Optional[float] = None) -> dict[str, Any]: ...
     def list_pending_questions(self) -> list[dict[str, Any]]: ...
@@ -62,6 +62,15 @@ class WorldModelLike(Protocol):
     def query(self, query_type: str, params: Optional[dict[str, Any]] = None) -> Any: ...
     def refresh_health(self) -> dict[str, Any]: ...
 
+
+# Maps expert type → initial info_subscriptions for the created Task.
+_EXPERT_SUBSCRIPTIONS: dict[str, list] = {
+    "CombatExpert":    ["threat"],
+    "ReconExpert":     ["threat"],
+    "MovementExpert":  ["threat"],
+    "EconomyExpert":   ["base_state", "production"],
+    "DeployExpert":    ["base_state"],
+}
 
 # --- Classification result ---
 
@@ -715,10 +724,12 @@ class Adjutant:
         )
 
     def _start_direct_job(self, raw_text: str, expert_type: str, config: Any) -> tuple[Any, Any]:
+        subscriptions = _EXPERT_SUBSCRIPTIONS.get(expert_type, ["threat", "base_state"])
         task = self.kernel.create_task(
             raw_text=raw_text,
             kind=self.config.default_task_kind,
             priority=self.config.default_task_priority,
+            info_subscriptions=subscriptions,
         )
         job = self.kernel.start_job(task.task_id, expert_type, config)
         return task, job
@@ -964,6 +975,7 @@ class Adjutant:
                 raw_text=text,
                 kind=self.config.default_task_kind,
                 priority=self.config.default_task_priority,
+                info_subscriptions=["threat", "base_state"],
             )
             return {
                 "type": "command",

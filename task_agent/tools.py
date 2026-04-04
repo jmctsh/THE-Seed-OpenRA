@@ -360,6 +360,35 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "update_subscriptions",
+            "description": (
+                "Modify which Info Expert data sources are included in your context each wake cycle. "
+                "Use this to add or remove optional data feeds mid-task. "
+                "Available keys: 'threat' (enemy threat assessment), "
+                "'base_state' (base health and production status), "
+                "'production' (production advisor). "
+                "Example: add=['threat'] when scouting reveals enemy forces."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "add": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["threat", "base_state", "production"]},
+                        "description": "Subscription keys to add.",
+                    },
+                    "remove": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": ["threat", "base_state", "production"]},
+                        "description": "Subscription keys to remove.",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "send_task_message",
             "description": (
                 "Send a message to the player. Use this to communicate task progress, warnings, or ask for clarification. "

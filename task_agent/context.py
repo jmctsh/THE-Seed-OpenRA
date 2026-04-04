@@ -13,6 +13,18 @@ from typing import Any, Optional
 
 from models import ExpertSignal, Event, Job, Task
 
+# Maps subscription key → frozenset of info_experts dict keys produced by that expert.
+_SUBSCRIPTION_KEYS: dict[str, frozenset] = {
+    "threat": frozenset({
+        "threat_level", "threat_direction", "enemy_count",
+        "enemy_composition_summary", "base_under_attack",
+    }),
+    "base_state": frozenset({
+        "base_established", "base_health_summary", "has_production",
+    }),
+    "production": frozenset(),  # placeholder — no production InfoExpert yet
+}
+
 
 @dataclass
 class WorldSummary:
@@ -139,6 +151,19 @@ def build_context_packet(
             evt_dict["data"] = evt.data
         events_list.append(evt_dict)
 
+    # Filter info_experts in runtime_facts based on task.info_subscriptions.
+    # Only keys belonging to subscribed experts are included; unsubscribed data is dropped.
+    final_runtime_facts = dict(runtime_facts or {})
+    subscriptions = getattr(task, "info_subscriptions", None)
+    if subscriptions is not None and "info_experts" in final_runtime_facts:
+        all_ie: dict = final_runtime_facts["info_experts"]
+        filtered_ie: dict = {}
+        for sub in subscriptions:
+            for k in _SUBSCRIPTION_KEYS.get(sub, frozenset()):
+                if k in all_ie:
+                    filtered_ie[k] = all_ie[k]
+        final_runtime_facts["info_experts"] = filtered_ie
+
     return ContextPacket(
         task=task_dict,
         jobs=jobs_list,
@@ -146,7 +171,7 @@ def build_context_packet(
         recent_signals=signals_list,
         recent_events=events_list,
         open_decisions=decisions_list,
-        runtime_facts=runtime_facts or {},
+        runtime_facts=final_runtime_facts,
     )
 
 

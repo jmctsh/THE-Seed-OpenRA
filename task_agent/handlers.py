@@ -20,6 +20,7 @@ from models import (
     TaskMessage,
     TaskMessageType,
 )
+from task_agent.context import _SUBSCRIPTION_KEYS as _VALID_SUBSCRIPTION_KEYS
 from models.configs import (
     CombatJobConfig,
     DeployJobConfig,
@@ -76,11 +77,12 @@ class TaskToolHandlers:
 
     def __init__(
         self,
-        task_id: str,
+        task: Task,
         kernel: KernelLike,
         world_model: WorldModelLike,
     ) -> None:
-        self.task_id = task_id
+        self.task = task
+        self.task_id = task.task_id
         self.kernel = kernel
         self.world_model = world_model
 
@@ -113,6 +115,8 @@ class TaskToolHandlers:
             # Bulk ops / comms
             "cancel_tasks": self.handle_cancel_tasks,
             "send_task_message": self.handle_send_task_message,
+            # Subscription management
+            "update_subscriptions": self.handle_update_subscriptions,
             # Internal bootstrap tool — not in TOOL_DEFINITIONS, used by agent.py bootstrap paths
             "start_job": self.handle_start_job,
         })
@@ -223,6 +227,17 @@ class TaskToolHandlers:
         constraint_id = args["constraint_id"]
         self.world_model.remove_constraint(constraint_id)
         return {"ok": True, "constraint_id": constraint_id, "timestamp": time.time()}
+
+    # --- Subscription management ---
+
+    async def handle_update_subscriptions(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
+        add = [k for k in (args.get("add") or []) if k in _VALID_SUBSCRIPTION_KEYS]
+        remove = [k for k in (args.get("remove") or []) if k in _VALID_SUBSCRIPTION_KEYS]
+        current = set(self.task.info_subscriptions)
+        current.update(add)
+        current.difference_update(remove)
+        self.task.info_subscriptions = sorted(current)
+        return {"subscriptions": self.task.info_subscriptions, "timestamp": time.time()}
 
     # --- Queries ---
 

@@ -208,7 +208,7 @@ class Kernel:
             self._handle_base_under_attack_auto_response,
         )
 
-    def create_task(self, raw_text: str, kind: TaskKind | str, priority: int) -> Task:
+    def create_task(self, raw_text: str, kind: TaskKind | str, priority: int, info_subscriptions: list | None = None) -> Task:
         with bm_span("tool_exec", name="kernel:create_task"):
             task_kind = kind if isinstance(kind, TaskKind) else TaskKind(kind)
             self._task_seq += 1
@@ -220,6 +220,7 @@ class Kernel:
                 priority=priority,
                 status=TaskStatus.RUNNING,
                 label=task_label,
+                info_subscriptions=list(info_subscriptions) if info_subscriptions else [],
             )
             tool_executor = self._build_tool_executor(task.task_id)
             agent = self.task_agent_factory(
@@ -653,9 +654,28 @@ class Kernel:
                 "query_world": self._tool_query_world,
                 "query_planner": self._tool_query_planner,
                 "cancel_tasks": self._tool_cancel_tasks,
+                "update_subscriptions": self._tool_update_subscriptions(task_id),
             }
         )
         return executor
+
+    def _tool_update_subscriptions(self, task_id: str) -> Any:
+        from task_agent.context import _SUBSCRIPTION_KEYS as _valid_keys
+        import time as _time
+
+        async def handler(_name: str, args: dict) -> dict:
+            task = self.tasks.get(task_id)
+            if task is None:
+                return {"ok": False, "error": "task not found", "timestamp": _time.time()}
+            add = [k for k in (args.get("add") or []) if k in _valid_keys]
+            remove = [k for k in (args.get("remove") or []) if k in _valid_keys]
+            current = set(task.info_subscriptions)
+            current.update(add)
+            current.difference_update(remove)
+            task.info_subscriptions = sorted(current)
+            return {"subscriptions": task.info_subscriptions, "timestamp": _time.time()}
+
+        return handler
 
     def _make_job_controller(self, task_id: str, expert_type: str, config: ExpertConfig) -> BaseJob | _ManagedJob:
         expert = self.expert_registry.get(expert_type)

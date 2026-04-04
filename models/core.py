@@ -42,6 +42,7 @@ class Task:
     created_at: float = field(default_factory=_now)
     timestamp: float = field(default_factory=_now)
     label: str = ""  # human-readable sequential label, e.g. "001"; set by Kernel on creation
+    info_subscriptions: list = field(default_factory=list)  # optional Info Expert keys: "threat", "base_state", "production"
 
 
 @dataclass

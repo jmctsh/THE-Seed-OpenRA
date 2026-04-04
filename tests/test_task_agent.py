@@ -1025,8 +1025,11 @@ def _make_handlers_executor(captured_jobs: list) -> ToolExecutor:
         def set_constraint(self, *a, **kw): pass
         def remove_constraint(self, *a, **kw): pass
 
+    from models import Task
+    from models.enums import TaskKind
+    stub_task = Task(task_id="t_test", raw_text="test", kind=TaskKind.MANAGED, priority=50)
     executor = ToolExecutor()
-    handlers = TaskToolHandlers("t_test", TrackingKernel(), StubWorldModel())
+    handlers = TaskToolHandlers(stub_task, TrackingKernel(), StubWorldModel())
     handlers.register_all(executor)
     return executor
 
@@ -1250,6 +1253,127 @@ def test_execute_tools_exception_isolation() -> None:
 
     asyncio.run(run())
     print("  PASS: execute_tools_exception_isolation")
+
+
+# --- Subscription tests ---
+
+def test_subscription_filters_info_experts_in_context() -> None:
+    """build_context_packet only includes info_experts keys matching task.info_subscriptions."""
+    from models import Task
+    from models.enums import TaskKind
+    from task_agent.context import build_context_packet
+
+    all_ie = {
+        "threat_level": "high",
+        "threat_direction": "northeast",
+        "enemy_count": 5,
+        "enemy_composition_summary": "tanks",
+        "base_under_attack": False,
+        "base_established": True,
+        "base_health_summary": "established",
+        "has_production": True,
+    }
+    runtime_facts = {"credits": 500, "info_experts": all_ie}
+
+    # No subscriptions → info_experts is empty
+    task_none = Task(task_id="t1", raw_text="t", kind=TaskKind.MANAGED, priority=50, info_subscriptions=[])
+    pkt = build_context_packet(task_none, [], runtime_facts=runtime_facts)
+    assert pkt.runtime_facts.get("info_experts") == {}
+
+    # threat subscription → only threat keys
+    task_threat = Task(task_id="t2", raw_text="t", kind=TaskKind.MANAGED, priority=50, info_subscriptions=["threat"])
+    pkt = build_context_packet(task_threat, [], runtime_facts=runtime_facts)
+    ie = pkt.runtime_facts["info_experts"]
+    assert "threat_level" in ie
+    assert "enemy_count" in ie
+    assert "base_established" not in ie
+
+    # base_state subscription → only base_state keys
+    task_base = Task(task_id="t3", raw_text="t", kind=TaskKind.MANAGED, priority=50, info_subscriptions=["base_state"])
+    pkt = build_context_packet(task_base, [], runtime_facts=runtime_facts)
+    ie = pkt.runtime_facts["info_experts"]
+    assert "base_established" in ie
+    assert "base_health_summary" in ie
+    assert "threat_level" not in ie
+
+    # both subscriptions → all keys
+    task_both = Task(task_id="t4", raw_text="t", kind=TaskKind.MANAGED, priority=50, info_subscriptions=["threat", "base_state"])
+    pkt = build_context_packet(task_both, [], runtime_facts=runtime_facts)
+    ie = pkt.runtime_facts["info_experts"]
+    assert "threat_level" in ie
+    assert "base_established" in ie
+
+    print("  PASS: subscription_filters_info_experts_in_context")
+
+
+def test_update_subscriptions_handler() -> None:
+    """update_subscriptions tool modifies task.info_subscriptions in-place."""
+    from models import Task
+    from models.enums import TaskKind
+    from task_agent.handlers import TaskToolHandlers
+    from task_agent.tools import ToolExecutor
+
+    task = Task(task_id="t_sub", raw_text="test", kind=TaskKind.MANAGED, priority=50,
+                info_subscriptions=["threat"])
+
+    class StubKernel:
+        def start_job(self, *a, **kw): ...
+        def complete_task(self, *a, **kw): return True
+        def patch_job(self, *a, **kw): return True
+        def pause_job(self, *a, **kw): return True
+        def resume_job(self, *a, **kw): return True
+        def abort_job(self, *a, **kw): return True
+        def cancel_tasks(self, *a, **kw): return 0
+        def register_task_message(self, *a, **kw): return True
+
+    class StubWM:
+        def query(self, *a, **kw): return {}
+        def set_constraint(self, *a, **kw): pass
+        def remove_constraint(self, *a, **kw): pass
+
+    executor = ToolExecutor()
+    handlers = TaskToolHandlers(task, StubKernel(), StubWM())
+    handlers.register_all(executor)
+
+    async def run():
+        # Add base_state
+        r1 = await executor.execute("tc1", "update_subscriptions", '{"add": ["base_state"]}')
+        assert r1.error is None
+        assert "base_state" in r1.result["subscriptions"]
+        assert "threat" in r1.result["subscriptions"]
+        assert sorted(task.info_subscriptions) == ["base_state", "threat"]
+
+        # Remove threat
+        r2 = await executor.execute("tc2", "update_subscriptions", '{"remove": ["threat"]}')
+        assert r2.error is None
+        assert task.info_subscriptions == ["base_state"]
+
+        # Invalid keys are silently dropped
+        r3 = await executor.execute("tc3", "update_subscriptions", '{"add": ["invalid_key"]}')
+        assert r3.error is None
+        assert task.info_subscriptions == ["base_state"]
+
+    asyncio.run(run())
+    print("  PASS: update_subscriptions_handler")
+
+
+def test_update_subscriptions_in_tool_definitions() -> None:
+    """update_subscriptions must appear in TOOL_DEFINITIONS."""
+    from task_agent.tools import get_tool_names
+    assert "update_subscriptions" in get_tool_names()
+    print("  PASS: update_subscriptions_in_tool_definitions")
+
+
+def test_adjutant_sets_subscriptions_from_expert_type() -> None:
+    """Adjutant _start_direct_job sets info_subscriptions based on expert_type."""
+    from adjutant.adjutant import _EXPERT_SUBSCRIPTIONS
+
+    assert _EXPERT_SUBSCRIPTIONS["CombatExpert"] == ["threat"]
+    assert _EXPERT_SUBSCRIPTIONS["ReconExpert"] == ["threat"]
+    assert _EXPERT_SUBSCRIPTIONS["MovementExpert"] == ["threat"]
+    assert set(_EXPERT_SUBSCRIPTIONS["EconomyExpert"]) == {"base_state", "production"}
+    assert _EXPERT_SUBSCRIPTIONS["DeployExpert"] == ["base_state"]
+    print("  PASS: adjutant_sets_subscriptions_from_expert_type")
 
 
 # --- Conversation compression tests ---
@@ -1643,6 +1767,11 @@ if __name__ == "__main__":
     # Parallel tool execution tests
     test_execute_tools_parallel()
     test_execute_tools_exception_isolation()
+    # Subscription mechanism tests
+    test_subscription_filters_info_experts_in_context()
+    test_update_subscriptions_handler()
+    test_update_subscriptions_in_tool_definitions()
+    test_adjutant_sets_subscriptions_from_expert_type()
     # Conversation compression tests
     test_trim_conversation_keeps_last_n_turns()
     test_trim_conversation_no_op_when_within_window()
@@ -1659,4 +1788,4 @@ if __name__ == "__main__":
     test_smart_wake_no_skip_when_no_jobs()
     test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 44 tests passed!")
+    print(f"\nAll 48 tests passed!")
