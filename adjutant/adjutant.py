@@ -45,6 +45,9 @@ _DEPLOY_KEYWORDS = (
     "deploy",
 )
 
+# Question patterns that should bypass NLU and go to LLM classification
+_QUESTION_RE = re.compile(r"(为什么|怎么|怎样|吗\s*[？?。！\s]?$|呢\s*[？?。！\s]?$|什么时候|如何|why|how\b)", re.IGNORECASE)
+
 
 # --- Protocol interfaces ---
 
@@ -79,6 +82,14 @@ class InputType:
     REPLY = "reply"
     QUERY = "query"
     CANCEL = "cancel"
+    ACK = "ack"
+
+
+_ACKNOWLEDGMENT_WORDS: frozenset[str] = frozenset({
+    "ok", "好", "好的", "收到", "知道了", "嗯", "行", "明白", "了解",
+    "好吧", "是的", "对", "嗯嗯", "哦", "哦哦", "好好", "懂了", "明白了",
+    "ok.", "ok!", "好！", "好。",
+})
 
 
 @dataclass
@@ -188,6 +199,12 @@ class Adjutant:
         """
         with bm_span("llm_call", name="adjutant:handle_input"):
             slog.info("Handling player input", event="player_input", text=text)
+            if text.strip().lower().rstrip(".,！。") in _ACKNOWLEDGMENT_WORDS:
+                # If there are pending questions, the ack is likely a reply — let normal flow handle it
+                if not self.kernel.list_pending_questions():
+                    self._record_dialogue("player", text)
+                    self._record_dialogue("adjutant", "收到")
+                    return {"type": InputType.ACK, "ok": True, "response_text": "收到", "timestamp": time.time()}
             deploy_feedback = self._maybe_handle_deploy_feedback(text)
             if deploy_feedback is not None:
                 slog.info(
@@ -302,6 +319,9 @@ class Adjutant:
         return None
 
     def _try_runtime_nlu(self, text: str) -> Optional[RuntimeNLUDecision]:
+        # Questions should not be routed as commands regardless of NLU confidence
+        if _QUESTION_RE.search(text.strip()):
+            return None
         try:
             decision = self._runtime_nlu.route(text)
         except Exception:

@@ -14,10 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import logging_system
 from llm import LLMResponse, MockProvider, ToolCall
 from models import (
+    EconomyJobConfig,
     ExpertSignal,
     Event,
     EventType,
     Job,
+    JobStatus,
     ReconJobConfig,
     SignalKind,
     Task,
@@ -729,9 +731,10 @@ def test_bootstrap_structure_build_maps_refinery_to_proc() -> None:
 
 
 def test_bootstrap_structure_build_completes_with_llm_running() -> None:
-    """Bootstrap pre-creates job AND LLM runs; completion via finalize path."""
+    """Bootstrap pre-creates job AND LLM runs; completion via job-status finalize path."""
     captured_start_jobs: list[dict] = []
     captured_completions: list[dict] = []
+    bootstrap_jobs: list[Job] = []
 
     async def start_job_handler(_name: str, args: dict) -> dict:
         captured_start_jobs.append(args)
@@ -751,17 +754,26 @@ def test_bootstrap_structure_build_completes_with_llm_running() -> None:
     executor.register("start_job", start_job_handler)
     executor.register("complete_task", complete_task_handler)
 
+    def dynamic_jobs_provider(task_id: str) -> list[Job]:
+        return list(bootstrap_jobs)
+
     agent = TaskAgent(
         task=make_task(raw_text="建造兵营"),
         llm=MockProvider([LLMResponse(text="正在监控兵营建造", model="mock")]),
         tool_executor=executor,
-        jobs_provider=noop_jobs_provider,
+        jobs_provider=dynamic_jobs_provider,
         world_summary_provider=noop_world_provider,
     )
 
     async def run():
         # Wake 1: bootstrap pre-creates job, LLM also runs
         await agent._wake_cycle(trigger="init")
+        # Job completes: update jobs registry to SUCCEEDED and push signal
+        bootstrap_jobs.append(Job(
+            job_id="j_bootstrap", task_id="t1", expert_type="EconomyExpert",
+            config=EconomyJobConfig(unit_type="barr", count=1, queue_type="Building"),
+            status=JobStatus.SUCCEEDED,
+        ))
         agent.push_signal(
             ExpertSignal(
                 task_id="t1",
@@ -771,7 +783,7 @@ def test_bootstrap_structure_build_completes_with_llm_running() -> None:
                 result="succeeded",
             )
         )
-        # Wake 2: _maybe_finalize_bootstrap_task handles completion, LLM not reached
+        # Wake 2: _maybe_finalize_bootstrap_task checks job status → completes
         await agent._wake_cycle(trigger="event")
 
     asyncio.run(run())
@@ -794,6 +806,61 @@ def test_bootstrap_structure_build_completes_with_llm_running() -> None:
     # LLM runs on wake 1 (bootstrap no longer blocks LLM)
     assert agent._total_llm_calls >= 1
     print("  PASS: bootstrap_structure_build_completes_with_llm_running")
+
+
+def test_bootstrap_finalizes_on_job_status_without_signal() -> None:
+    """BUG-A: bootstrap finalizes by job status even when terminal signal was already consumed.
+
+    Scenario: wake 1 has a TASK_COMPLETE signal but LLM returns text (not complete_task).
+    On wake 2 (no signal), _maybe_finalize_bootstrap_task must still finalize by
+    checking bootstrap job status directly — not waiting for another signal.
+    """
+    captured_completions: list[dict] = []
+
+    async def complete_task_handler(_name: str, args: dict) -> dict:
+        captured_completions.append(args)
+        return {"ok": True}
+
+    async def noop_handler(_name: str, _args: dict) -> dict:
+        return {"ok": True}
+
+    executor = ToolExecutor()
+    from task_agent.tools import get_tool_names
+    for name in get_tool_names():
+        executor.register(name, noop_handler)
+    executor.register("complete_task", complete_task_handler)
+
+    # Job is already SUCCEEDED in the provider (simulates state after job terminal)
+    succeeded_job = Job(
+        job_id="j_bootstrap", task_id="t1", expert_type="EconomyExpert",
+        config=EconomyJobConfig(unit_type="barr", count=1, queue_type="Building"),
+        status=JobStatus.SUCCEEDED,
+    )
+
+    agent = TaskAgent(
+        task=make_task(raw_text="建造兵营"),
+        llm=MockProvider([]),
+        tool_executor=executor,
+        jobs_provider=lambda task_id: [succeeded_job],
+        world_summary_provider=noop_world_provider,
+    )
+    # Simulate: bootstrap was set up in a prior wake
+    agent._bootstrap_job_id = "j_bootstrap"
+    agent._bootstrap_raw_text = "建造兵营"
+
+    async def run():
+        # Wake with NO signal — signal was already consumed by a prior wake
+        await agent._wake_cycle(trigger="review")
+
+    asyncio.run(run())
+
+    assert len(captured_completions) == 1, "Should finalize without a signal"
+    assert captured_completions[0]["result"] == "succeeded"
+    assert "建造兵营" in captured_completions[0]["summary"]
+    assert agent._task_completed is True
+    # LLM was NOT called — finalized before reaching LLM
+    assert agent._total_llm_calls == 0
+    print("  PASS: bootstrap_finalizes_on_job_status_without_signal")
 
 
 def test_bootstrap_simple_production_maps_basic_infantry_to_e1() -> None:
@@ -2004,6 +2071,7 @@ if __name__ == "__main__":
     test_single_agent_error_isolation()
     test_bootstrap_structure_build_maps_refinery_to_proc()
     test_bootstrap_structure_build_completes_with_llm_running()
+    test_bootstrap_finalizes_on_job_status_without_signal()
     test_bootstrap_simple_production_maps_basic_infantry_to_e1()
     test_bootstrap_simple_production_completes_with_llm_running()
     test_existing_rule_routed_recon_job_attaches_and_llm_runs()
@@ -2055,4 +2123,4 @@ if __name__ == "__main__":
     test_smart_wake_no_skip_when_no_jobs()
     test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 52 tests passed!")
+    print(f"\nAll 53 tests passed!")

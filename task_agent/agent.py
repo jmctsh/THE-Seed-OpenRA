@@ -17,7 +17,7 @@ from typing import Any, Callable, Optional
 from benchmark import span as bm_span
 from logging_system import get_logger
 from llm import LLMProvider, LLMResponse
-from models import Event, ExpertSignal, Job, SignalKind, Task, TaskMessage, TaskMessageType, TaskStatus
+from models import Event, ExpertSignal, Job, JobStatus, SignalKind, Task, TaskMessage, TaskMessageType, TaskStatus
 
 from .context import (
     ContextPacket,
@@ -767,55 +767,60 @@ class TaskAgent:
     async def _maybe_finalize_bootstrap_task(self, recent_signals: list[ExpertSignal]) -> bool:
         """Close deterministic bootstrap build tasks without another LLM turn.
 
-        Live testing showed that once a simple build-structure task had already
-        been bootstrapped into the correct EconomyJob, sending the task back
-        through the LLM on completion let the model drift into unrelated follow-
-        up work (for example, turning "建造兵营" into recon). For these
-        deterministic one-job build tasks, the TaskAgent should simply wait for
-        the bootstrapped job's terminal signal and then close the task.
+        Checks bootstrap job status directly (not signals) so it fires even when
+        the terminal signal was already consumed by a previous wake that failed to
+        call complete_task (e.g. LLM returned text instead of a tool call).
         """
         if self._bootstrap_job_id is None:
             return False
 
-        for signal in recent_signals:
-            if signal.job_id != self._bootstrap_job_id:
-                continue
-            if signal.kind != SignalKind.TASK_COMPLETE:
-                continue
-
-            result = signal.result or "succeeded"
-            prefix = {
-                "succeeded": "已完成",
-                "failed": "未完成",
-                "aborted": "已中止",
-            }.get(result, "已结束")
-            raw_text = self._bootstrap_raw_text or self.task.raw_text
-            summary = f"{prefix}：{raw_text}"
-            if signal.summary:
-                summary = f"{summary}。{signal.summary}"
-
-            complete = await self.tool_executor.execute(
-                tool_call_id=f"bootstrap_complete_{self.task.task_id}",
-                name="complete_task",
-                arguments_json=json.dumps(
-                    {
-                        "result": result,
-                        "summary": summary,
-                    },
-                    ensure_ascii=False,
-                ),
-            )
-            if complete.error is None:
-                self._task_completed = True
-                return True
-
-            logger.warning(
-                "Bootstrap auto-complete failed: task_id=%s job_id=%s error=%s",
-                self.task.task_id,
-                self._bootstrap_job_id,
-                complete.error,
-            )
+        jobs = self._jobs_provider(self.task.task_id)
+        bootstrap_job = next((j for j in jobs if j.job_id == self._bootstrap_job_id), None)
+        if bootstrap_job is None:
             return False
+
+        if bootstrap_job.status == JobStatus.SUCCEEDED:
+            result = "succeeded"
+        elif bootstrap_job.status in (JobStatus.FAILED, JobStatus.ABORTED):
+            result = "failed"
+        else:
+            return False  # Still running or waiting — not ready to close
+
+        prefix = {
+            "succeeded": "已完成",
+            "failed": "未完成",
+            "aborted": "已中止",
+        }.get(result, "已结束")
+        raw_text = self._bootstrap_raw_text or self.task.raw_text
+        summary = f"{prefix}：{raw_text}"
+        # Best-effort: enrich summary from matching signal if available this wake
+        for signal in recent_signals:
+            if signal.job_id == self._bootstrap_job_id and signal.kind == SignalKind.TASK_COMPLETE:
+                if signal.summary:
+                    summary = f"{summary}。{signal.summary}"
+                break
+
+        complete = await self.tool_executor.execute(
+            tool_call_id=f"bootstrap_complete_{self.task.task_id}",
+            name="complete_task",
+            arguments_json=json.dumps(
+                {
+                    "result": result,
+                    "summary": summary,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        if complete.error is None:
+            self._task_completed = True
+            return True
+
+        logger.warning(
+            "Bootstrap auto-complete failed: task_id=%s job_id=%s error=%s",
+            self.task.task_id,
+            self._bootstrap_job_id,
+            complete.error,
+        )
         return False
 
     def _build_messages(self, context_msg: dict[str, str]) -> list[dict[str, Any]]:

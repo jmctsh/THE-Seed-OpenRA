@@ -1012,6 +1012,82 @@ def test_observability_rule_path_has_three_logs():
 
 # --- Dialogue context enhancement tests ---
 
+def test_acknowledgment_words_bypass_nlu_and_llm():
+    """BUG-B: 'ok'/'好的' etc. return ack immediately without creating a task."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    adjutant = Adjutant(llm=MockProvider(), kernel=kernel, world_model=wm)
+
+    for word in ["ok", "好", "好的", "收到", "知道了", "嗯", "行"]:
+        async def run(w=word):
+            return await adjutant.handle_player_input(w)
+        result = asyncio.run(run())
+        assert result["type"] == "ack", f"'{word}' should be ack, got {result['type']}"
+        assert result["ok"] is True
+        assert not kernel.created_tasks, f"'{word}' should not create a task"
+        kernel.created_tasks.clear()
+
+    print("  PASS: acknowledgment_words_bypass_nlu_and_llm")
+
+
+def test_acknowledgment_passes_through_when_pending_question():
+    """BUG-B: ack detection skipped when there is a pending question (it might be a reply)."""
+    kernel = MockKernel()
+    kernel.add_pending_question("m1", "t1", "继续吗？", ["继续", "放弃"])
+    wm = MockWorldModel()
+    mock_llm = MockProvider(responses=[LLMResponse(
+        text='{"type":"reply","target_message_id":"m1","target_task_id":"t1","confidence":0.9}',
+        model="mock"
+    )])
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        return await adjutant.handle_player_input("好")
+
+    result = asyncio.run(run())
+    # "好" with a pending question should NOT be ack — should pass through to reply path
+    assert result["type"] != "ack", f"'好' with pending question should not be ack"
+    print("  PASS: acknowledgment_passes_through_when_pending_question")
+
+
+def test_question_words_bypass_nlu_routing():
+    """BUG-C: question sentences skip NLU and go to LLM classification, never become commands."""
+    question_inputs = [
+        "为什么探索地图一直waiting",
+        "怎么还没建完",
+        "吗",
+        "这样行吗",
+        "什么时候能造完",
+        "如何提升采矿效率",
+    ]
+
+    class NoNLUAdjutant(Adjutant):
+        """Force NLU path only; stub _handle_query to avoid a second LLM call per question."""
+        def _try_runtime_nlu(self, text):
+            return super()._try_runtime_nlu(text)  # let my question check fire
+
+        async def _handle_query(self, text, context):
+            return {"type": "query", "ok": True, "response_text": "stubbed"}
+
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    # Each question: 1 LLM call for classification → "query" → stubbed _handle_query
+    mock_llm = MockProvider(responses=[
+        LLMResponse(text='{"type":"query","confidence":0.9}', model="mock")
+        for _ in range(len(question_inputs))
+    ])
+    adjutant = NoNLUAdjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    for q in question_inputs:
+        async def run(text=q):
+            return await adjutant.handle_player_input(text)
+        asyncio.run(run())
+
+    # No tasks should have been created by NLU mis-routing
+    assert not kernel.created_tasks, f"Questions should not create tasks, got: {kernel.created_tasks}"
+    print("  PASS: question_words_bypass_nlu_routing")
+
+
 def test_notify_task_completed_records_in_dialogue_history():
     """notify_task_completed appends a system entry to dialogue history."""
     adjutant = Adjutant(llm=MockProvider(), kernel=MockKernel(), world_model=MockWorldModel())
@@ -1130,10 +1206,13 @@ if __name__ == "__main__":
     test_observability_nlu_path_has_three_logs()
     test_observability_llm_path_has_three_logs()
     test_observability_rule_path_has_three_logs()
+    test_acknowledgment_words_bypass_nlu_and_llm()
+    test_acknowledgment_passes_through_when_pending_question()
+    test_question_words_bypass_nlu_routing()
     test_notify_task_completed_records_in_dialogue_history()
     test_notify_task_completed_caps_recent_completed_at_five()
     test_build_context_includes_recent_completed_tasks()
     test_classify_input_sends_recent_completed_to_llm()
     test_system_prompt_has_dialogue_context_awareness_section()
 
-    print(f"\nAll 37 tests passed!")
+    print(f"\nAll 40 tests passed!")
