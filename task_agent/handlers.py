@@ -51,6 +51,7 @@ class KernelLike(Protocol):
     def complete_task(self, task_id: str, result: str, summary: str) -> bool: ...
     def cancel_tasks(self, filters: dict[str, Any]) -> int: ...
     def register_task_message(self, message: TaskMessage) -> bool: ...
+    def jobs_for_task(self, task_id: str) -> list[Job]: ...
 
 
 class ConstraintStoreLike(Protocol):
@@ -206,7 +207,16 @@ class TaskToolHandlers:
 
     async def handle_complete_task(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
         ok = self.kernel.complete_task(self.task_id, args["result"], args["summary"])
-        return {"ok": ok, "timestamp": time.time()}
+        result: dict[str, Any] = {"ok": ok, "timestamp": time.time()}
+        # Warn if no Jobs succeeded — helps LLM reconsider partial/failed on its next turn.
+        jobs = self.kernel.jobs_for_task(self.task_id)
+        if jobs and not any(j.status.value == "succeeded" for j in jobs):
+            job_statuses = ", ".join(f"{j.job_id}={j.status.value}" for j in jobs)
+            result["job_status_warning"] = (
+                f"注意：你管辖的 Job 均未成功完成（{job_statuses}）。"
+                "如果任务目标已在世界中存在，可能是其他任务的成果，建议在 summary 中说明。"
+            )
+        return result
 
     # --- Constraints ---
 

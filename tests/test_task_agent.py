@@ -1019,6 +1019,7 @@ def _make_handlers_executor(captured_jobs: list) -> ToolExecutor:
         def abort_job(self, *a, **kw): return True
         def cancel_tasks(self, *a, **kw): return 0
         def register_task_message(self, *a, **kw): return True
+        def jobs_for_task(self, task_id): return []
 
     class StubWorldModel:
         def query(self, *a, **kw): return {}
@@ -1312,6 +1313,101 @@ def test_multi_turn_context_refresh() -> None:
     print("  PASS: multi_turn_context_refresh")
 
 
+def test_complete_task_warns_when_no_jobs_succeeded() -> None:
+    """complete_task handler adds job_status_warning when no jobs reached succeeded."""
+    from models import Job, JobStatus, Task
+    from models.enums import TaskKind
+    from models.configs import ReconJobConfig
+    from task_agent.handlers import TaskToolHandlers
+    from task_agent.tools import ToolExecutor
+
+    task = Task(task_id="t_warn", raw_text="test", kind=TaskKind.MANAGED, priority=50)
+
+    waiting_job = Job(
+        job_id="j_waiting",
+        task_id="t_warn",
+        expert_type="EconomyExpert",
+        config=ReconJobConfig("northeast", "base", "enemy"),
+        status=JobStatus.WAITING,
+    )
+
+    class StubKernel:
+        def complete_task(self, *a, **kw): return True
+        def start_job(self, *a, **kw): ...
+        def patch_job(self, *a, **kw): return True
+        def pause_job(self, *a, **kw): return True
+        def resume_job(self, *a, **kw): return True
+        def abort_job(self, *a, **kw): return True
+        def cancel_tasks(self, *a, **kw): return 0
+        def register_task_message(self, *a, **kw): return True
+        def jobs_for_task(self, task_id): return [waiting_job]
+
+    class StubWM:
+        def query(self, *a, **kw): return {}
+        def set_constraint(self, *a, **kw): pass
+        def remove_constraint(self, *a, **kw): pass
+
+    executor = ToolExecutor()
+    handlers = TaskToolHandlers(task, StubKernel(), StubWM())
+    handlers.register_all(executor)
+
+    async def run():
+        result = await executor.execute(
+            "tc1", "complete_task", '{"result":"succeeded","summary":"done"}'
+        )
+        assert result.error is None
+        assert result.result["ok"] is True
+        assert "job_status_warning" in result.result, "should warn when job is still waiting"
+        assert "j_waiting" in result.result["job_status_warning"]
+        assert "waiting" in result.result["job_status_warning"]
+
+        # No warning when job has succeeded
+        waiting_job.status = JobStatus.SUCCEEDED
+        result2 = await executor.execute(
+            "tc2", "complete_task", '{"result":"succeeded","summary":"done"}'
+        )
+        assert "job_status_warning" not in result2.result
+
+    asyncio.run(run())
+    print("  PASS: complete_task_warns_when_no_jobs_succeeded")
+
+
+def test_context_packet_includes_job_status_zh() -> None:
+    """build_context_packet includes status_zh Chinese label on each job."""
+    from models import Job, JobStatus
+    from models.configs import ReconJobConfig
+    from task_agent.context import build_context_packet
+
+    job = Job(
+        job_id="j1", task_id="t1", expert_type="EconomyExpert",
+        config=ReconJobConfig("northeast", "base", "enemy"),
+        status=JobStatus.WAITING,
+    )
+    packet = build_context_packet(make_task(), [job])
+    assert packet.jobs[0]["status"] == "waiting"
+    assert packet.jobs[0]["status_zh"] == "等待中（尚未生效）"
+
+    job.status = JobStatus.SUCCEEDED
+    packet2 = build_context_packet(make_task(), [job])
+    assert packet2.jobs[0]["status_zh"] == "已成功完成"
+
+    job.status = JobStatus.ABORTED
+    packet3 = build_context_packet(make_task(), [job])
+    assert packet3.jobs[0]["status_zh"] == "已中止（未完成目标）"
+    print("  PASS: context_packet_includes_job_status_zh")
+
+
+def test_system_prompt_has_completion_judgment_rules() -> None:
+    """SYSTEM_PROMPT includes guidance to base complete_task on Job status."""
+    assert "complete_task" in SYSTEM_PROMPT
+    assert "Job" in SYSTEM_PROMPT
+    assert "succeeded" in SYSTEM_PROMPT
+    assert "partial" in SYSTEM_PROMPT
+    # Key rule: don't rely on world observation alone
+    assert "world" in SYSTEM_PROMPT.lower() or "另一个" in SYSTEM_PROMPT or "other" in SYSTEM_PROMPT.lower()
+    print("  PASS: system_prompt_has_completion_judgment_rules")
+
+
 # --- Subscription tests ---
 
 def test_subscription_filters_info_experts_in_context() -> None:
@@ -1382,6 +1478,7 @@ def test_update_subscriptions_handler() -> None:
         def abort_job(self, *a, **kw): return True
         def cancel_tasks(self, *a, **kw): return 0
         def register_task_message(self, *a, **kw): return True
+        def jobs_for_task(self, task_id): return []
 
     class StubWM:
         def query(self, *a, **kw): return {}
@@ -1826,6 +1923,10 @@ if __name__ == "__main__":
     test_execute_tools_exception_isolation()
     # Mid-wake context refresh
     test_multi_turn_context_refresh()
+    # BUG3: task completion judgment
+    test_complete_task_warns_when_no_jobs_succeeded()
+    test_context_packet_includes_job_status_zh()
+    test_system_prompt_has_completion_judgment_rules()
     # Subscription mechanism tests
     test_subscription_filters_info_experts_in_context()
     test_update_subscriptions_handler()
@@ -1847,4 +1948,4 @@ if __name__ == "__main__":
     test_smart_wake_no_skip_when_no_jobs()
     test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 49 tests passed!")
+    print(f"\nAll 52 tests passed!")

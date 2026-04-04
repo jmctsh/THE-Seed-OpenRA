@@ -78,6 +78,14 @@ CRITICAL: "部署" means DEPLOY (deploy_mcv), not scout. "建造" + structure na
 Before deploy_mcv: always query_world(my_actors) first for actor_id.
 Before scout_map: if world_summary shows zero mobile units, use produce_units first.
 
+Task completion judgment (complete_task):
+- Base your verdict on YOUR OWN Job status, NOT on world observation.
+  • result='succeeded': at least one of your Jobs reached status=succeeded.
+  • result='partial': your Jobs did NOT succeed, but the world shows the target may exist — possibly built by ANOTHER task. Acknowledge in summary.
+  • result='failed': your Jobs all failed/aborted and there is no evidence of progress.
+- DO NOT call complete_task(succeeded) just because a building/unit already exists in the world — another task may have built it. Check your jobs list first.
+- If context shows your Job is still waiting or running, do NOT complete yet — wait for a signal.
+
 Player communication (send_task_message):
 - type='question': player intent is ambiguous or action is irreversible. Include 2-3 options; default_option = safest.
 - type='warning': urgent situation player must know (base attack, resource critically low).

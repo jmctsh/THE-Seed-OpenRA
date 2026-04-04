@@ -13,6 +13,15 @@ from typing import Any, Optional
 
 from models import ExpertSignal, Event, Job, Task
 
+# Chinese labels for Job status values — makes completion judgment clearer for LLM.
+_JOB_STATUS_ZH: dict[str, str] = {
+    "succeeded": "已成功完成",
+    "failed":    "已失败",
+    "aborted":   "已中止（未完成目标）",
+    "waiting":   "等待中（尚未生效）",
+    "running":   "运行中",
+}
+
 # Maps subscription key → frozenset of info_experts dict keys produced by that expert.
 _SUBSCRIPTION_KEYS: dict[str, frozenset] = {
     "threat": frozenset({
@@ -82,10 +91,12 @@ def build_context_packet(
 
     jobs_list = []
     for job in jobs:
+        status_val = job.status.value
         job_dict: dict[str, Any] = {
             "job_id": job.job_id,
             "expert_type": job.expert_type,
-            "status": job.status.value,
+            "status": status_val,
+            "status_zh": _JOB_STATUS_ZH.get(status_val, status_val),
             "resources": job.resources,
             "timestamp": job.timestamp,
         }
