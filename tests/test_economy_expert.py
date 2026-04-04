@@ -523,6 +523,33 @@ def test_economy_job_completes_before_low_power_after_building_lands() -> None:
     print("  PASS: economy_job_completes_before_low_power_after_building_lands")
 
 
+def test_economy_job_cannot_produce_signal_includes_prerequisite() -> None:
+    """cannot_produce BLOCKED signal includes specific missing prerequisite building names."""
+    api = MockGameAPI()
+    api.can_produce_value = False
+    world = MockWorldModel()
+    world.queues["Infantry"] = {"queue_type": "Infantry", "items": [], "has_ready_item": False}
+    signals = []
+    job = EconomyJob(
+        job_id="j1",
+        task_id="t1",
+        config=make_config(unit_type="e1", count=3, queue_type="Infantry"),
+        signal_callback=signals.append,
+        game_api=api,
+        world_model=world,
+    )
+
+    job.do_tick()
+    assert job.status == JobStatus.WAITING
+    blocked = [s for s in signals if s.kind == SignalKind.BLOCKED]
+    assert blocked, "Expected a BLOCKED signal"
+    sig = blocked[-1]
+    assert sig.data["reason"] == "cannot_produce"
+    # Signal summary should mention the missing prerequisite building (兵营)
+    assert "兵营" in sig.summary, f"Expected '兵营' in summary: {sig.summary!r}"
+    print("  PASS: economy_job_cannot_produce_signal_includes_prerequisite")
+
+
 if __name__ == "__main__":
     print("Running EconomyExpert tests...\n")
     test_economy_expert_creates_queue_job()
@@ -538,4 +565,5 @@ if __name__ == "__main__":
     test_economy_job_counts_direct_auto_placed_buildings_without_queue_done_event()
     test_economy_job_completes_before_low_power_after_building_lands()
     test_economy_job_abort_does_not_cancel_shared_queue()
-    print("\nAll 13 EconomyExpert tests passed!")
+    test_economy_job_cannot_produce_signal_includes_prerequisite()
+    print("\nAll 14 EconomyExpert tests passed!")

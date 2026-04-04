@@ -14,8 +14,10 @@ from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
 from .knowledge import (
     buildable_economy_recovery_options,
     buildable_power_recovery_options,
+    display_name_for,
     knowledge_for_target,
     low_power_impacts,
+    tech_prerequisites_for,
 )
 
 
@@ -239,11 +241,17 @@ class EconomyJob(BaseJob):
         self._waiting_reason = reason
         guidance = self._guidance_for(reason)
         info_summary_map: dict[str, str] = {}
+        prereqs = tech_prerequisites_for(self.config.unit_type)
+        if prereqs:
+            prereq_str = "、".join(display_name_for(p["unit_type"]) for p in prereqs)
+            cannot_produce_msg = f"当前无法生产 {self.config.unit_type}：缺少前置建筑（{prereq_str}）"
+        else:
+            cannot_produce_msg = f"当前无法生产 {self.config.unit_type}，等待前置条件恢复"
         blocked_summary_map = {
             "queue_missing": f"生产队列 {self.config.queue_type} 不可用，等待工厂恢复",
             "low_power": guidance.get("summary") or "电力不足，生产暂停等待恢复",
             "no_funds": guidance.get("summary") or "资金不足，生产暂停等待资源恢复",
-            "cannot_produce": f"当前无法生产 {self.config.unit_type}，等待前置条件恢复",
+            "cannot_produce": cannot_produce_msg,
             "queue_paused": f"{self.config.queue_type} 队列暂停，等待恢复",
             "queue_ready_item_pending": guidance.get("summary") or "建造队列里有待放置建筑，等待先清空队列",
             "ready_item_not_placeable": "建筑已就绪但无法自动放置，等待人工清理或腾出位置",

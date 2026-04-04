@@ -91,6 +91,13 @@ OPENING_BUILD_ORDER: dict[str, list[dict[str, str]]] = {
 # Tech prerequisites: must have these buildings before building the key.
 # TODO: cross-check advanced tech tree against ra/rules/structures.yaml.
 _TECH_PREREQUISITES: dict[str, list[dict[str, str]]] = {
+    # Infantry units require a barracks (barr = Soviet, tent = Allied).
+    "e1": [{"unit_type": "barr", "reason": "barracks_required_for_infantry"}],
+    "e2": [{"unit_type": "barr", "reason": "barracks_required_for_infantry"}],
+    "e3": [{"unit_type": "barr", "reason": "barracks_required_for_infantry"}],
+    "e4": [{"unit_type": "barr", "reason": "barracks_required_for_infantry"}],
+    "e6": [{"unit_type": "barr", "reason": "barracks_required_for_infantry"}],
+    # Buildings with tech prerequisites.
     "weap": [
         {"unit_type": "proc", "reason": "economy_required_before_vehicle_gateway"},
     ],
@@ -169,6 +176,19 @@ def opening_build_order(faction: str = "allied") -> list[dict[str, str]]:
 def tech_prerequisites_for(unit_type: str) -> list[dict[str, str]]:
     """Return required buildings that should exist before constructing unit_type."""
     return list(_TECH_PREREQUISITES.get((unit_type or "").lower(), []))
+
+
+def display_name_for(unit_type: str) -> str:
+    """Return a human-readable (Chinese) display name for a unit/building type ID.
+
+    Falls back to the unit_type string itself if not found in knowledge rows.
+    """
+    key = (unit_type or "").lower()
+    for row in _KNOWLEDGE_ROWS:
+        names = row["names"]
+        if key in names:
+            return names[1] if len(names) > 1 else names[0]
+    return unit_type
 
 
 def counter_recommendation(enemy_actors: list[dict[str, Any]]) -> dict[str, Any] | None:

@@ -87,6 +87,13 @@ Multi-task scope discipline:
 - Focus exclusively on YOUR task's raw_text. Do not scout, build infrastructure, or produce units beyond what your task directly requires.
 - If your task truly cannot proceed and no other task is covering the prerequisite, use send_task_message(type='warning') to inform the player — do not self-expand scope.
 
+Prerequisite waiting discipline:
+- If an EconomyExpert Job reports cannot_produce (e.g. "缺少前置建筑（兵营）"), that signal tells you WHICH prerequisite is missing.
+- Check other_active_tasks first:
+  • If another task is building the prerequisite → DO NOT retry. Return a brief text this cycle ("等待兵营建成"). The next wake will show you updated context automatically.
+  • If no other task covers it → send_task_message(type='warning') explaining the missing prerequisite, then complete_task(result='failed').
+- NEVER retry produce_units repeatedly when the cannot_produce signal is unchanged. Each retry wastes LLM cycles without changing the underlying state.
+
 Task completion judgment (complete_task):
 - Base your verdict on YOUR OWN Job status, NOT on world observation.
   • result='succeeded': at least one of your Jobs reached status=succeeded.

@@ -1960,6 +1960,26 @@ def test_system_prompt_has_multi_task_scope_section() -> None:
     print("  PASS: system_prompt_has_multi_task_scope_section")
 
 
+# --- BUG5: prerequisite waiting discipline ---
+
+def test_system_prompt_has_prerequisite_waiting_discipline() -> None:
+    """SYSTEM_PROMPT has prerequisite waiting guidance to prevent repeated retries."""
+    assert "cannot_produce" in SYSTEM_PROMPT
+    assert "NEVER retry" in SYSTEM_PROMPT or "retry" in SYSTEM_PROMPT
+    assert "prerequisite" in SYSTEM_PROMPT.lower() or "前置" in SYSTEM_PROMPT
+    print("  PASS: system_prompt_has_prerequisite_waiting_discipline")
+
+
+def test_knowledge_tech_prerequisites_for_infantry() -> None:
+    """tech_prerequisites_for returns barracks requirement for infantry units."""
+    from experts.knowledge import tech_prerequisites_for, display_name_for
+    prereqs = tech_prerequisites_for("e1")
+    assert len(prereqs) == 1
+    assert prereqs[0]["unit_type"] == "barr"
+    assert display_name_for("barr") == "兵营"
+    print("  PASS: knowledge_tech_prerequisites_for_infantry")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -2016,6 +2036,9 @@ if __name__ == "__main__":
     test_context_to_message_includes_other_active_tasks()
     test_agent_uses_active_tasks_provider()
     test_system_prompt_has_multi_task_scope_section()
+    # BUG5: prerequisite waiting discipline tests
+    test_system_prompt_has_prerequisite_waiting_discipline()
+    test_knowledge_tech_prerequisites_for_infantry()
     # Conversation compression tests
     test_trim_conversation_keeps_last_n_turns()
     test_trim_conversation_no_op_when_within_window()
