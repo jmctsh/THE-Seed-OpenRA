@@ -295,9 +295,9 @@ class Kernel:
             self._resource_needs[controller.job_id] = self._build_resource_needs(controller, config)
             task.status = TaskStatus.RUNNING
             task.timestamp = _now()
+            slog.info("Job started", event="job_started", task_id=task_id, job_id=controller.job_id, expert_type=expert_type, config=config)
             self._rebalance_resources()
             self._sync_world_runtime()
-            slog.info("Job started", event="job_started", task_id=task_id, job_id=controller.job_id, expert_type=expert_type, config=config)
             return controller.to_model()
 
     def abort_job(self, job_id: str) -> bool:

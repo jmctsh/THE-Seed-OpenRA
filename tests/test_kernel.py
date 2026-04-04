@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import benchmark
 from experts.base import BaseJob, ExecutionExpert
 from kernel import Kernel, KernelConfig
+import logging_system
 from models import (
     CombatJobConfig,
     EngagementMode,
@@ -784,6 +785,82 @@ def test_auto_response_rule_registration_and_base_under_attack_dedup() -> None:
     print("  PASS: auto_response_rule_registration_and_base_under_attack_dedup")
 
 
+def test_job_started_logged_before_resource_lost_signal() -> None:
+    """job_started log entry must precede any RESOURCE_LOST signal for the same job.
+
+    Regression guard for T5: previously _rebalance_resources() ran before the
+    job_started log, so the LLM could see resource_lost without a prior job_started.
+    """
+    logging_system.clear()
+
+    # Track: index in log_records() at the moment each RESOURCE_LOST signal arrives
+    resource_lost_log_positions: list[int] = []
+
+    class OrderTrackingAgent(RecordingAgent):
+        def push_signal(self, signal: ExpertSignal) -> None:
+            if signal.kind == SignalKind.RESOURCE_LOST:
+                resource_lost_log_positions.append(len(logging_system.records()))
+            super().push_signal(signal)
+
+    # World with NO idle actors → resource need cannot be satisfied → triggers RESOURCE_LOST
+    from openra_api.models import MapQueryResult
+    empty_frame = type("Frame", (), {
+        "self_actors": [],
+        "enemy_actors": [],
+        "economy": None,
+        "map_info": MapQueryResult(
+            MapWidth=4, MapHeight=4,
+            Height=[[0]*4 for _ in range(4)],
+            IsVisible=[[True]*4 for _ in range(4)],
+            IsExplored=[[True]*4 for _ in range(4)],
+            Terrain=[["clear"]*4 for _ in range(4)],
+            ResourcesType=[["ore"]*4 for _ in range(4)],
+            Resources=[[0]*4 for _ in range(4)],
+        ),
+        "queues": {},
+    })()
+
+    from tests.test_world_model import MockWorldSource
+    source = MockWorldSource([empty_frame])
+    world = WorldModel(source)
+    world.refresh(now=100.0, force=True)
+
+    def needs_factory(job_id, config):
+        return [ResourceNeed(job_id=job_id, kind=ResourceKind.ACTOR, count=1, predicates={"category": "vehicle"})]
+
+    kernel = Kernel(
+        world_model=world,
+        expert_registry={"CombatExpert": ResourceExpert(needs_factory)},
+        task_agent_factory=lambda task, te, jp, wp: OrderTrackingAgent(task, te, jp, wp),
+        config=KernelConfig(auto_start_agents=False),
+    )
+
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+    kernel.start_job(task.task_id, "CombatExpert", CombatJobConfig(
+        target_position=(100, 100),
+        engagement_mode=EngagementMode.ASSAULT,
+        max_chase_distance=20,
+        retreat_threshold=0.3,
+    ))
+
+    all_records = logging_system.records()
+    job_started_idx = next(
+        (i for i, r in enumerate(all_records) if getattr(r, "event", None) == "job_started"),
+        None,
+    )
+
+    assert job_started_idx is not None, "job_started was not logged"
+    assert resource_lost_log_positions, "RESOURCE_LOST signal was not emitted (test precondition failed)"
+
+    for pos in resource_lost_log_positions:
+        assert job_started_idx < pos, (
+            f"job_started (log idx={job_started_idx}) must come BEFORE "
+            f"RESOURCE_LOST signal (log snapshot size={pos})"
+        )
+
+    print("  PASS: job_started_logged_before_resource_lost_signal")
+
+
 def main() -> None:
     test_create_task_and_task_agent_registration()
     test_start_job_validates_and_lifecycle_controls()
@@ -803,7 +880,8 @@ def main() -> None:
     test_pending_question_timeout_and_late_reply()
     test_cancel_task_closes_pending_question()
     test_auto_response_rule_registration_and_base_under_attack_dedup()
-    print("OK: 16 Kernel tests passed")
+    test_job_started_logged_before_resource_lost_signal()
+    print("OK: 17 Kernel tests passed")
 
 
 if __name__ == "__main__":
