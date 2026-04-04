@@ -292,6 +292,15 @@ class Kernel:
                     self.abort_job(job.job_id)
             self._release_task_job_resources(task_id)
             self._close_pending_questions_for_task(task_id)
+            # Register TASK_COMPLETE_REPORT before stopping the agent —
+            # appended directly (not via register_task_message which rejects terminal status).
+            self.task_messages.append(TaskMessage(
+                message_id=_gen_id("msg_"),
+                task_id=task_id,
+                type=TaskMessageType.TASK_COMPLETE_REPORT,
+                content=summary,
+                priority=task.priority,
+            ))
             self._stop_agent(task_id)
             self._sync_world_runtime()
             slog.info("Task completed", event="task_completed", task_id=task_id, result=result, summary=summary)
