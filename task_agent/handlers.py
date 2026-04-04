@@ -140,6 +140,7 @@ class TaskToolHandlers:
             target_owner=args.get("target_owner", "enemy"),
             retreat_hp_pct=float(args.get("retreat_hp_pct", 0.3)),
             avoid_combat=bool(args.get("avoid_combat", True)),
+            scout_count=int(args.get("scout_count", 1)),
         )
         job = self.kernel.start_job(self.task_id, "ReconExpert", config)
         return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}

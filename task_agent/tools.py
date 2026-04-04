@@ -80,6 +80,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "type": "boolean",
                         "description": "Whether scouts should avoid engaging enemies (default true).",
                     },
+                    "scout_count": {
+                        "type": "integer",
+                        "description": "侦察单位数量 (default 1). 值越大探索越快但损失风险越高。",
+                    },
                 },
                 "required": ["search_region", "target_type"],
             },
