@@ -84,6 +84,9 @@ def make_executor() -> ToolExecutor:
     from task_agent.tools import get_tool_names
     for name in get_tool_names():
         executor.register(name, mock_tool_handler)
+    # start_job is no longer in TOOL_DEFINITIONS (not LLM-facing) but is
+    # still needed for bootstrap paths in agent.py (internal use).
+    executor.register("start_job", mock_tool_handler)
     return executor
 
 
@@ -200,9 +203,9 @@ def test_llm_reasoning_is_logged():
 def test_multi_turn_tool_use():
     """Agent wakes, LLM calls tools → continues → text → ends."""
     mock = MockProvider(responses=[
-        # Turn 1: LLM calls start_job
+        # Turn 1: LLM calls scout_map (new Expert-as-tool API)
         LLMResponse(
-            tool_calls=[ToolCall(id="tc1", name="start_job", arguments='{"expert_type":"ReconExpert","config":{"search_region":"northeast","target_type":"base","target_owner":"enemy"}}')],
+            tool_calls=[ToolCall(id="tc1", name="scout_map", arguments='{"search_region":"northeast","target_type":"base"}')],
             model="mock",
         ),
         # Turn 2: LLM calls query_world
@@ -353,9 +356,9 @@ def test_full_lifecycle_with_signal():
     call_count = 0
 
     mock = MockProvider(responses=[
-        # Init wake: start a job
+        # Init wake: start a recon job (new Expert-as-tool API)
         LLMResponse(
-            tool_calls=[ToolCall(id="tc1", name="start_job", arguments='{"expert_type":"ReconExpert","config":{"search_region":"northeast","target_type":"base","target_owner":"enemy"}}')],
+            tool_calls=[ToolCall(id="tc1", name="scout_map", arguments='{"search_region":"northeast","target_type":"base"}')],
             model="mock",
         ),
         LLMResponse(text="Job started, waiting for results.", model="mock"),
@@ -987,8 +990,170 @@ def test_bootstrap_job_decision_request_reaches_llm() -> None:
 def test_system_prompt_pins_structure_build_commands_to_economy() -> None:
     assert '建造矿场' in SYSTEM_PROMPT
     assert 'unit_type "proc"' in SYSTEM_PROMPT
-    assert 'Do NOT reinterpret "矿场" as expansion scouting or "矿车"' in SYSTEM_PROMPT
+    assert 'produce_units' in SYSTEM_PROMPT
+    assert 'Building' in SYSTEM_PROMPT
     print("  PASS: system_prompt_pins_structure_build_commands_to_economy")
+
+
+# --- Expert-as-tool handler tests ---
+
+def _make_handlers_executor(captured_jobs: list) -> ToolExecutor:
+    """Build a ToolExecutor backed by TaskToolHandlers with a tracking kernel."""
+    from task_agent.handlers import TaskToolHandlers
+
+    class TrackingKernel:
+        def start_job(self, task_id, expert_type, config):
+            from models import Job, JobStatus
+            from models.configs import ReconJobConfig
+            captured_jobs.append({"expert_type": expert_type, "config": config, "task_id": task_id})
+            return Job(
+                job_id=f"j_{expert_type.lower()}",
+                task_id=task_id,
+                expert_type=expert_type,
+                config=config or ReconJobConfig("northeast", "base", "enemy"),
+            )
+        def complete_task(self, *a, **kw): return True
+        def patch_job(self, *a, **kw): return True
+        def pause_job(self, *a, **kw): return True
+        def resume_job(self, *a, **kw): return True
+        def abort_job(self, *a, **kw): return True
+        def cancel_tasks(self, *a, **kw): return 0
+        def register_task_message(self, *a, **kw): return True
+
+    class StubWorldModel:
+        def query(self, *a, **kw): return {}
+        def set_constraint(self, *a, **kw): pass
+        def remove_constraint(self, *a, **kw): pass
+
+    executor = ToolExecutor()
+    handlers = TaskToolHandlers("t_test", TrackingKernel(), StubWorldModel())
+    handlers.register_all(executor)
+    return executor
+
+
+def test_scout_map_handler_creates_recon_job() -> None:
+    """scout_map tool creates a ReconExpert job with correct config."""
+    captured = []
+    executor = _make_handlers_executor(captured)
+
+    async def run():
+        from models.configs import ReconJobConfig
+        result = await executor.execute("tc1", "scout_map",
+            '{"search_region": "enemy_half", "target_type": "base", "target_owner": "enemy", "avoid_combat": false}')
+        assert result.error is None
+        assert result.result["job_id"] == "j_reconexpert"
+        assert len(captured) == 1
+        assert captured[0]["expert_type"] == "ReconExpert"
+        cfg = captured[0]["config"]
+        assert isinstance(cfg, ReconJobConfig)
+        assert cfg.search_region == "enemy_half"
+        assert cfg.avoid_combat is False
+
+    asyncio.run(run())
+    print("  PASS: scout_map_handler_creates_recon_job")
+
+
+def test_produce_units_handler_creates_economy_job() -> None:
+    """produce_units tool creates an EconomyExpert job with correct config."""
+    captured = []
+    executor = _make_handlers_executor(captured)
+
+    async def run():
+        from models.configs import EconomyJobConfig
+        result = await executor.execute("tc1", "produce_units",
+            '{"unit_type": "e1", "count": 5, "queue_type": "Infantry"}')
+        assert result.error is None
+        assert len(captured) == 1
+        assert captured[0]["expert_type"] == "EconomyExpert"
+        cfg = captured[0]["config"]
+        assert isinstance(cfg, EconomyJobConfig)
+        assert cfg.unit_type == "e1"
+        assert cfg.count == 5
+        assert cfg.queue_type == "Infantry"
+        assert cfg.repeat is False
+
+    asyncio.run(run())
+    print("  PASS: produce_units_handler_creates_economy_job")
+
+
+def test_attack_handler_creates_combat_job() -> None:
+    """attack tool creates a CombatExpert job with correct config."""
+    captured = []
+    executor = _make_handlers_executor(captured)
+
+    async def run():
+        from models.configs import CombatJobConfig
+        from models.enums import EngagementMode
+        result = await executor.execute("tc1", "attack",
+            '{"target_position": [1200, 800], "engagement_mode": "harass", "max_chase_distance": 10}')
+        assert result.error is None
+        assert len(captured) == 1
+        assert captured[0]["expert_type"] == "CombatExpert"
+        cfg = captured[0]["config"]
+        assert isinstance(cfg, CombatJobConfig)
+        assert cfg.target_position == (1200, 800)
+        assert cfg.engagement_mode == EngagementMode.HARASS
+        assert cfg.max_chase_distance == 10
+
+    asyncio.run(run())
+    print("  PASS: attack_handler_creates_combat_job")
+
+
+def test_move_units_handler_creates_movement_job() -> None:
+    """move_units tool creates a MovementExpert job with correct config."""
+    captured = []
+    executor = _make_handlers_executor(captured)
+
+    async def run():
+        from models.configs import MovementJobConfig
+        from models.enums import MoveMode
+        result = await executor.execute("tc1", "move_units",
+            '{"target_position": [500, 300], "move_mode": "retreat", "arrival_radius": 8}')
+        assert result.error is None
+        assert len(captured) == 1
+        assert captured[0]["expert_type"] == "MovementExpert"
+        cfg = captured[0]["config"]
+        assert isinstance(cfg, MovementJobConfig)
+        assert cfg.target_position == (500, 300)
+        assert cfg.move_mode == MoveMode.RETREAT
+        assert cfg.arrival_radius == 8
+
+    asyncio.run(run())
+    print("  PASS: move_units_handler_creates_movement_job")
+
+
+def test_deploy_mcv_handler_creates_deploy_job() -> None:
+    """deploy_mcv tool creates a DeployExpert job with correct config."""
+    captured = []
+    executor = _make_handlers_executor(captured)
+
+    async def run():
+        from models.configs import DeployJobConfig
+        result = await executor.execute("tc1", "deploy_mcv",
+            '{"actor_id": 42, "target_position": [100, 200]}')
+        assert result.error is None
+        assert len(captured) == 1
+        assert captured[0]["expert_type"] == "DeployExpert"
+        cfg = captured[0]["config"]
+        assert isinstance(cfg, DeployJobConfig)
+        assert cfg.actor_id == 42
+        assert cfg.target_position == (100, 200)
+
+    asyncio.run(run())
+    print("  PASS: deploy_mcv_handler_creates_deploy_job")
+
+
+def test_start_job_removed_from_tool_definitions() -> None:
+    """start_job must NOT appear in TOOL_DEFINITIONS (LLM sees only Expert tools)."""
+    from task_agent.tools import TOOL_DEFINITIONS, get_tool_names
+    names = get_tool_names()
+    assert "start_job" not in names, "start_job should not be exposed to LLM"
+    assert "scout_map" in names
+    assert "produce_units" in names
+    assert "attack" in names
+    assert "move_units" in names
+    assert "deploy_mcv" in names
+    print("  PASS: start_job_removed_from_tool_definitions")
 
 
 # --- Conversation compression tests ---
@@ -1366,11 +1531,20 @@ if __name__ == "__main__":
     test_failure_counter_resets_on_success()
     test_single_agent_error_isolation()
     test_bootstrap_structure_build_maps_refinery_to_proc()
-    test_bootstrap_structure_build_completes_without_llm_drift()
+    test_bootstrap_structure_build_completes_with_llm_running()
     test_bootstrap_simple_production_maps_basic_infantry_to_e1()
-    test_bootstrap_simple_production_completes_without_llm_drift()
-    test_existing_rule_routed_recon_job_is_monitor_only()
+    test_bootstrap_simple_production_completes_with_llm_running()
+    test_existing_rule_routed_recon_job_attaches_and_llm_runs()
+    test_bootstrap_job_decision_request_reaches_llm()
     test_system_prompt_pins_structure_build_commands_to_economy()
+    # Expert-as-tool handler tests
+    test_scout_map_handler_creates_recon_job()
+    test_produce_units_handler_creates_economy_job()
+    test_attack_handler_creates_combat_job()
+    test_move_units_handler_creates_movement_job()
+    test_deploy_mcv_handler_creates_deploy_job()
+    test_start_job_removed_from_tool_definitions()
+    # Conversation compression tests
     test_trim_conversation_keeps_last_n_turns()
     test_trim_conversation_no_op_when_within_window()
     test_dedup_signals_collapses_consecutive_same_kind()
@@ -1386,4 +1560,4 @@ if __name__ == "__main__":
     test_smart_wake_no_skip_when_no_jobs()
     test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 35 tests passed!")
+    print(f"\nAll 42 tests passed!")

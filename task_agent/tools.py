@@ -18,28 +18,182 @@ ToolHandler = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 TOOL_DEFINITIONS: list[dict[str, Any]] = [
+    # --- Expert action tools (each Expert exposed as its own tool) ---
     {
         "type": "function",
         "function": {
-            "name": "start_job",
-            "description": "Create and start a new Job. expert_type must be one of: ReconExpert, CombatExpert, MovementExpert, DeployExpert, EconomyExpert. config must use the exact field names defined for each Expert type (see system prompt).",
+            "name": "deploy_mcv",
+            "description": (
+                "Deploy a Mobile Construction Vehicle (MCV) to build a Construction Yard. "
+                "部署基地车、建造建造厂。"
+                "Query query_world(my_actors) first to get the MCV's actor_id. "
+                "target_position is optional — omit to deploy in place."
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "expert_type": {
-                        "type": "string",
-                        "enum": ["ReconExpert", "CombatExpert", "MovementExpert", "DeployExpert", "EconomyExpert"],
-                        "description": "The Expert type to instantiate.",
+                    "actor_id": {
+                        "type": "integer",
+                        "description": "Actor ID of the MCV to deploy.",
                     },
-                    "config": {
-                        "type": "object",
-                        "description": "Expert-specific configuration. Schema depends on expert_type.",
+                    "target_position": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Optional [x, y] map position to move the MCV before deploying.",
                     },
                 },
-                "required": ["expert_type", "config"],
+                "required": ["actor_id"],
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "scout_map",
+            "description": (
+                "Send scouts to explore the map and locate enemy targets. "
+                "探索地图、侦察敌情、找敌人基地。"
+                "Uses available mobile units — ensure infantry or vehicles exist before calling."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search_region": {
+                        "type": "string",
+                        "enum": ["northeast", "southwest", "northwest", "southeast", "enemy_half", "full_map"],
+                        "description": "Region of the map to scout.",
+                    },
+                    "target_type": {
+                        "type": "string",
+                        "enum": ["base", "army", "expansion"],
+                        "description": "Type of target to look for.",
+                    },
+                    "target_owner": {
+                        "type": "string",
+                        "description": "Owner filter, default 'enemy'.",
+                    },
+                    "retreat_hp_pct": {
+                        "type": "number",
+                        "description": "HP fraction at which scouts retreat (0–1, default 0.3).",
+                    },
+                    "avoid_combat": {
+                        "type": "boolean",
+                        "description": "Whether scouts should avoid engaging enemies (default true).",
+                    },
+                },
+                "required": ["search_region", "target_type"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "produce_units",
+            "description": (
+                "Produce units or construct buildings via the production queue. "
+                "生产单位、建造建筑。"
+                "unit_type accepts internal codes (e.g. 'e1', 'powr', '2tnk'), "
+                "Chinese names (e.g. '步兵', '发电厂', '重坦'), or English aliases. "
+                "Use queue_type='Building' for structures."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "unit_type": {
+                        "type": "string",
+                        "description": "Unit or building to produce. Accepts code, Chinese name, or English alias.",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Number of units to produce.",
+                    },
+                    "queue_type": {
+                        "type": "string",
+                        "enum": ["Infantry", "Vehicle", "Building", "Aircraft", "Defense"],
+                        "description": "Production queue to use.",
+                    },
+                    "repeat": {
+                        "type": "boolean",
+                        "description": "Whether to repeat production indefinitely (default false).",
+                    },
+                },
+                "required": ["unit_type", "count", "queue_type"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "move_units",
+            "description": (
+                "Move units to a target map position. "
+                "撤退、移动部队到指定位置。"
+                "actor_ids is optional — omit to move all available units for this task."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_position": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "[x, y] destination on the map.",
+                    },
+                    "move_mode": {
+                        "type": "string",
+                        "enum": ["move", "attack_move", "retreat"],
+                        "description": "Movement mode (default 'move').",
+                    },
+                    "arrival_radius": {
+                        "type": "integer",
+                        "description": "Radius in cells within which arrival is considered (default 5).",
+                    },
+                    "actor_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Specific actor IDs to move. Omit to use all task-bound units.",
+                    },
+                },
+                "required": ["target_position"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "attack",
+            "description": (
+                "Send units to attack a target position. "
+                "进攻、包围、骚扰、防守指定位置。"
+                "engagement_mode controls tactics: 'assault'=full attack, 'harass'=hit-and-run, "
+                "'hold'=hold position, 'surround'=encircle."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_position": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "[x, y] target position to attack.",
+                    },
+                    "engagement_mode": {
+                        "type": "string",
+                        "enum": ["assault", "harass", "hold", "surround"],
+                        "description": "Combat tactic (default 'assault').",
+                    },
+                    "max_chase_distance": {
+                        "type": "integer",
+                        "description": "Maximum cells to chase retreating enemies (default 20).",
+                    },
+                    "retreat_threshold": {
+                        "type": "number",
+                        "description": "HP fraction at which units retreat (0–1, default 0.3).",
+                    },
+                },
+                "required": ["target_position"],
+            },
+        },
+    },
+    # --- Job management tools ---
     {
         "type": "function",
         "function": {

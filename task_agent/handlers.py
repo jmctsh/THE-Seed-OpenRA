@@ -20,7 +20,15 @@ from models import (
     TaskMessage,
     TaskMessageType,
 )
-from models.configs import EXPERT_CONFIG_REGISTRY
+from models.configs import (
+    CombatJobConfig,
+    DeployJobConfig,
+    EconomyJobConfig,
+    EXPERT_CONFIG_REGISTRY,
+    MovementJobConfig,
+    ReconJobConfig,
+)
+from models.enums import EngagementMode, MoveMode
 from .tools import ToolExecutor
 
 _TYPE_MAP = {
@@ -77,23 +85,91 @@ class TaskToolHandlers:
         self.world_model = world_model
 
     def register_all(self, executor: ToolExecutor) -> None:
-        """Register all 12 tool handlers into the given ToolExecutor."""
+        """Register all tool handlers into the given ToolExecutor.
+
+        Includes both LLM-exposed tools (from TOOL_DEFINITIONS) and the
+        internal start_job handler used by bootstrap paths in agent.py.
+        """
         executor.register_all({
-            "start_job": self.handle_start_job,
+            # Expert action tools (LLM-facing)
+            "deploy_mcv": self.handle_deploy_mcv,
+            "scout_map": self.handle_scout_map,
+            "produce_units": self.handle_produce_units,
+            "move_units": self.handle_move_units,
+            "attack": self.handle_attack,
+            # Job management
             "patch_job": self.handle_patch_job,
             "pause_job": self.handle_pause_job,
             "resume_job": self.handle_resume_job,
             "abort_job": self.handle_abort_job,
+            # Task control
             "complete_task": self.handle_complete_task,
+            # Constraints
             "create_constraint": self.handle_create_constraint,
             "remove_constraint": self.handle_remove_constraint,
+            # Queries
             "query_world": self.handle_query_world,
             "query_planner": self.handle_query_planner,
+            # Bulk ops / comms
             "cancel_tasks": self.handle_cancel_tasks,
             "send_task_message": self.handle_send_task_message,
+            # Internal bootstrap tool — not in TOOL_DEFINITIONS, used by agent.py bootstrap paths
+            "start_job": self.handle_start_job,
         })
 
-    # --- Job lifecycle ---
+    # --- Expert action tools (LLM-facing, one per Expert) ---
+
+    async def handle_deploy_mcv(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
+        raw_pos = args.get("target_position")
+        config = DeployJobConfig(
+            actor_id=int(args["actor_id"]),
+            target_position=tuple(raw_pos) if raw_pos else (0, 0),
+        )
+        job = self.kernel.start_job(self.task_id, "DeployExpert", config)
+        return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}
+
+    async def handle_scout_map(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
+        config = ReconJobConfig(
+            search_region=args["search_region"],
+            target_type=args["target_type"],
+            target_owner=args.get("target_owner", "enemy"),
+            retreat_hp_pct=float(args.get("retreat_hp_pct", 0.3)),
+            avoid_combat=bool(args.get("avoid_combat", True)),
+        )
+        job = self.kernel.start_job(self.task_id, "ReconExpert", config)
+        return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}
+
+    async def handle_produce_units(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
+        config = EconomyJobConfig(
+            unit_type=args["unit_type"],
+            count=int(args["count"]),
+            queue_type=args["queue_type"],
+            repeat=bool(args.get("repeat", False)),
+        )
+        job = self.kernel.start_job(self.task_id, "EconomyExpert", config)
+        return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}
+
+    async def handle_move_units(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
+        config = MovementJobConfig(
+            target_position=tuple(args["target_position"]),
+            move_mode=MoveMode(args.get("move_mode", "move")),
+            arrival_radius=int(args.get("arrival_radius", 5)),
+            actor_ids=list(args["actor_ids"]) if args.get("actor_ids") else None,
+        )
+        job = self.kernel.start_job(self.task_id, "MovementExpert", config)
+        return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}
+
+    async def handle_attack(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
+        config = CombatJobConfig(
+            target_position=tuple(args["target_position"]),
+            engagement_mode=EngagementMode(args.get("engagement_mode", "assault")),
+            max_chase_distance=int(args.get("max_chase_distance", 20)),
+            retreat_threshold=float(args.get("retreat_threshold", 0.3)),
+        )
+        job = self.kernel.start_job(self.task_id, "CombatExpert", config)
+        return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}
+
+    # --- Internal bootstrap tool (not in TOOL_DEFINITIONS, called by agent.py bootstrap paths) ---
 
     async def handle_start_job(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
         expert_type = args["expert_type"]
