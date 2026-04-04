@@ -5,7 +5,13 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from .base import PlannerExpert
-from .knowledge import has_role, knowledge_for_target
+from .knowledge import (
+    counter_recommendation,
+    has_role,
+    knowledge_for_target,
+    opening_build_order,
+    tech_prerequisites_for,
+)
 
 
 def _actors_from_payload(payload: Any) -> list[dict[str, Any]]:
@@ -61,6 +67,27 @@ class ProductionAdvisor(PlannerExpert):
         my_actors: list[dict[str, Any]],
         enemy_actors: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        # Empty base → recommend next opening build step regardless of enemy visibility
+        if self._is_empty_base(my_actors):
+            order = opening_build_order(params.get("faction", "allied"))
+            if order:
+                step = order[0]
+                unit_type = step["unit_type"]
+                knowledge = knowledge_for_target(unit_type, "Building")
+                return {
+                    "action": "build_opening",
+                    "unit_type": unit_type,
+                    "queue_type": step["queue_type"],
+                    "count": 1,
+                    "prerequisites": [p["unit_type"] for p in tech_prerequisites_for(unit_type)],
+                    "reason": "empty_base_" + step["reason"],
+                    "recommended_expert": "EconomyExpert",
+                    "roles": knowledge["roles"],
+                    "downstream_unlocks": knowledge["downstream_unlocks"],
+                    "build_order_step": 1,
+                    "build_order_total": len(order),
+                }
+
         if self._no_visible_enemy(params, enemy_actors):
             recommendation = {
                 "action": "scout_first",
@@ -128,6 +155,20 @@ class ProductionAdvisor(PlannerExpert):
                 "downstream_unlocks": knowledge["downstream_unlocks"],
             }
 
+        counter = counter_recommendation(enemy_actors)
+        if counter:
+            return {
+                "action": "produce",
+                "unit_type": counter["unit_type"],
+                "queue_type": counter["queue_type"],
+                "count": 1,
+                "prerequisites": [],
+                "reason": counter["reason"],
+                "recommended_expert": "EconomyExpert",
+                "display_name": counter["display_name"],
+                "enemy_ratio": counter["enemy_ratio"],
+            }
+
         return {
             "action": "hold",
             "unit_type": None,
@@ -137,6 +178,19 @@ class ProductionAdvisor(PlannerExpert):
             "reason": "sufficient_force",
             "recommended_expert": None,
         }
+
+    @staticmethod
+    def _is_empty_base(my_actors: list[dict[str, Any]]) -> bool:
+        """True when player has no meaningful buildings (only CY or nothing built yet)."""
+        meaningful_roles = {
+            "power_recovery", "infantry_gateway", "economy_anchor",
+            "vehicle_gateway", "repair_gateway", "awareness_gateway",
+        }
+        return not any(
+            has_role(actor, role)
+            for actor in my_actors
+            for role in meaningful_roles
+        )
 
     @staticmethod
     def _no_visible_enemy(params: dict[str, Any], enemy_actors: list[dict[str, Any]]) -> bool:
