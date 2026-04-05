@@ -2026,6 +2026,21 @@ def test_system_prompt_has_prerequisite_waiting_discipline() -> None:
     print("  PASS: system_prompt_has_prerequisite_waiting_discipline")
 
 
+def test_system_prompt_has_fixed_demo_unit_roster() -> None:
+    """SYSTEM_PROMPT pins the simplified OpenRA roster to avoid made-up units."""
+    assert "e1=步兵" in SYSTEM_PROMPT
+    assert "e3=火箭兵" in SYSTEM_PROMPT
+    assert "ftrk=防空履带车" in SYSTEM_PROMPT
+    assert "v2rl=V2火箭车" in SYSTEM_PROMPT
+    assert "3tnk=重坦" in SYSTEM_PROMPT
+    assert "4tnk=猛犸坦克" in SYSTEM_PROMPT
+    assert "harv=矿车" in SYSTEM_PROMPT
+    assert "mig=MIG" in SYSTEM_PROMPT
+    assert "yak=YAK" in SYSTEM_PROMPT
+    assert "不要编造" in SYSTEM_PROMPT
+    print("  PASS: system_prompt_has_fixed_demo_unit_roster")
+
+
 def test_knowledge_tech_prerequisites_for_infantry() -> None:
     """tech_prerequisites_for returns barracks requirement for infantry units."""
     from experts.knowledge import tech_prerequisites_for, display_name_for
