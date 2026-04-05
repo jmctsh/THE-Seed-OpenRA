@@ -205,21 +205,21 @@ class ReconJob(BaseJob):
     """Autonomous scouting job — random-ray exploration using IsExplored grid."""
 
     tick_interval = 1.0
-    _arrival_radius = 32.0
-    _stuck_threshold_ticks = 8
+    _arrival_radius: int = 3            # Manhattan cells — match ExploreJob stick_distance
+    _stuck_threshold_ticks: int = 10
     _progress_interval_s = 15.0  # Emit progress signal every N seconds
+    _move_resend_interval_s: float = 2.0  # Re-issue move if target unchanged for this long
 
     # Random-ray algorithm tuning (cell-coordinate scale).
-    # Base radius MUST exceed _arrival_radius (32) to prevent instant arrival
-    # on freshly-picked targets: min dist = base * 0.65 must be > 32 → base >= 50.
-    _ray_base_radius: int = 60
-    _ray_radius_step: int = 20
-    _ray_max_radius: int = 160
+    # Aligned with ExploreJob parameters for reliable close-range exploration.
+    _ray_base_radius: int = 18
+    _ray_radius_step: int = 8
+    _ray_max_radius: int = 60
     _ray_threshold_start: float = 0.70
     _ray_threshold_drop: float = 0.08
     _ray_threshold_min: float = 0.30
     _ray_tries_per_expand: int = 18
-    _ray_repulsion_radius: int = 15   # min Manhattan dist between chosen targets
+    _ray_repulsion_radius: int = 10   # min Manhattan dist between chosen targets
 
     def __init__(
         self,
@@ -244,6 +244,7 @@ class ReconJob(BaseJob):
         self.phase = "searching"
         self._scout_states: dict[int, _ScoutState] = {}
         self._last_destinations: dict[int, tuple[int, int]] = {}
+        self._last_move_times: dict[int, float] = {}
         self._initial_explored_pct: Optional[float] = None
         self._best_explored_pct: Optional[float] = None
         self._visited_waypoints = 0
@@ -712,8 +713,12 @@ class ReconJob(BaseJob):
 
     def _move(self, actor: dict[str, Any], destination: tuple[int, int], *, attack_move: bool) -> None:
         actor_id = int(actor["actor_id"])
+        now = self._now()
+        # Skip if same destination AND resend cooldown has not elapsed
         if self._last_destinations.get(actor_id) == destination and self.phase != "retreating":
-            return
+            last_t = self._last_move_times.get(actor_id, 0.0)
+            if now - last_t < self._move_resend_interval_s:
+                return
         with bm_span("expert_logic", name=f"recon:{self.job_id}:move"):
             unit = Actor(
                 actor_id=actor_id,
@@ -727,6 +732,7 @@ class ReconJob(BaseJob):
                 attack_move=attack_move,
             )
         self._last_destinations[actor_id] = destination
+        self._last_move_times[actor_id] = now
 
     @staticmethod
     def _hp_ratio(actor: dict[str, Any]) -> float:
@@ -749,7 +755,7 @@ class ReconJob(BaseJob):
 
     @staticmethod
     def _arrived(a: tuple[int, int], b: tuple[int, int]) -> bool:
-        return ReconJob._distance(a, b) <= ReconJob._arrival_radius
+        return abs(a[0] - b[0]) + abs(a[1] - b[1]) <= ReconJob._arrival_radius
 
     @staticmethod
     def _now() -> float:
