@@ -103,6 +103,29 @@ class WSServer:
         await site.start()
         self._running = True
         logger.info("WS server started on %s:%d", self.config.host, self.config.port)
+        # Eagerly check voice subsystem availability so missing deps surface at startup
+        self._check_voice_availability()
+
+    @staticmethod
+    def _check_voice_availability() -> None:
+        """Log voice subsystem status at startup so missing deps are surfaced early."""
+        issues: list[str] = []
+        try:
+            from voice.asr import transcribe as _asr  # noqa: F401
+        except ImportError as e:
+            issues.append(f"ASR unavailable: {e}")
+        try:
+            from voice.tts import synthesize as _tts  # noqa: F401
+        except ImportError as e:
+            issues.append(f"TTS unavailable: {e}")
+        import os
+        if not os.environ.get("DASHSCOPE_API_KEY") and not os.environ.get("QWEN_API_KEY"):
+            issues.append("No DASHSCOPE_API_KEY or QWEN_API_KEY in environment")
+        if issues:
+            for issue in issues:
+                logger.warning("Voice subsystem: %s", issue)
+        else:
+            logger.info("Voice subsystem: ASR + TTS available")
 
     async def stop(self) -> None:
         """Stop the server and disconnect all clients."""
