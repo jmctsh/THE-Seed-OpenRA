@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Optional, Protocol
 
 from benchmark import span as bm_span
@@ -80,7 +81,7 @@ class EconomyJob(BaseJob):
         self.phase = "producing"
         self.produced_count = 0
         self.issued_count = 0
-        self._last_seen_event_ts = 0.0
+        self._last_seen_event_ts = time.time()
         self._waiting_reason: Optional[str] = None
         self._counted_ready_items_pending_placement = 0
         self._initial_matching_actor_ids = frozenset(self._matching_self_actor_ids())

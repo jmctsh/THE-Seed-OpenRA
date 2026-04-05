@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -126,10 +127,11 @@ def test_economy_job_emits_progress_and_finishes() -> None:
     # Vehicle queue: batched — single produce call with quantity=2
     assert api.produce_calls[0]["quantity"] == 2
 
+    now = time.time()
     world.events = [
         {
             "type": "PRODUCTION_COMPLETE",
-            "timestamp": 10.0,
+            "timestamp": now + 100,
             "data": {"queue_type": "Vehicle", "name": "2tnk", "display_name": "重坦"},
         }
     ]
@@ -144,7 +146,7 @@ def test_economy_job_emits_progress_and_finishes() -> None:
     world.events.append(
         {
             "type": "PRODUCTION_COMPLETE",
-            "timestamp": 20.0,
+            "timestamp": now + 200,
             "data": {"queue_type": "Vehicle", "name": "2tnk", "display_name": "重坦"},
         }
     )
@@ -301,7 +303,7 @@ def test_economy_job_matches_aliases_in_queue_and_completion_events() -> None:
     world.events = [
         {
             "type": "PRODUCTION_COMPLETE",
-            "timestamp": 10.0,
+            "timestamp": time.time() + 100,
             "data": {"queue_type": "Building", "name": "powr", "display_name": "发电厂"},
         }
     ]
@@ -498,7 +500,7 @@ def test_economy_job_completes_before_low_power_after_building_lands() -> None:
     world.events = [
         {
             "type": "PRODUCTION_COMPLETE",
-            "timestamp": 10.0,
+            "timestamp": time.time() + 100,
             "data": {"queue_type": "Building", "name": "dome", "display_name": "雷达站"},
         }
     ]
@@ -577,6 +579,70 @@ def test_economy_job_faction_restricted_fails_immediately() -> None:
     print("  PASS: economy_job_faction_restricted_fails_immediately")
 
 
+def test_economy_job_second_identical_building_does_not_see_first_completion() -> None:
+    """Job 2 for the same building type must NOT count Job 1's completion events."""
+    from unittest.mock import patch
+
+    api = MockGameAPI()
+    world = MockWorldModel()
+    world.queues = {"Building": {"queue_type": "Building", "items": [], "has_ready_item": False}}
+
+    # Control timestamps: Job 1 inits at T=1000, event at T=1500, Job 2 inits at T=2000
+    # Job 1 sees event (1500 > 1000). Job 2 must NOT see it (1500 < 2000).
+    init_times = iter([1000.0, 2000.0])
+
+    signals1: list = []
+    with patch("experts.economy.time") as mock_time:
+        mock_time.time.side_effect = lambda: next(init_times)
+        job1 = EconomyJob(
+            job_id="j1",
+            task_id="t1",
+            config=make_config(unit_type="powr", count=1, queue_type="Building"),
+            signal_callback=signals1.append,
+            game_api=api,
+            world_model=world,
+        )
+
+    # Job 1 issues produce and completes
+    job1.tick()
+    assert len(api.produce_calls) == 1
+
+    world.events = [
+        {
+            "type": "PRODUCTION_COMPLETE",
+            "timestamp": 1500.0,
+            "data": {"queue_type": "Building", "name": "powr", "display_name": "发电厂"},
+        }
+    ]
+    world.actors = [{"actor_id": 50, "name": "发电厂", "display_name": "发电厂", "category": "building"}]
+    job1.tick()
+    assert job1.status == JobStatus.SUCCEEDED
+
+    # Now create Job 2 for the same building type — Job 1's completion event is still in history
+    signals2: list = []
+    with patch("experts.economy.time") as mock_time:
+        mock_time.time.side_effect = lambda: next(iter([2000.0]))
+        job2 = EconomyJob(
+            job_id="j2",
+            task_id="t1",
+            config=make_config(unit_type="powr", count=1, queue_type="Building"),
+            signal_callback=signals2.append,
+            game_api=api,
+            world_model=world,
+        )
+
+    job2.tick()
+
+    # Job 2 must NOT immediately succeed — it should issue its own produce call
+    assert job2.status != JobStatus.SUCCEEDED, (
+        f"Job 2 should not immediately succeed from Job 1's completion event; "
+        f"produced_count={job2.produced_count}"
+    )
+    assert job2.status == JobStatus.RUNNING
+    assert len(api.produce_calls) == 2  # Job 2 issued its own produce
+    print("  PASS: economy_job_second_identical_building_does_not_see_first_completion")
+
+
 if __name__ == "__main__":
     print("Running EconomyExpert tests...\n")
     test_economy_expert_creates_queue_job()
@@ -594,4 +660,5 @@ if __name__ == "__main__":
     test_economy_job_abort_does_not_cancel_shared_queue()
     test_economy_job_cannot_produce_signal_includes_prerequisite()
     test_economy_job_faction_restricted_fails_immediately()
-    print("\nAll 15 EconomyExpert tests passed!")
+    test_economy_job_second_identical_building_does_not_see_first_completion()
+    print("\nAll 16 EconomyExpert tests passed!")
