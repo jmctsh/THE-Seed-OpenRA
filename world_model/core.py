@@ -509,7 +509,7 @@ class WorldModel:
         if job_stats_by_task is not None:
             self._job_stats_by_task = dict(job_stats_by_task)
 
-    def compute_runtime_facts(self, task_id: str) -> dict[str, Any]:
+    def compute_runtime_facts(self, task_id: str, *, include_buildable: bool = True) -> dict[str, Any]:
         """Structured, decision-oriented runtime facts for LLM context injection.
 
         Returns precise boolean/int fields so the LLM doesn't need to infer
@@ -560,15 +560,6 @@ class WorldModel:
         expert_attempts: dict[str, int] = task_stats.get("expert_attempts", {})
         same_expert_retry_count = max(expert_attempts.values()) - 1 if expert_attempts else 0
 
-        # Derive buildable units per queue from current buildings + faction.
-        buildable = self._derive_buildable_units(
-            has_construction_yard=has_construction_yard,
-            barracks_count=barracks_count,
-            war_factory_count=war_factory_count,
-            radar_count=radar_count,
-            refinery_count=refinery_count,
-        )
-
         facts: dict[str, Any] = {
             "faction": "soviet",
             "world_sync_stale": self.state.stale,
@@ -587,15 +578,30 @@ class WorldModel:
             "mcv_count": mcv_count,
             "mcv_idle": mcv_idle,
             "harvester_count": harvester_count,
-            "can_afford_power_plant": total_credits >= _COST_POWER_PLANT,
-            "can_afford_barracks": total_credits >= _COST_BARRACKS,
-            "can_afford_refinery": total_credits >= _COST_REFINERY,
             "active_task_count": len(self.active_tasks),
             "this_task_jobs": this_task_jobs,
             "failed_job_count": failed_job_count,
             "same_expert_retry_count": max(same_expert_retry_count, 0),
-            "buildable": buildable,
-            "feasibility": {
+        }
+
+        if include_buildable:
+            facts.update({
+                "can_afford_power_plant": total_credits >= _COST_POWER_PLANT,
+                "can_afford_barracks": total_credits >= _COST_BARRACKS,
+                "can_afford_refinery": total_credits >= _COST_REFINERY,
+            })
+            # Capability-facing buildability: only expose when the caller is a
+            # dedicated capability planner. Ordinary task contexts should not
+            # infer they can build prerequisites themselves from this field.
+            buildable = self._derive_buildable_units(
+                has_construction_yard=has_construction_yard,
+                barracks_count=barracks_count,
+                war_factory_count=war_factory_count,
+                radar_count=radar_count,
+                refinery_count=refinery_count,
+            )
+            facts["buildable"] = buildable
+            facts["feasibility"] = {
                 "deploy_mcv": mcv_count > 0,
                 "scout_map": combat_unit_count > 0,
                 "produce_units": (
@@ -604,8 +610,7 @@ class WorldModel:
                 ),
                 "attack": combat_unit_count > 0,
                 "move_units": (combat_unit_count + mcv_count + harvester_count) > 0,
-            },
-        }
+            }
 
         # Enemy intel summary for LLM context
         enemy_buildings: list[dict[str, Any]] = []

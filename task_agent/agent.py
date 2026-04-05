@@ -76,12 +76,14 @@ SYSTEM_PROMPT = """\
 - context确实缺少你需要的关键事实
 
 ## 任务范围
-聚焦你的任务目标。你可以执行目标所必需的最小支持动作（如探索需要兵→先造1个），但不要扩展到通用经济、科技或军备建设。
+聚焦你的任务目标。普通 managed task 不能自行补生产、建筑或科技前置，也不能为了推进任务去新建 Economy/Production 任务。
+如果缺少执行所需单位，只能通过 request_units 请求明确缺口，然后等待 Kernel/Capability 处理；如果仍不足，发送 info 说明后等待，不要“先造一个”绕过边界。
 如果另一个并行任务已在处理前置条件→等待，不重复。
 
 ## 前置条件处理
-A. 可局部补齐：目标直接需要的最小资源（探索缺兵→造1个，部署需MCV位置→查询）→ 自己补
-B. 大前置链：需要未建成的建筑链（造坦克但无车厂）→ send_task_message(type='info', content='缺少战车工厂')后complete_task(failed)
+A. 只能请求不能自补：缺少执行所需单位 → request_units(category=..., count=..., urgency=..., hint=...) 后等待 Kernel/Capability
+B. 大前置链：需要未建成的建筑链（造坦克但无车厂）→ send_task_message(type='info', content='缺少战车工厂')后等待/必要时 complete_task(failed)，不要自行请求建筑前置
+C. request_units 只用于 infantry / vehicle / aircraft 这类执行所需单位，普通 managed task 不要用它请求 building
 
 ## 完成判定
 - succeeded：任务目标已验证达成，且至少一个自有Job成功或因果导致了目标达成
@@ -649,7 +651,11 @@ class TaskAgent:
         commands such as "建造矿场": the LLM can still reinterpret them as
         recon/expansion or unit production. For simple, first-turn structure
         build commands we bootstrap the correct EconomyExpert job directly.
+        This is reserved for capability tasks; ordinary managed tasks should
+        request_units and wait instead of self-supplementing prerequisites.
         """
+        if not getattr(self.task, "is_capability", False):
+            return False
         if self._bootstrap_job_id is not None:
             return False  # already bootstrapped; do not create a duplicate
         if jobs:
@@ -717,7 +723,11 @@ class TaskAgent:
         `rifl`, even though the live RA ruleset expects `e1`. For the common
         "生产/造/训练 + <unit>" path, bootstrap directly into the correct
         EconomyExpert config instead of spending LLM turns guessing ids.
+        This is reserved for capability tasks; ordinary managed tasks should
+        request_units and wait instead of self-supplementing production.
         """
+        if not getattr(self.task, "is_capability", False):
+            return False
         if self._bootstrap_job_id is not None:
             return False  # already bootstrapped; do not create a duplicate
         if jobs:

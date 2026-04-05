@@ -158,7 +158,7 @@ class TaskToolHandlers:
         return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}
 
     async def handle_request_units(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
-        """Request units from Kernel — idle match or production."""
+        """Request units from Kernel — idle match or backend fulfillment."""
         result = self.kernel.register_unit_request(
             task_id=self.task_id,
             category=args["category"],

@@ -683,7 +683,7 @@ def test_single_agent_error_isolation():
     print("  PASS: single_agent_error_isolation")
 
 
-def test_bootstrap_structure_build_maps_refinery_to_proc() -> None:
+def test_managed_task_does_not_self_bootstrap_structure_build() -> None:
     provider = MockProvider([LLMResponse(text="monitoring")])
     captured: list[dict] = []
 
@@ -714,21 +714,12 @@ def test_bootstrap_structure_build_maps_refinery_to_proc() -> None:
 
     asyncio.run(run())
 
-    assert captured == [
-        {
-            "expert_type": "EconomyExpert",
-            "config": {
-                "unit_type": "proc",
-                "count": 1,
-                "queue_type": "Building",
-                "repeat": False,
-            },
-        }
-    ]
-    print("  PASS: bootstrap_structure_build_maps_refinery_to_proc")
+    assert captured == []
+    assert agent._total_llm_calls == 1
+    print("  PASS: managed_task_does_not_self_bootstrap_structure_build")
 
 
-def test_bootstrap_structure_build_completes_with_llm_running() -> None:
+def test_capability_structure_build_completes_with_llm_running() -> None:
     """Bootstrap pre-creates job AND LLM runs; completion via job-status finalize path."""
     captured_start_jobs: list[dict] = []
     captured_completions: list[dict] = []
@@ -755,8 +746,10 @@ def test_bootstrap_structure_build_completes_with_llm_running() -> None:
     def dynamic_jobs_provider(task_id: str) -> list[Job]:
         return list(bootstrap_jobs)
 
+    task = make_task(raw_text="建造兵营")
+    task.is_capability = True
     agent = TaskAgent(
-        task=make_task(raw_text="建造兵营"),
+        task=task,
         llm=MockProvider([LLMResponse(text="正在监控兵营建造", model="mock")]),
         tool_executor=executor,
         jobs_provider=dynamic_jobs_provider,
@@ -803,7 +796,7 @@ def test_bootstrap_structure_build_completes_with_llm_running() -> None:
     assert agent._task_completed is True
     # LLM runs on wake 1 (bootstrap no longer blocks LLM)
     assert agent._total_llm_calls >= 1
-    print("  PASS: bootstrap_structure_build_completes_with_llm_running")
+    print("  PASS: capability_structure_build_completes_with_llm_running")
 
 
 def test_bootstrap_finalizes_on_job_status_without_signal() -> None:
@@ -861,7 +854,7 @@ def test_bootstrap_finalizes_on_job_status_without_signal() -> None:
     print("  PASS: bootstrap_finalizes_on_job_status_without_signal")
 
 
-def test_bootstrap_simple_production_maps_basic_infantry_to_e1() -> None:
+def test_managed_task_does_not_self_bootstrap_simple_production() -> None:
     provider = MockProvider([LLMResponse(text="monitoring")])
     captured: list[dict] = []
 
@@ -892,21 +885,12 @@ def test_bootstrap_simple_production_maps_basic_infantry_to_e1() -> None:
 
     asyncio.run(run())
 
-    assert captured == [
-        {
-            "expert_type": "EconomyExpert",
-            "config": {
-                "unit_type": "e1",
-                "count": 3,
-                "queue_type": "Infantry",
-                "repeat": False,
-            },
-        }
-    ]
-    print("  PASS: bootstrap_simple_production_maps_basic_infantry_to_e1")
+    assert captured == []
+    assert agent._total_llm_calls == 1
+    print("  PASS: managed_task_does_not_self_bootstrap_simple_production")
 
 
-def test_bootstrap_simple_production_completes_with_llm_running() -> None:
+def test_capability_simple_production_completes_with_llm_running() -> None:
     """Bootstrap pre-creates production job AND LLM runs; completion via finalize path."""
     captured_start_jobs: list[dict] = []
     captured_completions: list[dict] = []
@@ -942,8 +926,10 @@ def test_bootstrap_simple_production_completes_with_llm_running() -> None:
             status=job_status[0],
         )]
 
+    task = make_task(raw_text="生产3个步兵")
+    task.is_capability = True
     agent = TaskAgent(
-        task=make_task(raw_text="生产3个步兵"),
+        task=task,
         llm=MockProvider([LLMResponse(text="正在监控步兵生产", model="mock")]),
         tool_executor=executor,
         jobs_provider=stateful_jobs_provider,
@@ -976,7 +962,7 @@ def test_bootstrap_simple_production_completes_with_llm_running() -> None:
     assert agent._task_completed is True
     # LLM runs on wake 1 (bootstrap no longer blocks LLM)
     assert agent._total_llm_calls >= 1
-    print("  PASS: bootstrap_simple_production_completes_with_llm_running")
+    print("  PASS: capability_simple_production_completes_with_llm_running")
 
 
 def test_existing_rule_routed_recon_job_attaches_and_llm_runs() -> None:
@@ -2035,7 +2021,8 @@ def test_system_prompt_has_multi_task_scope_section() -> None:
 def test_system_prompt_has_prerequisite_waiting_discipline() -> None:
     """SYSTEM_PROMPT has prerequisite handling guidance."""
     assert "前置" in SYSTEM_PROMPT
-    assert "补齐" in SYSTEM_PROMPT or "支持动作" in SYSTEM_PROMPT
+    assert "request_units" in SYSTEM_PROMPT
+    assert "不能自行补" in SYSTEM_PROMPT or "只能通过 request_units" in SYSTEM_PROMPT
     print("  PASS: system_prompt_has_prerequisite_waiting_discipline")
 
 
@@ -2071,11 +2058,11 @@ if __name__ == "__main__":
     test_consecutive_failures_auto_terminate()
     test_failure_counter_resets_on_success()
     test_single_agent_error_isolation()
-    test_bootstrap_structure_build_maps_refinery_to_proc()
-    test_bootstrap_structure_build_completes_with_llm_running()
+    test_managed_task_does_not_self_bootstrap_structure_build()
+    test_capability_structure_build_completes_with_llm_running()
     test_bootstrap_finalizes_on_job_status_without_signal()
-    test_bootstrap_simple_production_maps_basic_infantry_to_e1()
-    test_bootstrap_simple_production_completes_with_llm_running()
+    test_managed_task_does_not_self_bootstrap_simple_production()
+    test_capability_simple_production_completes_with_llm_running()
     test_existing_rule_routed_recon_job_attaches_and_llm_runs()
     test_bootstrap_job_decision_request_reaches_llm()
     test_system_prompt_pins_structure_build_commands_to_economy()

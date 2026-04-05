@@ -267,6 +267,17 @@ def test_bootstrap_skipped_when_not_producible():
     assert req.bootstrap_job_id is None  # No job created
 
 
+def test_building_request_does_not_bind_construction_yard_actor():
+    """Ordinary tasks should not directly request building prerequisites."""
+    kernel, _ = make_kernel_with_base()
+    task = kernel.create_task("建造兵营", TaskKind.MANAGED, 60)
+
+    result = kernel.register_unit_request(task.task_id, "building", 1, "high", "兵营")
+    assert result["status"] == "error"
+    assert "不能直接请求建筑前置" in result["message"]
+    assert kernel.world_model.resource_bindings == {}
+
+
 def test_bootstrap_notifies_capability():
     """Fast-path should notify EconomyCapability task."""
     kernel, _ = make_kernel_with_base()

@@ -649,6 +649,29 @@ def test_compute_runtime_facts_this_task_jobs() -> None:
     assert facts["same_expert_retry_count"] == 1, facts  # 2 attempts - 1
 
 
+def test_compute_runtime_facts_ordinary_view_omits_buildability() -> None:
+    """Ordinary task view should not expose buildable/feasibility/economy planning hints."""
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="兵营", faction="自己", position=Location(12, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=3000, Resources=500, Power=120, PowerDrained=80, PowerProvided=200),
+        map_info=make_map(0.5, 0.2),
+        queues={},
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+    facts = wm.compute_runtime_facts("t1", include_buildable=False)
+    assert "buildable" not in facts, facts
+    assert "feasibility" not in facts, facts
+    assert "can_afford_power_plant" not in facts, facts
+    assert "can_afford_barracks" not in facts, facts
+    assert "can_afford_refinery" not in facts, facts
+    assert facts["has_construction_yard"] is True, facts
+
+
 def test_runtime_facts_injected_in_context_packet() -> None:
     """build_context_packet carries runtime_facts through to context_to_message JSON."""
     from task_agent import build_context_packet, context_to_message, WorldSummary
@@ -684,8 +707,9 @@ def main() -> None:
     test_compute_runtime_facts_full_base()
     test_compute_runtime_facts_partial_base()
     test_compute_runtime_facts_this_task_jobs()
+    test_compute_runtime_facts_ordinary_view_omits_buildability()
     test_runtime_facts_injected_in_context_packet()
-    print("OK: 17 WorldModel tests passed")
+    print("OK: 18 WorldModel tests passed")
 
 
 if __name__ == "__main__":

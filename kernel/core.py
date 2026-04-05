@@ -280,7 +280,15 @@ class Kernel:
             )
             # Wire runtime_facts provider if the agent supports it (TaskAgent does).
             if hasattr(agent, "set_runtime_facts_provider"):
-                agent.set_runtime_facts_provider(self.world_model.compute_runtime_facts)
+                agent.set_runtime_facts_provider(
+                    lambda task_id, _task=task: self.world_model.compute_runtime_facts(
+                        task_id,
+                        include_buildable=bool(
+                            getattr(_task, "is_capability", False)
+                            or task_id == self._capability_task_id
+                        ),
+                    )
+                )
             # Wire active_tasks provider for multi-task scope awareness.
             if hasattr(agent, "set_active_tasks_provider"):
                 agent.set_active_tasks_provider(self._other_active_tasks_for)
@@ -373,6 +381,11 @@ class Kernel:
         task = self.tasks.get(task_id)
         if task is None:
             return {"status": "error", "message": f"Task {task_id} not found"}
+        if category == "building" and not bool(getattr(task, "is_capability", False)):
+            return {
+                "status": "error",
+                "message": "普通任务不能直接请求建筑前置，请请求所需单位并等待 Capability 处理",
+            }
         request_id = _gen_id("req_")
         req = UnitRequest(
             request_id=request_id,
@@ -433,6 +446,8 @@ class Kernel:
 
     def _try_fulfill_from_idle(self, req: UnitRequest) -> bool:
         """Try to fulfill a request from idle, unbound units on the field."""
+        if req.category == "building":
+            return False
         actor_category = _CATEGORY_TO_ACTOR_CATEGORY.get(req.category)
         if actor_category is None:
             return False
@@ -567,6 +582,8 @@ class Kernel:
         for req in pending:
             remaining = req.count - req.fulfilled
             if remaining <= 0:
+                continue
+            if req.category == "building":
                 continue
             actor_category = _CATEGORY_TO_ACTOR_CATEGORY.get(req.category)
             matched = [a for a in idle if actor_category is None

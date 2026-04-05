@@ -56,6 +56,7 @@ class RecordingAgent:
         self.player_responses: list[PlayerResponse] = []
         self.run_calls = 0
         self.stopped = False
+        self.runtime_facts_provider = None
 
     async def run(self) -> None:
         self.run_calls += 1
@@ -72,6 +73,9 @@ class RecordingAgent:
 
     def push_player_response(self, response: PlayerResponse) -> None:
         self.player_responses.append(response)
+
+    def set_runtime_facts_provider(self, provider) -> None:
+        self.runtime_facts_provider = provider
 
     def suspend(self) -> None:
         pass
@@ -255,6 +259,27 @@ def test_create_task_and_task_agent_registration() -> None:
     assert runtime["active_tasks"][task.task_id]["priority"] == 50
     assert any(record.name == "kernel:create_task" for record in benchmark.query(tag="tool_exec"))
     print("  PASS: create_task_and_task_agent_registration")
+
+
+def test_runtime_facts_split_ordinary_and_capability() -> None:
+    kernel = make_kernel()
+    ordinary = kernel.create_task("普通任务", TaskKind.MANAGED, 40)
+    ordinary_agent = kernel.get_task_agent(ordinary.task_id)
+    assert isinstance(ordinary_agent, RecordingAgent)
+    ordinary_facts = ordinary_agent.runtime_facts_provider(ordinary.task_id)
+    assert "buildable" not in ordinary_facts
+    assert "feasibility" not in ordinary_facts
+    assert "can_afford_power_plant" not in ordinary_facts
+
+    cap = kernel.create_task("经济总管", TaskKind.MANAGED, 80)
+    cap.is_capability = True
+    cap_agent = kernel.get_task_agent(cap.task_id)
+    assert isinstance(cap_agent, RecordingAgent)
+    cap_facts = cap_agent.runtime_facts_provider(cap.task_id)
+    assert "buildable" in cap_facts
+    assert "feasibility" in cap_facts
+    assert "can_afford_power_plant" in cap_facts
+    print("  PASS: runtime_facts_split_ordinary_and_capability")
 
 
 def test_start_job_validates_and_lifecycle_controls() -> None:
