@@ -415,9 +415,8 @@ class RuntimeBridge(InboundHandler):
         new_records = log_records()[self._log_offset :]
         self._log_offset += len(new_records)
         for record in new_records:
-            # Only push INFO+ to frontend; skip benchmark noise
-            if _LEVEL_ORDER.get(record.level, 0) < 1:
-                continue
+            # Frontend diagnostics should see runtime debug logs too. Keep benchmark
+            # traffic on the separate benchmark channel to avoid flooding the log pane.
             if record.component == "benchmark":
                 continue
             await self.ws_server.send_log_entry(record.to_dict())
@@ -512,8 +511,8 @@ class RuntimeBridge(InboundHandler):
         history_logs = [
             record.to_dict()
             for record in log_records()
-            if record.level in {"INFO", "WARN", "ERROR"} and record.component != "benchmark"
-        ][-300:]
+            if record.component != "benchmark"
+        ][-500:]
         for entry in history_logs:
             await self.ws_server.send_to_client(client_id, "log_entry", entry)
 
