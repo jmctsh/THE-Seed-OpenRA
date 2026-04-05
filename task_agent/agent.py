@@ -11,6 +11,7 @@ import json
 import logging
 import re
 import time
+import traceback
 from dataclasses import asdict, dataclass, field, replace as dc_replace
 from typing import Any, Callable, Optional
 
@@ -309,10 +310,19 @@ class TaskAgent:
             await self._wake_cycle(trigger=trigger)
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            tb = traceback.format_exc()
             logger.exception(
                 "Unexpected wake cycle error: task_id=%s",
                 self.task.task_id,
+            )
+            slog.error(
+                "Unexpected wake cycle error",
+                event="wake_cycle_error",
+                task_id=self.task.task_id,
+                error_type=type(exc).__name__,
+                error=str(exc)[:500],
+                traceback=tb,
             )
             self._consecutive_failures += 1
             if self._consecutive_failures >= self.config.max_consecutive_failures:
