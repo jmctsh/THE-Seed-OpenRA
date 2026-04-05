@@ -34,6 +34,13 @@ _SUBSCRIPTION_KEYS: dict[str, frozenset] = {
     "production": frozenset(),  # placeholder — no production InfoExpert yet
 }
 
+_CAPABILITY_ALLOWED_BUILDABLE: dict[str, tuple[str, ...]] = {
+    "Building": ("powr", "proc", "barr", "weap", "dome", "fix"),
+    "Infantry": ("e1", "e3"),
+    "Vehicle": ("ftrk", "v2rl", "3tnk", "4tnk", "harv"),
+    "Aircraft": ("mig", "yak"),
+}
+
 
 @dataclass
 class WorldSummary:
@@ -324,6 +331,68 @@ def _build_active_production(rf: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
+    """Filter capability runtime facts to the demo-safe subset shown to the LLM.
+
+    The live OpenRA ruleset can expose a broader tech tree than this demo
+    supports.  Capability should only see the simplified roster/buildings we
+    intentionally allow it to reason about.
+    """
+    if not rf:
+        return {}
+    filtered = dict(rf)
+    buildable = rf.get("buildable", {})
+    if isinstance(buildable, dict):
+        buildable_out: dict[str, list[str]] = {}
+        for queue_type, allowed in _CAPABILITY_ALLOWED_BUILDABLE.items():
+            units = buildable.get(queue_type, [])
+            filtered_units = [u for u in units if u in allowed]
+            if filtered_units:
+                buildable_out[queue_type] = filtered_units
+        filtered["buildable"] = buildable_out
+    return filtered
+
+
+def _build_capability_base_state(rf: dict[str, Any]) -> str:
+    """Build a compact capability-facing base state line."""
+    if not rf:
+        return ""
+    fields = [
+        f"建造厂={'有' if rf.get('has_construction_yard') else '无'}",
+        f"基地车={rf.get('mcv_count', 0)}",
+        f"电厂={rf.get('power_plant_count', 0)}",
+        f"矿场={rf.get('refinery_count', 0)}",
+        f"兵营={rf.get('barracks_count', 0)}",
+        f"车厂={rf.get('war_factory_count', 0)}",
+        f"雷达={rf.get('radar_count', 0)}",
+        f"维修厂={rf.get('repair_facility_count', 0)}",
+        f"矿车={rf.get('harvester_count', 0)}",
+    ]
+    return "[基地状态] " + " ".join(fields)
+
+
+def _build_capability_recent_signals(signals: list[dict[str, Any]]) -> str:
+    """Build a compact recent-signals block for capability decisions."""
+    if not signals:
+        return ""
+    parts = ["[最近信号]"]
+    for sig in signals[-6:]:
+        kind = sig.get("kind", "?")
+        summary = sig.get("summary", "")
+        data = sig.get("data") or {}
+        unit_type = data.get("unit_type", "")
+        result = sig.get("result")
+        label = f"{kind}"
+        if unit_type:
+            label += f" {unit_type}"
+        if result:
+            label += f" result={result}"
+        if summary:
+            label += f" — {summary}"
+        parts.append(label)
+    return "\n".join(parts)
+
+
 def context_to_message(packet: ContextPacket, *, is_capability: bool = False) -> dict[str, str]:
     """Convert a context packet to a compact LLM user message.
 
@@ -338,6 +407,12 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
     lines: list[str] = []
 
     # JSON header for programmatic consumers (tests, tooling).
+    header_rf = packet.runtime_facts or {}
+    header_ws = None
+    if is_capability:
+        header_rf = _capability_runtime_facts_view(header_rf)
+        header_ws = packet.world_summary
+
     header = {
         "context_packet": {
             "task": packet.task,
@@ -346,8 +421,11 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
             "recent_events": packet.recent_events,
             "open_decisions": packet.open_decisions,
             "other_active_tasks": packet.other_active_tasks,
+            "runtime_facts": header_rf,
         }
     }
+    if header_ws is not None:
+        header["context_packet"]["world_summary"] = header_ws
     lines.append("[CONTEXT UPDATE]")
     lines.append(json.dumps(header, ensure_ascii=False, default=str))
 
@@ -355,24 +433,27 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         # Capability-specific: economy, production queues, unfulfilled requests, player messages
         ws = packet.world_summary or {}
         eco = ws.get("economy", {})
+        rf = _capability_runtime_facts_view(packet.runtime_facts or {})
+        base_block = _build_capability_base_state(rf)
+        if base_block:
+            lines.append(base_block)
         if eco:
             cash = eco.get("cash", 0)
             pwr = eco.get("power_provided", 0)
             drain = eco.get("power_drained", 0)
             low = " ⚡低电力" if eco.get("low_power") else ""
-            harv = eco.get("harvester_count", "?")
+            harv = rf.get("harvester_count", eco.get("harvester_count", "?"))
             lines.append(f"[经济] 资金:{cash} 电力:{pwr}/{drain}{low} 矿车:{harv}")
 
-        prod_block = _build_active_production(packet.runtime_facts or {})
+        prod_block = _build_active_production(rf)
         if prod_block:
             lines.append(prod_block)
 
-        req_block = _build_unfulfilled_requests(packet.runtime_facts or {})
+        req_block = _build_unfulfilled_requests(rf)
         if req_block:
             lines.append(req_block)
 
         # Buildable units (important for Capability to know what to produce)
-        rf = packet.runtime_facts or {}
         buildable = rf.get("buildable", {})
         if buildable:
             from openra_state.data.dataset import CN_NAME_MAP
@@ -387,6 +468,10 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
                     b_parts.append(f"{queue_type}=[{','.join(labeled)}]")
             if b_parts:
                 lines.append(f"[可造] {' | '.join(b_parts)}")
+
+        sig_block = _build_capability_recent_signals(packet.recent_signals)
+        if sig_block:
+            lines.append(sig_block)
 
         pm_block = _build_player_messages(packet.recent_events)
         if pm_block:

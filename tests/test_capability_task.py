@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 from models import Task, TaskKind, TaskStatus
 from task_agent.tools import TOOL_DEFINITIONS, CAPABILITY_TOOL_NAMES
-from task_agent.agent import _NORMAL_TOOLS, _CAPABILITY_TOOLS
+from task_agent.agent import _NORMAL_TOOLS, _CAPABILITY_TOOLS, CAPABILITY_SYSTEM_PROMPT
 from task_agent.context import (
     ContextPacket,
     WorldSummary,
@@ -159,8 +159,8 @@ def test_capability_context_has_buildable():
     """Capability context should include buildable units."""
     rf = {
         "buildable": {
-            "Building": ["powr", "barr", "proc"],
-            "Infantry": ["e1", "e3"],
+            "Building": ["powr", "barr", "proc", "kenn", "silo"],
+            "Infantry": ["e1", "e3", "e2", "dog"],
             "Vehicle": ["3tnk", "harv"],
         }
     }
@@ -169,6 +169,60 @@ def test_capability_context_has_buildable():
     assert "[可造]" in msg["content"]
     assert "powr" in msg["content"]
     assert "3tnk" in msg["content"]
+    assert "kenn" not in msg["content"]
+    assert "silo" not in msg["content"]
+    assert "e2" not in msg["content"]
+    assert "dog" not in msg["content"]
+
+
+def test_capability_context_header_includes_runtime_facts():
+    """Capability JSON header should carry runtime_facts for debugging and grounding."""
+    rf = {
+        "has_construction_yard": True,
+        "mcv_count": 0,
+        "buildable": {"Building": ["powr", "kenn"]},
+        "unfulfilled_requests": [{"request_id": "r1", "task_label": "003", "category": "infantry", "count": 1, "fulfilled": 0}],
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    header_json = msg["content"].split("\n", 2)[1]
+    header = json.loads(header_json)
+    rf_out = header["context_packet"]["runtime_facts"]
+    assert rf_out["has_construction_yard"] is True
+    assert rf_out["mcv_count"] == 0
+    assert rf_out["buildable"]["Building"] == ["powr"]
+
+
+def test_capability_context_has_base_state_and_recent_signals():
+    """Capability context should expose base state and recent failed/blocked signals."""
+    packet = ContextPacket(
+        task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {"cash": 5000, "power_provided": 100, "power_drained": 40}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[
+            {"kind": "task_complete", "summary": "Job failed: unsupported", "result": "failed", "data": {"unit_type": "proc"}},
+            {"kind": "blocked", "summary": "缺少前置建筑", "data": {"unit_type": "weap"}},
+        ],
+        recent_events=[],
+        open_decisions=[],
+        runtime_facts={"has_construction_yard": True, "mcv_count": 0, "power_plant_count": 1, "refinery_count": 0, "barracks_count": 1, "war_factory_count": 0, "radar_count": 0, "repair_facility_count": 0, "harvester_count": 0},
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "[基地状态]" in msg["content"]
+    assert "建造厂=有" in msg["content"]
+    assert "[最近信号]" in msg["content"]
+    assert "proc" in msg["content"]
+    assert "weap" in msg["content"]
+
+
+def test_capability_prompt_pins_demo_roster_and_stage_policy():
+    """Capability prompt should pin demo-safe units/buildings and broad-command policy."""
+    assert "powr=电厂" in CAPABILITY_SYSTEM_PROMPT
+    assert "weap=战车工厂" in CAPABILITY_SYSTEM_PROMPT
+    assert "e1=步兵" in CAPABILITY_SYSTEM_PROMPT
+    assert "ftrk=防空车" in CAPABILITY_SYSTEM_PROMPT
+    assert "e2/e6/dog/kenn/silo/apwr" in CAPABILITY_SYSTEM_PROMPT
+    assert "每次最多推进一个最小里程碑" in CAPABILITY_SYSTEM_PROMPT
 
 
 def test_capability_context_has_player_messages():
