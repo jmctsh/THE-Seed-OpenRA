@@ -316,26 +316,24 @@ def test_assault_completes_partial_after_max_advance():
     print("  PASS: assault_completes_partial_after_max_advance")
 
 
-def test_assault_per_unit_nearest_enemy_targeting():
-    """Assault mode: each unit attacks its own nearest enemy, not all the same target."""
+def test_assault_focus_fire_lowest_hp():
+    """Assault mode: all units focus-fire the lowest HP enemy."""
     job, signals, api, wm = make_job(engagement_mode=EngagementMode.ASSAULT, target=(100, 100))
-    # Unit 57 is near enemy 201; unit 58 is near enemy 202
     wm.set_actor(57, (90, 90))
     wm.set_actor(58, (180, 180))
     wm.set_enemies([
-        {"actor_id": 201, "position": [95, 95]},    # close to unit 57
-        {"actor_id": 202, "position": [175, 175]},  # close to unit 58
+        {"actor_id": 201, "position": [95, 95], "hp": 100},
+        {"actor_id": 202, "position": [175, 175], "hp": 50},  # lower HP → focus target
     ])
     job.on_resource_granted(["actor:57", "actor:58"])
 
-    job.do_tick()  # approaching → engaging (both units near target)
-    job.do_tick()  # engaging: per-unit targeting
+    job.do_tick()  # approaching → engaging
+    job.do_tick()  # engaging: focus fire
 
     targets_used = {c["target"] for c in api.attack_calls}
-    # Both enemies should be targeted
-    assert 201 in targets_used, f"Unit 57 should target nearby enemy 201, got {targets_used}"
-    assert 202 in targets_used, f"Unit 58 should target nearby enemy 202, got {targets_used}"
-    print("  PASS: assault_per_unit_nearest_enemy_targeting")
+    # All units should focus the lowest HP enemy (202)
+    assert targets_used == {202}, f"All units should focus enemy 202 (lowest HP), got {targets_used}"
+    print("  PASS: assault_focus_fire_lowest_hp")
 
 
 def test_progress_signal_emitted():

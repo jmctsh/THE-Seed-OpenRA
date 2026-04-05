@@ -250,27 +250,22 @@ class CombatJob(BaseJob):
     # --- Engagement mode implementations ---
 
     def _engage_assault(self, actor_ids: list[int], enemies: list[dict]) -> None:
-        """Assault: each unit independently attacks its nearest enemy."""
-        for aid in actor_ids:
-            result = self.world_model.query("actor_by_id", {"actor_id": aid})
-            actor = result.get("actor") if isinstance(result, dict) else None
-            actor_pos = tuple(actor["position"]) if actor and actor.get("position") else None
-
-            if actor_pos is not None:
-                nearest = min(
-                    enemies,
-                    key=lambda e: self._distance(tuple(e.get("position", [0, 0])), actor_pos),
-                )
-            else:
-                nearest = enemies[0]
-
-            target_id = nearest.get("actor_id")
-            if target_id is not None:
-                try:
-                    self._attack_unit([aid], target_id)
-                except Exception:
-                    pos = tuple(nearest.get("position", [0, 0]))
-                    self._move_units([aid], pos, attack_move=True)
+        """Assault: all units focus-fire the lowest-HP enemy for fast kills."""
+        # Pick focus target: lowest HP enemy (fastest to eliminate → reduces enemy DPS)
+        focus = min(
+            enemies,
+            key=lambda e: (e.get("hp", 9999), e.get("actor_id", 0)),
+        )
+        target_id = focus.get("actor_id")
+        if target_id is not None:
+            try:
+                self._attack_unit(actor_ids, target_id)
+            except Exception:
+                pos = tuple(focus.get("position", [0, 0]))
+                self._move_units(actor_ids, pos, attack_move=True)
+        else:
+            pos = tuple(focus.get("position", [0, 0]))
+            self._move_units(actor_ids, pos, attack_move=True)
 
     def _engage_harass(self, actor_ids: list[int], enemies: list[dict], config: CombatJobConfig) -> None:
         """Harass: attack then disengage if pressured."""
@@ -361,12 +356,20 @@ class CombatJob(BaseJob):
             if xs and ys:
                 return (sum(xs) // len(xs), sum(ys) // len(ys))
 
-        # Priority 2: map center
+        # Priority 2: base diagonal (enemy most likely on opposite side)
         map_info = self.world_model.query("map")
         if isinstance(map_info, dict):
             w = map_info.get("width", 0)
             h = map_info.get("height", 0)
             if w and h:
+                base_result = self.world_model.query("my_actors", {"category": "building"})
+                buildings = base_result.get("actors", []) if isinstance(base_result, dict) else []
+                if buildings:
+                    positions = [a["position"] for a in buildings if a.get("position")]
+                    if positions:
+                        bx = sum(p[0] for p in positions) // len(positions)
+                        by = sum(p[1] for p in positions) // len(positions)
+                        return (w - bx, h - by)
                 return (w // 2, h // 2)
 
         # Fallback: target_position + slight advance
