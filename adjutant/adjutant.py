@@ -278,6 +278,10 @@ class Adjutant:
                     task_id=classification.target_task_id,
                 )
                 result = await self._handle_reply(classification)
+                # Fallback: if reply had no target (no pending question), treat as command
+                if not result.get("ok") and result.get("response_text") == "没有待回答的问题":
+                    slog.info("Reply had no target, falling back to command", event="reply_fallback_to_command")
+                    result = await self._handle_command(text)
             elif classification.input_type == InputType.QUERY:
                 slog.info("Routing to query handler", event="route_decision", input_type=InputType.QUERY)
                 result = await self._handle_query(text, context)
