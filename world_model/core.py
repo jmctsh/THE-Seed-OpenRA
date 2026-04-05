@@ -570,6 +570,15 @@ class WorldModel:
         expert_attempts: dict[str, int] = task_stats.get("expert_attempts", {})
         same_expert_retry_count = max(expert_attempts.values()) - 1 if expert_attempts else 0
 
+        # Derive buildable units per queue from current buildings + faction.
+        buildable = self._derive_buildable_units(
+            has_construction_yard=has_construction_yard,
+            barracks_count=barracks_count,
+            war_factory_count=war_factory_count,
+            radar_count=radar_count,
+            refinery_count=refinery_count,
+        )
+
         facts: dict[str, Any] = {
             "faction": "soviet",
             "has_construction_yard": has_construction_yard,
@@ -589,6 +598,7 @@ class WorldModel:
             "this_task_jobs": this_task_jobs,
             "failed_job_count": failed_job_count,
             "same_expert_retry_count": max(same_expert_retry_count, 0),
+            "buildable": buildable,
             "feasibility": {
                 "deploy_mcv": mcv_count > 0,
                 "scout_map": combat_unit_count > 0,
@@ -626,6 +636,38 @@ class WorldModel:
             facts["info_experts"] = info_expert_data
 
         return facts
+
+    @staticmethod
+    def _derive_buildable_units(
+        *,
+        has_construction_yard: bool,
+        barracks_count: int,
+        war_factory_count: int,
+        radar_count: int,
+        refinery_count: int,
+    ) -> dict[str, list[str]]:
+        """Derive currently buildable unit codes per queue from buildings + faction=soviet."""
+        result: dict[str, list[str]] = {}
+        # Buildings (need construction yard)
+        if has_construction_yard:
+            bld = ["powr", "apwr", "proc", "barr", "silo", "kenn"]
+            if refinery_count > 0:
+                bld.extend(["weap", "sam", "agun"])
+            if refinery_count > 0 and barracks_count > 0:
+                bld.append("dome")
+            if war_factory_count > 0 and radar_count > 0:
+                bld.extend(["stek", "fix"])
+            result["Building"] = bld
+        # Infantry (need barracks)
+        if barracks_count > 0:
+            result["Infantry"] = ["e1", "e2", "e3", "e6", "dog"]
+        # Vehicle (need war factory)
+        if war_factory_count > 0:
+            veh = ["3tnk", "v2rl", "harv", "mcv", "mnly"]
+            if radar_count > 0:
+                veh.extend(["4tnk", "ttnk"])
+            result["Vehicle"] = veh
+        return result
 
     def register_info_expert(self, expert: Any) -> None:
         """Register an Information Expert whose analyze() output is merged into runtime_facts."""

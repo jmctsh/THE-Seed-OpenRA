@@ -244,6 +244,13 @@ def _compact_runtime_facts(rf: dict[str, Any]) -> str:
             parts.append(f"可行=[{','.join(ok_tools)}]")
         if no_tools:
             parts.append(f"不可行=[{','.join(no_tools)}]")
+    # Buildable units per queue
+    buildable = rf.get("buildable", {})
+    if buildable:
+        for queue_type in ("Building", "Infantry", "Vehicle"):
+            units = buildable.get(queue_type)
+            if units:
+                parts.append(f"可造{queue_type}=[{','.join(units)}]")
     # Info experts (compact)
     ie = rf.get("info_experts", {})
     if ie:
