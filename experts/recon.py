@@ -162,8 +162,19 @@ _REGION_BASE_ANGLES: dict[str, float] = {
     "northwest": -3 * math.pi / 4,
     "southwest":  3 * math.pi / 4,
     "southeast":  math.pi / 4,
-    "enemy_half": -math.pi / 4,   # assume enemy is roughly northeast
     "full_map":    0.0,
+    # "enemy_half" is resolved dynamically via _infer_enemy_half_angle()
+}
+
+# Angular half-width for directional search_region constraint.
+# Rays are restricted to base_angle ± this value.
+_REGION_HALF_WIDTH: dict[str, float] = {
+    "northeast": math.pi / 2,
+    "northwest": math.pi / 2,
+    "southwest": math.pi / 2,
+    "southeast": math.pi / 2,
+    "enemy_half": math.pi / 2,
+    "full_map": math.pi,  # no constraint
 }
 
 
@@ -371,6 +382,9 @@ class ReconJob(BaseJob):
             ]
             with bm_span("expert_logic", name=f"recon:{self.job_id}:pick_target"):
                 st.target = self._pick_target_random_ray(actor_id, cur, st, other_targets)
+            # Fallback: random-ray found nothing → head to largest unexplored area
+            if st.target is None:
+                st.target = self._fallback_unexplored_centroid(cur, st)
 
         if st.target is None:
             return
@@ -387,11 +401,30 @@ class ReconJob(BaseJob):
     def _get_or_init_scout_state(self, actor_id: int) -> _ScoutState:
         if actor_id not in self._scout_states:
             st = _ScoutState()
-            region_angle = _REGION_BASE_ANGLES.get(self.config.search_region, 0.0)
+            region = self.config.search_region
+            if region == "enemy_half":
+                region_angle = self._infer_enemy_half_angle()
+            else:
+                region_angle = _REGION_BASE_ANGLES.get(region, 0.0)
             # Golden-angle spread across multiple scouts with same region
             st.base_angle = (region_angle + actor_id * _GOLDEN_ANGLE) % math.tau
             self._scout_states[actor_id] = st
         return self._scout_states[actor_id]
+
+    def _infer_enemy_half_angle(self) -> float:
+        """Infer enemy direction as diagonal opposite of our base centroid."""
+        base = self._base_centroid()
+        map_info = self.world_model.query("map")
+        w = int(map_info.get("width") or 128)
+        h = int(map_info.get("height") or 128)
+        if base is None:
+            return _REGION_BASE_ANGLES.get("northeast", -math.pi / 4)
+        cx, cy = w / 2, h / 2
+        dx, dy = cx - base[0], cy - base[1]  # vector from base toward center
+        if abs(dx) < 1 and abs(dy) < 1:
+            return 0.0
+        # Point away from base, through center to opposite side
+        return math.atan2(dy, dx)
 
     def _pick_target_random_ray(
         self,
@@ -438,9 +471,10 @@ class ReconJob(BaseJob):
                 self._ray_threshold_start - ei * self._ray_threshold_drop,
             )
 
+            half_w = _REGION_HALF_WIDTH.get(self.config.search_region, math.pi)
             for ti in range(self._ray_tries_per_expand):
                 seed = _hash_seed(actor_id, t_bucket, ei, ti)
-                jitter = (_rand01(seed) - 0.5) * (math.pi / 3.0)   # ±60°
+                jitter = (_rand01(seed) - 0.5) * 2 * half_w  # constrained to region
                 angle = (st.base_angle + jitter + ti * 0.35) % math.tau
 
                 r01 = _rand01(seed ^ 0x9E3779B9)
@@ -472,6 +506,47 @@ class ReconJob(BaseJob):
                     return tgt
 
         return None
+
+    def _fallback_unexplored_centroid(
+        self,
+        cur: tuple[int, int],
+        st: _ScoutState,
+    ) -> Optional[tuple[int, int]]:
+        """When random-ray finds no target, scan the grid for the densest unexplored area."""
+        now = self._now()
+        if self._cached_grid is None or now - self._grid_cache_time >= self._grid_cache_ttl:
+            self._cached_grid = self.world_model.query("map")
+            self._grid_cache_time = now
+        map_info = self._cached_grid
+        exp: list = list(map_info.get("is_explored") or [])
+        w = int(map_info.get("width") or 0)
+        h = int(map_info.get("height") or 0)
+        if not w or not h:
+            return None
+
+        origin = _detect_grid_origin([cur], w, h)
+        layout = _choose_grid_layout(exp, w, h, origin, [cur])
+
+        # Scan grid in 8x8 blocks, find the block with most unexplored cells
+        block = 8
+        best_count = 0
+        best_cx, best_cy = w // 2, h // 2
+        for by in range(0, h, block):
+            for bx in range(0, w, block):
+                count = 0
+                for dy in range(min(block, h - by)):
+                    for dx in range(min(block, w - bx)):
+                        if not _is_explored_cell(exp, bx + dx, by + dy, w, h, layout):
+                            count += 1
+                if count > best_count:
+                    key = f"{bx + block // 2},{by + block // 2}"
+                    if key not in st.visited:
+                        best_count = count
+                        best_cx = bx + block // 2 + origin
+                        best_cy = by + block // 2 + origin
+        if best_count == 0:
+            return None
+        return (min(best_cx, w - 1 + origin), min(best_cy, h - 1 + origin))
 
     # -----------------------------------------------------------------------
     # Tracking / retreat / completion (unchanged from original)
