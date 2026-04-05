@@ -611,6 +611,31 @@ class WorldModel:
             },
         }
 
+        # Enemy intel summary for LLM context
+        enemy_buildings: list[dict[str, Any]] = []
+        enemy_infantry = 0
+        enemy_vehicles = 0
+        enemy_other = 0
+        for a in self.state.actors.values():
+            if a.owner != ActorOwner.ENEMY or not a.is_alive:
+                continue
+            if a.category == ActorCategory.BUILDING:
+                pos = (a.location.x, a.location.y) if a.location else None
+                enemy_buildings.append({"name": a.display_name or a.name, "position": pos})
+            elif a.category == ActorCategory.INFANTRY:
+                enemy_infantry += 1
+            elif a.category == ActorCategory.VEHICLE:
+                enemy_vehicles += 1
+            else:
+                enemy_other += 1
+        facts["enemy_intel"] = {
+            "buildings": enemy_buildings,
+            "infantry_count": enemy_infantry,
+            "vehicle_count": enemy_vehicles,
+            "other_count": enemy_other,
+            "total": len(enemy_buildings) + enemy_infantry + enemy_vehicles + enemy_other,
+        }
+
         # Merge Information Expert analyses under info_experts key.
         if self._info_experts:
             enemy_actors = [

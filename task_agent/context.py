@@ -308,6 +308,24 @@ def context_to_message(packet: ContextPacket) -> dict[str, str]:
         map_line = _compact_map(ws.get("map", {}))
         lines.append(f"[世界] {eco_line} | {mil_line} | {map_line}")
 
+    # Enemy intel
+    enemy_intel = packet.runtime_facts.get("enemy_intel", {}) if packet.runtime_facts else {}
+    if enemy_intel and enemy_intel.get("total", 0) > 0:
+        enemy_parts = []
+        buildings = enemy_intel.get("buildings", [])
+        if buildings:
+            positions = [f"[{b['position'][0]},{b['position'][1]}]" for b in buildings if b.get("position")]
+            enemy_parts.append(f"建筑x{len(buildings)}({','.join(positions)})" if positions else f"建筑x{len(buildings)}")
+        inf = enemy_intel.get("infantry_count", 0)
+        veh = enemy_intel.get("vehicle_count", 0)
+        if inf:
+            enemy_parts.append(f"步兵x{inf}")
+        if veh:
+            enemy_parts.append(f"车辆x{veh}")
+        lines.append(f"[敌军] 已发现: {' '.join(enemy_parts)}")
+    else:
+        lines.append("[敌军] 无情报")
+
     # Runtime facts (compact)
     rf_line = _compact_runtime_facts(packet.runtime_facts)
     if rf_line:
