@@ -1029,7 +1029,7 @@ class TaskAgent:
         so they don't dominate the context window.
         """
         if result.error:
-            content = json.dumps({"error": result.error})
+            content = json.dumps({"error": result.error}, ensure_ascii=False)
         else:
             content = _truncate_tool_result(result.result)
         return {

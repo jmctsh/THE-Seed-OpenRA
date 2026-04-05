@@ -61,7 +61,7 @@ def export_benchmark_report_json(
     indent: int = 2,
 ) -> str:
     payload = summarize_benchmarks(tag=tag, start_time=start_time, end_time=end_time)
-    serialized = json.dumps(payload, ensure_ascii=True, indent=indent)
+    serialized = json.dumps(payload, ensure_ascii=False, indent=indent)
     if path is not None:
         Path(path).write_text(serialized + "\n", encoding="utf-8")
     return serialized

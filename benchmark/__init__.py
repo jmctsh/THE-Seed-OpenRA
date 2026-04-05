@@ -131,7 +131,7 @@ class BenchmarkStore:
                 slowest_first=slowest_first,
             )
         ]
-        serialized = json.dumps(payload, ensure_ascii=True, indent=indent)
+        serialized = json.dumps(payload, ensure_ascii=False, indent=indent)
         if path is not None:
             Path(path).write_text(serialized + "\n", encoding="utf-8")
         return serialized

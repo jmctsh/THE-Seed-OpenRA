@@ -72,7 +72,7 @@ class PersistentLogSession:
         payload["component_counts"] = dict(sorted(self.component_counts.items()))
         payload["task_counts"] = dict(sorted(self.task_counts.items()))
         payload["task_file_count"] = len(self.task_counts)
-        self.metadata_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+        self.metadata_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def _normalize_time(value: Optional[Union[datetime, float, int]]) -> Optional[float]:
@@ -132,7 +132,7 @@ class LogRecord:
         }
 
     def to_json(self) -> str:
-        return json.dumps(self.to_dict(), ensure_ascii=True, sort_keys=True)
+        return json.dumps(self.to_dict(), ensure_ascii=False, sort_keys=True)
 
 
 class LogStore:
@@ -218,7 +218,7 @@ class LogStore:
                 limit=limit,
             )
         ]
-        serialized = json.dumps(payload, ensure_ascii=True, indent=indent)
+        serialized = json.dumps(payload, ensure_ascii=False, indent=indent)
         if path is not None:
             Path(path).write_text(serialized + "\n", encoding="utf-8")
         return serialized
@@ -247,7 +247,7 @@ class LogStore:
             "cwd": str(Path.cwd()),
             "metadata": _serialize(metadata or {}),
         }
-        metadata_path.write_text(json.dumps(payload, ensure_ascii=True, indent=2) + "\n", encoding="utf-8")
+        metadata_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         (base / "latest.txt").write_text(str(session_dir) + "\n", encoding="utf-8")
         with self._lock:
             self._persistent_session = PersistentLogSession(session_dir)

@@ -433,7 +433,7 @@ class AnthropicProvider(LLMProvider):
                         ToolCall(
                             id=block.id,
                             name=block.name,
-                            arguments=json.dumps(block.input),
+                            arguments=json.dumps(block.input, ensure_ascii=False),
                         )
                     )
             return LLMResponse(
