@@ -83,6 +83,7 @@ class InputType:
     QUERY = "query"
     CANCEL = "cancel"
     ACK = "ack"
+    INFO = "info"
 
 
 _ACKNOWLEDGMENT_WORDS: frozenset[str] = frozenset({
@@ -129,17 +130,21 @@ Given the current context (active tasks, pending questions, recent dialogue, rec
 2. "command" — the player is giving a new order/instruction
 3. "query" — the player is asking for information (战况, 建议, etc.)
 4. "cancel" — the player wants to cancel/stop a currently running task (e.g. "取消任务002", "停止#001", "cancel task 003")
+5. "info" — the player is providing intelligence, feedback, or situational updates (e.g. "敌人在左下角", "发现敌人基地了", "被打了", "就在剩下的14%里啊")
 
 Respond with a JSON object:
-{"type": "reply"|"command"|"query"|"cancel", "target_message_id": "<id or null>", "target_task_id": "<label or task_id or null>", "confidence": 0.0-1.0}
+{"type": "reply"|"command"|"query"|"cancel"|"info", "target_message_id": "<id or null>", "target_task_id": "<label or task_id or null>", "confidence": 0.0-1.0}
 
 Rules:
 - If there are pending questions and the input looks like a response, classify as "reply" with the matching message_id
 - If ambiguous between reply and command, match to the highest-priority pending question
-- Queries ask about game state or advice without commanding action
+- Queries ask about game state or advice WITHOUT providing new facts — pure questions ("战况如何?", "电力够吗?")
 - Commands are instructions to execute (attack, build, produce, explore, retreat, etc.)
+- "info" is for inputs that provide new facts, intelligence, corrections, or situational awareness to the AI — NOT a question and NOT a direct order. E.g.: "敌人基地在左下角", "发现敌人，被打了", "那个方向没有敌人"
+- If the input describes an urgent situation (被攻击, 被打了, 发现敌人) but has no explicit action verb, classify as "info" NOT "query"
 - "cancel" applies when the player explicitly wants to stop an existing task; set target_task_id to the task label or id mentioned (e.g. "001", "002")
 - Active tasks are listed in the context — use their labels to resolve "取消001" → target_task_id="001"
+- For "info" type: set target_task_id to the label of the most relevant active task if one is clearly related
 
 Dialogue context awareness:
 - Check recent_completed_tasks for context when the player's input is short or vague.
@@ -282,6 +287,10 @@ class Adjutant:
                 if not result.get("ok") and result.get("response_text") == "没有待回答的问题":
                     slog.info("Reply had no target, falling back to command", event="reply_fallback_to_command")
                     result = await self._handle_command(text)
+            elif classification.input_type == InputType.INFO:
+                slog.info("Routing to info handler", event="route_decision", input_type=InputType.INFO,
+                          target_task_id=classification.target_task_id)
+                result = await self._handle_info(text, classification, context)
             elif classification.input_type == InputType.QUERY:
                 slog.info("Routing to query handler", event="route_decision", input_type=InputType.QUERY)
                 result = await self._handle_query(text, context)
@@ -872,7 +881,7 @@ class Adjutant:
                     text = text[4:]
             data = json.loads(text)
             input_type = data.get("type", "command")
-            if input_type not in (InputType.COMMAND, InputType.REPLY, InputType.QUERY, InputType.CANCEL):
+            if input_type not in (InputType.COMMAND, InputType.REPLY, InputType.QUERY, InputType.CANCEL, InputType.INFO):
                 input_type = InputType.COMMAND
 
             return ClassificationResult(
@@ -1002,6 +1011,48 @@ class Adjutant:
             "response_text": result.get("message", "已回复"),
         }
 
+    async def _handle_info(self, text: str, classification: ClassificationResult, context: AdjutantContext) -> dict[str, Any]:
+        """Route player intelligence/feedback to the most relevant active task.
+
+        If a matching task is found, creates a supplementary command task that
+        captures the player's intel. Otherwise falls back to _handle_command.
+        """
+        # Find best matching active task by keyword overlap
+        target_label = classification.target_task_id
+        best_task = None
+        if target_label:
+            tasks = self.kernel.list_tasks()
+            best_task = next(
+                (t for t in tasks if getattr(t, "label", "") == target_label
+                 or getattr(t, "label", "").lstrip("0") == target_label.lstrip("0")),
+                None,
+            )
+
+        if best_task is None and context.active_tasks:
+            # Match by keyword overlap between input and task raw_text
+            text_lower = text.lower()
+            scored = []
+            for at in context.active_tasks:
+                raw = str(at.get("raw_text", "")).lower()
+                overlap = sum(1 for w in raw if len(w) > 1 and w in text_lower)
+                scored.append((overlap, at))
+            scored.sort(key=lambda x: -x[0])
+            # Pick the best match, or highest priority active task
+            if scored:
+                best_label = scored[0][1].get("label")
+                tasks = self.kernel.list_tasks()
+                best_task = next(
+                    (t for t in tasks if getattr(t, "label", "") == best_label),
+                    None,
+                )
+
+        # Create a command task with the intel — it will be visible to other tasks via [并行]
+        result = await self._handle_command(text)
+        task_ref = f"（相关任务: {best_task.label}）" if best_task else ""
+        if result.get("ok"):
+            result["response_text"] = f"收到情报{task_ref}，已记录"
+        return result
+
     async def _handle_cancel(self, classification: ClassificationResult) -> dict[str, Any]:
         """Cancel a task by its label (e.g. '001') via Kernel."""
         label = (classification.target_task_id or "").lstrip("0") or "0"
@@ -1026,8 +1077,54 @@ class Adjutant:
             "response_text": f"已取消任务 {label_display}" if ok else f"任务 {label_display} 无法取消（已完成或已中止）",
         }
 
+    _OVERLAP_KEYWORDS = {
+        "探索", "侦察", "侦查", "找", "搜索", "发现", "探路",
+        "攻击", "进攻", "打", "突袭", "消灭",
+        "建", "造", "生产", "发展", "扩张",
+        "防守", "防御", "守",
+        "敌方", "敌人", "敌军", "基地",
+    }
+
+    def _find_overlapping_task(self, text: str) -> Optional[Any]:
+        """Find an active task with semantically overlapping intent."""
+        tasks = self.kernel.list_tasks()
+        terminal = {"succeeded", "failed", "aborted", "partial"}
+        active = [t for t in tasks if t.status.value not in terminal]
+        if not active:
+            return None
+
+        text_kw = {w for w in self._OVERLAP_KEYWORDS if w in text}
+        if not text_kw:
+            return None
+
+        for t in active:
+            raw = t.raw_text or ""
+            task_kw = {w for w in self._OVERLAP_KEYWORDS if w in raw}
+            shared = text_kw & task_kw
+            # Require at least 2 shared keywords for overlap detection
+            if len(shared) >= 2:
+                return t
+        return None
+
     async def _handle_command(self, text: str) -> dict[str, Any]:
-        """Create a new Task via Kernel."""
+        """Create a new Task via Kernel, with semantic overlap detection."""
+        # Check for overlapping active tasks
+        overlap = self._find_overlapping_task(text)
+        if overlap is not None:
+            slog.info(
+                "Semantic overlap detected with active task",
+                event="task_overlap_detected",
+                new_text=text,
+                existing_label=overlap.label,
+                existing_text=overlap.raw_text,
+            )
+            return {
+                "type": "command",
+                "ok": True,
+                "merged": True,
+                "existing_task_id": overlap.task_id,
+                "response_text": f"已有类似任务在执行（#{overlap.label}: {overlap.raw_text}），不重复创建",
+            }
         try:
             task = self.kernel.create_task(
                 raw_text=text,
