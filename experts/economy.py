@@ -87,6 +87,8 @@ class EconomyJob(BaseJob):
         self._initial_matching_actor_ids = frozenset(self._matching_self_actor_ids())
         self._known_matching_actor_ids = set(self._initial_matching_actor_ids)
         self._knowledge = knowledge_for_target(self.config.unit_type, self.config.queue_type)
+        self._last_harvester_positions: dict[int, tuple[int, int]] = {}
+        self._harvester_idle_ticks: dict[int, int] = {}
 
     @property
     def expert_type(self) -> str:
@@ -114,6 +116,7 @@ class EconomyJob(BaseJob):
 
         self._apply_completion_events()
         self._sync_direct_actor_completions()
+        self._maybe_manage_idle_harvesters()
         queue = self._queue_state()
         if self.status == JobStatus.SUCCEEDED:
             return
@@ -180,6 +183,37 @@ class EconomyJob(BaseJob):
         self.issued_count += batch
         self.phase = "producing"
         self.status = JobStatus.RUNNING
+
+    def _maybe_manage_idle_harvesters(self) -> None:
+        """Detect idle harvesters and send them to mine."""
+        if not self._is_economy_unit():
+            return
+        result = self.world_model.query("self_actors")
+        actors = result.get("actors", []) if isinstance(result, dict) else []
+        harvesters = [a for a in actors if a.get("category") == "harvester" and a.get("position")]
+
+        for harv in harvesters:
+            aid = harv["actor_id"]
+            pos = (int(harv["position"][0]), int(harv["position"][1]))
+            prev = self._last_harvester_positions.get(aid)
+            if prev is not None:
+                dist = abs(pos[0] - prev[0]) + abs(pos[1] - prev[1])
+                activity = harv.get("activity", "")
+                # Idle = not moving AND not harvesting/returning
+                if dist < 2 and "harvest" not in str(activity).lower():
+                    self._harvester_idle_ticks[aid] = self._harvester_idle_ticks.get(aid, 0) + 1
+                else:
+                    self._harvester_idle_ticks[aid] = 0
+            self._last_harvester_positions[aid] = pos
+
+            if self._harvester_idle_ticks.get(aid, 0) >= 3:
+                # Send idle harvester to deploy (which triggers mining)
+                try:
+                    from openra_api.models import Actor as GameActor
+                    self.game_api.deploy_units([GameActor(actor_id=aid)])
+                    self._harvester_idle_ticks[aid] = 0
+                except Exception:
+                    pass  # best-effort
 
     def _apply_completion_events(self) -> None:
         history = self.world_model.query("events", {"limit": 50})
