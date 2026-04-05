@@ -2,3 +2,5 @@
 Idle.
 
 ## Queue
+
+## Blocked (optional)
