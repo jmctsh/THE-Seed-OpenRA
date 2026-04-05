@@ -113,6 +113,12 @@ B. 大前置链：需要未建成的建筑链（造坦克但无车厂）→ send
 ## 空转防护
 如果阻塞原因和等待目标与上一轮相同，不要重复发送相同文本或重试相同工具。
 
+## Job复用规则
+不要反复创建同类Job。检查当前Jobs列表：
+- 已有running的scout_map/ReconExpert job → 用patch_job修改search_region等参数，不要start_job新建
+- 已有running的EconomyExpert job且unit_type相同 → 等待完成，不要重复创建
+每创建新job都会重置探索进度/已访问记录，严重浪费。
+
 ## 当前阵营=苏联 — 只能造苏联和通用单位，盟军专属单位不可用
 建筑(queue_type=Building)：
   powr=电厂  apwr=核电/大电厂  proc=矿场/精炼厂  barr=兵营  weap=战车工厂
