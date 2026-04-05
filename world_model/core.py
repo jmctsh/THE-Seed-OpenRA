@@ -229,7 +229,9 @@ class WorldModel:
 
         stale = False
         refresh_errors: list[str] = []
+        layer_timings: dict[str, float] = {}
         if "actors" in layers:
+            t0 = time.time()
             try:
                 self_actors = self.source.fetch_self_actors()
                 enemy_actors = self.source.fetch_enemy_actors()
@@ -243,8 +245,10 @@ class WorldModel:
                 stale = True
                 refresh_errors.append(f"actors:{exc}")
                 self._log_refresh_failure("actors", exc, timestamp)
+            layer_timings["actors"] = (time.time() - t0) * 1000
 
         if "economy" in layers:
+            t0 = time.time()
             try:
                 economy = self._normalize_economy(self.source.fetch_economy(), timestamp)
                 queues = self._normalize_queues(self.source.fetch_production_queues(), timestamp)
@@ -256,8 +260,10 @@ class WorldModel:
                 stale = True
                 refresh_errors.append(f"economy:{exc}")
                 self._log_refresh_failure("economy", exc, timestamp)
+            layer_timings["economy"] = (time.time() - t0) * 1000
 
         if "map" in layers:
+            t0 = time.time()
             try:
                 self.state.map_info = self._normalize_map(self.source.fetch_map(), timestamp)
                 self._last_map_refresh = timestamp
@@ -266,6 +272,18 @@ class WorldModel:
                 stale = True
                 refresh_errors.append(f"map:{exc}")
                 self._log_refresh_failure("map", exc, timestamp)
+            layer_timings["map"] = (time.time() - t0) * 1000
+
+        # Log slow refreshes for diagnostics (T-R5-5).
+        total_ms = sum(layer_timings.values())
+        if total_ms > 100:
+            slog.warn(
+                "Slow world refresh",
+                event="world_refresh_slow",
+                total_ms=round(total_ms, 1),
+                layer_ms={k: round(v, 1) for k, v in layer_timings.items()},
+                actor_count=len(self.state.actors),
+            )
 
         if stale:
             self._consecutive_refresh_failures += 1
