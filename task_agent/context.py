@@ -269,6 +269,23 @@ def context_to_message(packet: ContextPacket) -> dict[str, str]:
     """
     lines: list[str] = []
 
+    # JSON header for programmatic consumers (tests, tooling).
+    # Format: first line is "[CONTEXT UPDATE]", second line is compact JSON.
+    # _extract_context in tests does content.split("\n", 1)[1] → json.loads().
+    import json as _json
+    header = {
+        "context_packet": {
+            "task": packet.task,
+            "jobs": packet.jobs,
+            "recent_signals": packet.recent_signals,
+            "recent_events": packet.recent_events,
+            "open_decisions": packet.open_decisions,
+            "other_active_tasks": packet.other_active_tasks,
+        }
+    }
+    lines.append(f"[CONTEXT UPDATE]")
+    lines.append(_json.dumps(header, ensure_ascii=False, default=str))
+
     # Task
     t = packet.task
     lines.append(f"[任务] {t.get('raw_text','')} | 状态:{t.get('status','')} | id:{t.get('task_id','')}")

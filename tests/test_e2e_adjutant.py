@@ -133,7 +133,9 @@ class ScenarioTaskAgentProvider(LLMProvider):
         for msg in reversed(messages):
             content = msg.get("content")
             if msg.get("role") == "user" and isinstance(content, str) and content.startswith("[CONTEXT UPDATE]"):
-                return json.loads(content.split("\n", 1)[1])
+                # JSON header is on the second line (index 1); remaining lines are compact text.
+                json_line = content.split("\n")[1]
+                return json.loads(json_line)
         raise AssertionError("No context packet found in ScenarioTaskAgentProvider call")
 
 
