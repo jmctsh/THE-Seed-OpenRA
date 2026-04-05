@@ -79,6 +79,7 @@ class RuntimeConfig:
     log_export_path: str = "docs/wang/phase7_runtime_logs.json"
     log_session_root: str = "Logs/runtime"
     enable_ws: bool = True
+    enable_voice: bool = False
     verify_game_api: bool = True
     log_level: str = "WARNING"
 
@@ -695,7 +696,7 @@ class ApplicationRuntime:
         self.game_loop._dashboard_callback = self.bridge.on_tick  # type: ignore[attr-defined]
         self.ws_server = (
             WSServer(
-                config=WSServerConfig(host=config.ws_host, port=config.ws_port),
+                config=WSServerConfig(host=config.ws_host, port=config.ws_port, voice_enabled=config.enable_voice),
                 inbound_handler=self.bridge,
             )
             if config.enable_ws
@@ -865,6 +866,12 @@ def parse_args(argv: Optional[list[str]] = None) -> RuntimeConfig:
     parser.add_argument("--log-export-path", default=os.environ.get("LOG_EXPORT_PATH", "docs/wang/phase7_runtime_logs.json"))
     parser.add_argument("--log-session-root", default=os.environ.get("LOG_SESSION_ROOT", "Logs/runtime"))
     parser.add_argument("--disable-ws", action="store_true")
+    parser.add_argument(
+        "--enable-voice",
+        action="store_true",
+        default=_env_bool("ENABLE_VOICE", False),
+        help="Enable optional voice ASR/TTS endpoints and startup dependency checks",
+    )
     parser.add_argument("--skip-game-api-check", action="store_true")
     parser.add_argument("--log-level", default=os.environ.get("LOG_LEVEL", "WARNING"), help="Logging level (DEBUG/INFO/WARNING/ERROR)")
     args = parser.parse_args(argv)
@@ -890,6 +897,7 @@ def parse_args(argv: Optional[list[str]] = None) -> RuntimeConfig:
         log_export_path=args.log_export_path,
         log_session_root=args.log_session_root,
         enable_ws=not args.disable_ws,
+        enable_voice=args.enable_voice,
         verify_game_api=not args.skip_game_api_check,
         log_level=args.log_level,
     )

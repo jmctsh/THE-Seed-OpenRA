@@ -66,6 +66,7 @@ class WSServerConfig:
 
     host: str = "0.0.0.0"
     port: int = 8765
+    voice_enabled: bool = False
 
 
 _THROTTLE_INTERVAL: float = 1.0  # seconds — world_snapshot and task_list max rate
@@ -103,8 +104,11 @@ class WSServer:
         await site.start()
         self._running = True
         logger.info("WS server started on %s:%d", self.config.host, self.config.port)
-        # Eagerly check voice subsystem availability so missing deps surface at startup
-        self._check_voice_availability()
+        if self.config.voice_enabled:
+            # Only probe optional voice deps when the subsystem is explicitly enabled.
+            self._check_voice_availability()
+        else:
+            logger.info("Voice subsystem disabled by configuration")
 
     @staticmethod
     def _check_voice_availability() -> None:
@@ -330,6 +334,8 @@ class WSServer:
         or raw binary body. Query param "format" (default wav) and
         "sample_rate" (default 16000) are honoured.
         """
+        if not self.config.voice_enabled:
+            return web.json_response({"ok": False, "error": "Voice subsystem disabled"}, status=503)
         try:
             from voice.asr import transcribe as asr_transcribe
         except ImportError as e:
@@ -378,6 +384,8 @@ class WSServer:
 
         Response Content-Type is audio/mpeg (mp3) by default.
         """
+        if not self.config.voice_enabled:
+            return web.json_response({"ok": False, "error": "Voice subsystem disabled"}, status=503)
         try:
             from voice.tts import synthesize as tts_synthesize, AUDIO_MIME
         except ImportError as e:

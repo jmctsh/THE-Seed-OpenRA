@@ -195,7 +195,97 @@ def _run(coro):
 
 def _make_ws_server():
     from ws_server.server import WSServer, WSServerConfig
-    return WSServer(config=WSServerConfig(host="127.0.0.1", port=0))
+    return WSServer(config=WSServerConfig(host="127.0.0.1", port=0, voice_enabled=True))
+
+
+class _FakeRouter:
+    def add_get(self, *args, **kwargs) -> None:
+        del args, kwargs
+
+    def add_post(self, *args, **kwargs) -> None:
+        del args, kwargs
+
+
+class _FakeApplication:
+    def __init__(self, *args, **kwargs) -> None:
+        del args, kwargs
+        self.router = _FakeRouter()
+
+
+class _FakeAppRunner:
+    def __init__(self, app) -> None:
+        self.app = app
+
+    async def setup(self) -> None:
+        return None
+
+    async def cleanup(self) -> None:
+        return None
+
+
+class _FakeTCPSite:
+    def __init__(self, runner, host, port) -> None:
+        del runner, host, port
+
+    async def start(self) -> None:
+        return None
+
+
+def test_ws_voice_disabled_rejects_requests():
+    from ws_server.server import WSServer, WSServerConfig
+
+    server = WSServer(config=WSServerConfig(host="127.0.0.1", port=0, voice_enabled=False))
+
+    async def run():
+        asr_resp = await server._asr_handler(FakeRequest(body=b"\x00" * 16))
+        tts_resp = await server._tts_handler(FakeRequest(json_body={"text": "hello"}))
+        assert asr_resp.status == 503
+        assert tts_resp.status == 503
+        assert "disabled" in json.loads(asr_resp.body)["error"].lower()
+        assert "disabled" in json.loads(tts_resp.body)["error"].lower()
+
+    _run(run())
+    print("  PASS: ws_voice_disabled_rejects_requests")
+
+
+def test_ws_start_skips_voice_probe_by_default():
+    from ws_server.server import WSServer, WSServerConfig
+    import ws_server.server as server_mod
+
+    server = WSServer(config=WSServerConfig(host="127.0.0.1", port=0, voice_enabled=False))
+    probe = mock.MagicMock()
+
+    async def run():
+        with mock.patch.object(server_mod.web, "Application", _FakeApplication):
+            with mock.patch.object(server_mod.web, "AppRunner", _FakeAppRunner):
+                with mock.patch.object(server_mod.web, "TCPSite", _FakeTCPSite):
+                    with mock.patch.object(server, "_check_voice_availability", probe):
+                        await server.start()
+                        await server.stop()
+
+    _run(run())
+    assert probe.call_count == 0
+    print("  PASS: ws_start_skips_voice_probe_by_default")
+
+
+def test_ws_start_invokes_voice_probe_when_enabled():
+    from ws_server.server import WSServer, WSServerConfig
+    import ws_server.server as server_mod
+
+    server = WSServer(config=WSServerConfig(host="127.0.0.1", port=0, voice_enabled=True))
+    probe = mock.MagicMock()
+
+    async def run():
+        with mock.patch.object(server_mod.web, "Application", _FakeApplication):
+            with mock.patch.object(server_mod.web, "AppRunner", _FakeAppRunner):
+                with mock.patch.object(server_mod.web, "TCPSite", _FakeTCPSite):
+                    with mock.patch.object(server, "_check_voice_availability", probe):
+                        await server.start()
+                        await server.stop()
+
+    _run(run())
+    assert probe.call_count == 1
+    print("  PASS: ws_start_invokes_voice_probe_when_enabled")
 
 
 class FakeRequest:
@@ -320,6 +410,9 @@ def test_ws_tts_handler_tts_error():
 if __name__ == "__main__":
     print("Running voice service tests...\n")
 
+    test_ws_voice_disabled_rejects_requests()
+    test_ws_start_skips_voice_probe_by_default()
+    test_ws_start_invokes_voice_probe_when_enabled()
     test_asr_transcribe_sync_success()
     test_asr_transcribe_sync_no_key()
     test_asr_transcribe_sync_api_error()
@@ -333,4 +426,4 @@ if __name__ == "__main__":
     test_ws_tts_handler_missing_text()
     test_ws_tts_handler_tts_error()
 
-    print("\nAll 12 voice service tests passed!")
+    print("\nAll 15 voice service tests passed!")
