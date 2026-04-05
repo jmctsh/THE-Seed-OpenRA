@@ -191,7 +191,7 @@ class EconomyJob(BaseJob):
         """Detect idle harvesters and send them to mine."""
         if not self._is_economy_unit():
             return
-        result = self.world_model.query("self_actors")
+        result = self.world_model.query("my_actors")
         actors = result.get("actors", []) if isinstance(result, dict) else []
         harvesters = [a for a in actors if a.get("category") == "harvester" and a.get("position")]
 

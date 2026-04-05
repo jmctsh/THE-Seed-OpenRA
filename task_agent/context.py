@@ -375,11 +375,16 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         rf = packet.runtime_facts or {}
         buildable = rf.get("buildable", {})
         if buildable:
+            from openra_state.data.dataset import CN_NAME_MAP
             b_parts = []
             for queue_type in ("Building", "Infantry", "Vehicle", "Aircraft"):
                 units = buildable.get(queue_type)
                 if units:
-                    b_parts.append(f"{queue_type}=[{','.join(units)}]")
+                    labeled = []
+                    for u in units:
+                        cn = CN_NAME_MAP.get(u.upper(), "")
+                        labeled.append(f"{u}({cn})" if cn else u)
+                    b_parts.append(f"{queue_type}=[{','.join(labeled)}]")
             if b_parts:
                 lines.append(f"[可造] {' | '.join(b_parts)}")
 

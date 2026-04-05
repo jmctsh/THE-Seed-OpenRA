@@ -605,6 +605,8 @@ class WorldModel:
                 war_factory_count=war_factory_count,
                 radar_count=radar_count,
                 refinery_count=refinery_count,
+                repair_facility_count=repair_facility_count,
+                tech_center_count=tech_center_count,
             )
             facts["buildable"] = buildable
             facts["feasibility"] = {
@@ -703,28 +705,61 @@ class WorldModel:
         war_factory_count: int,
         radar_count: int,
         refinery_count: int,
+        repair_facility_count: int = 0,
+        tech_center_count: int = 0,
     ) -> dict[str, list[str]]:
-        """Derive currently buildable unit codes per queue from buildings + faction=soviet."""
-        result: dict[str, list[str]] = {}
-        # Buildings (need construction yard)
+        """Derive currently buildable unit codes per queue from DATASET prerequisites.
+
+        Uses the registered unit database instead of hardcoded lists, so the
+        buildable output stays in sync with actual game prerequisites.
+        """
+        from openra_state.data.dataset import DATASET
+
+        # Map prerequisite building codes to whether we have them
+        owned_buildings: set[str] = set()
         if has_construction_yard:
-            bld = ["powr", "apwr", "proc", "barr", "silo", "kenn"]
-            if refinery_count > 0:
-                bld.extend(["weap", "sam", "agun"])
-            if refinery_count > 0 and barracks_count > 0:
-                bld.append("dome")
-            if war_factory_count > 0 and radar_count > 0:
-                bld.extend(["stek", "fix"])
-            result["Building"] = bld
-        # Infantry (need barracks)
+            owned_buildings.add("fact")
         if barracks_count > 0:
-            result["Infantry"] = ["e1", "e2", "e3", "e6", "dog"]
-        # Vehicle (need war factory)
+            owned_buildings.add("barr")
         if war_factory_count > 0:
-            veh = ["3tnk", "v2rl", "harv", "mcv", "mnly"]
-            if radar_count > 0:
-                veh.extend(["4tnk", "ttnk"])
-            result["Vehicle"] = veh
+            owned_buildings.add("weap")
+        if radar_count > 0:
+            owned_buildings.add("dome")
+        if refinery_count > 0:
+            owned_buildings.add("proc")
+        if repair_facility_count > 0:
+            owned_buildings.add("fix")
+        if tech_center_count > 0:
+            owned_buildings.add("stek")
+        # powr is implicit (you can't have buildings without power typically)
+        if has_construction_yard:
+            owned_buildings.add("powr")
+
+        category_to_queue = {
+            "Building": "Building",
+            "Vehicle": "Vehicle",
+            "Infantry": "Infantry",
+            "Aircraft": "Aircraft",
+        }
+
+        result: dict[str, list[str]] = {}
+        seen: set[str] = set()
+
+        for _unit_id, info in DATASET.items():
+            code = info.id.lower()
+            if code in seen:
+                continue
+            if info.faction not in ("Soviet", "Both"):
+                continue
+            queue = category_to_queue.get(info.category)
+            if queue is None:
+                continue
+            prereqs = {p.lower() for p in info.prerequisites}
+            if prereqs and not prereqs.issubset(owned_buildings):
+                continue
+            seen.add(code)
+            result.setdefault(queue, []).append(code)
+
         return result
 
     def _count_self_actors(self) -> dict[str, Any]:
@@ -794,6 +829,8 @@ class WorldModel:
             war_factory_count=c["war_factory_count"],
             radar_count=c["radar_count"],
             refinery_count=c["refinery_count"],
+            repair_facility_count=c["repair_facility_count"],
+            tech_center_count=c["tech_center_count"],
         )
 
     def register_info_expert(self, expert: Any) -> None:

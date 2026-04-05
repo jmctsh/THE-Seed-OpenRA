@@ -97,7 +97,7 @@ class RecordingAgent:
 
 
 class FullBaseWorldSource(MockWorldSource):
-    """World source with a full Soviet base (CY + barracks + war factory + radar)."""
+    """World source with a full Soviet base (CY + barracks + war factory + radar + repair)."""
     def __init__(self, frames=None):
         if frames is None:
             frames = self._default_frames()
@@ -114,6 +114,7 @@ class FullBaseWorldSource(MockWorldSource):
                 Actor(actor_id=4, type="矿场", faction="自己", position=Location(50, 55), hppercent=100, activity="Idle"),
                 Actor(actor_id=5, type="战车工厂", faction="自己", position=Location(65, 50), hppercent=100, activity="Idle"),
                 Actor(actor_id=6, type="雷达站", faction="自己", position=Location(70, 50), hppercent=100, activity="Idle"),
+                Actor(actor_id=7, type="维修厂", faction="自己", position=Location(75, 50), hppercent=100, activity="Idle"),
                 # Idle combat units
                 Actor(actor_id=10, type="重坦", faction="自己", position=Location(80, 50), hppercent=100, activity="Idle"),
                 Actor(actor_id=11, type="重坦", faction="自己", position=Location(82, 50), hppercent=100, activity="Idle"),
