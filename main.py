@@ -194,7 +194,12 @@ class RuntimeBridge(InboundHandler):
             active_agent_ids.add(task_id)
             if task_id not in self._registered_agents:
                 review_interval = getattr(getattr(runtime.agent, "config", None), "review_interval", 10.0)
-                self.game_loop.register_agent(task_id, runtime.agent.queue, review_interval=review_interval)
+                self.game_loop.register_agent(
+                    task_id,
+                    runtime.agent.queue,
+                    review_interval=review_interval,
+                    is_suspended=lambda agent=runtime.agent: agent.is_suspended,
+                )
                 self._registered_agents.add(task_id)
 
         for task_id in list(self._registered_agents):

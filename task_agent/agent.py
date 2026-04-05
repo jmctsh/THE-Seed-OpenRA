@@ -336,6 +336,11 @@ class TaskAgent:
         self._suspended = False
         self.push_event(event)
 
+    @property
+    def is_suspended(self) -> bool:
+        """Whether the agent is intentionally parked waiting for unit fulfillment."""
+        return self._suspended
+
     async def run(self) -> None:
         """Main loop — runs until task is completed or cancelled."""
         self._running = True

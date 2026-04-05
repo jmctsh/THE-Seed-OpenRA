@@ -288,6 +288,30 @@ def test_runtime_nlu_routes_shorthand_production_without_llm():
     print("  PASS: runtime_nlu_routes_shorthand_production_without_llm")
 
 
+def test_runtime_nlu_routes_bare_unit_short_command_without_llm():
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("步兵")
+        assert result["type"] == "command"
+        assert result["ok"] is True
+        assert result["routing"] == "nlu"
+        assert result["expert_type"] == "EconomyExpert"
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert len(kernel.created_tasks) == 1
+    assert len(kernel.started_jobs) == 1
+    assert kernel.started_jobs[0]["config"].unit_type == "e1"
+    assert kernel.started_jobs[0]["config"].count == 1
+    assert kernel.started_jobs[0]["config"].queue_type == "Infantry"
+    print("  PASS: runtime_nlu_routes_bare_unit_short_command_without_llm")
+
+
 def test_runtime_nlu_routes_safe_composite_sequence_into_multiple_direct_jobs():
     """composite_sequence: only first step started immediately; rest queued and advanced on completion."""
     mock_llm = MockProvider(responses=[])

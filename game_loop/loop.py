@@ -85,6 +85,7 @@ class _RegisteredAgent:
     agent_queue: AgentQueue
     review_interval: float  # seconds
     last_review_at: float = 0.0
+    is_suspended: Optional[Callable[[], bool]] = None
 
 
 class GameLoop:
@@ -137,12 +138,20 @@ class GameLoop:
 
     # --- Agent registration (1.8 review_interval) ---
 
-    def register_agent(self, task_id: str, agent_queue: AgentQueue, review_interval: float = 10.0) -> None:
+    def register_agent(
+        self,
+        task_id: str,
+        agent_queue: AgentQueue,
+        review_interval: float = 10.0,
+        *,
+        is_suspended: Optional[Callable[[], bool]] = None,
+    ) -> None:
         """Register a Task Agent for periodic review_interval wake."""
         self._agents[task_id] = _RegisteredAgent(
             agent_queue=agent_queue,
             review_interval=review_interval,
             last_review_at=time.time(),  # Don't trigger immediately on first tick
+            is_suspended=is_suspended,
         )
         logger.debug("Agent registered: %s (review_interval=%.1fs)", task_id, review_interval)
 
@@ -299,6 +308,13 @@ class GameLoop:
         for task_id, reg in list(self._agents.items()):
             if now - reg.last_review_at >= reg.review_interval:
                 reg.last_review_at = now
+                if reg.is_suspended is not None and reg.is_suspended():
+                    slog.debug(
+                        "Skipped periodic review for suspended agent",
+                        event="agent_review_skipped_suspended",
+                        task_id=task_id,
+                    )
+                    continue
                 reg.agent_queue.trigger_review()
                 logger.debug("Review wake for agent %s", task_id)
                 slog.debug("Triggered periodic task-agent review", event="agent_review_wake", task_id=task_id)

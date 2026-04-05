@@ -91,6 +91,8 @@ def _gen_id(prefix: str) -> str:
 
 class TaskAgentLike(Protocol):
     task: Task
+    @property
+    def is_suspended(self) -> bool: ...
 
     async def run(self) -> None:
         ...

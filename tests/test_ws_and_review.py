@@ -160,6 +160,38 @@ def test_multiple_agents_different_intervals():
     print(f"  PASS: multiple_agents_different_intervals")
 
 
+def test_suspended_agent_skips_periodic_review():
+    """Periodic review must not enqueue wakes for agents parked on unit requests.
+
+    Otherwise the review sentinel remains queued, wait_for_wake() returns
+    immediately forever, and the backend spins at 100% CPU.
+    """
+    wm = MockWorldModel()
+    kernel = MockKernel()
+    loop = GameLoop(wm, kernel, config=GameLoopConfig(tick_hz=100))
+
+    queue = AgentQueue()
+    suspended = True
+    loop.register_agent(
+        "t_waiting",
+        queue,
+        review_interval=0.05,
+        is_suspended=lambda: suspended,
+    )
+
+    async def run():
+        task = asyncio.create_task(loop.start())
+        await asyncio.sleep(0.15)
+        loop.stop()
+        await asyncio.wait_for(task, timeout=2.0)
+
+    asyncio.run(run())
+
+    assert queue.pending_count == 0
+    assert not queue._wake_event.is_set()
+    print("  PASS: suspended_agent_skips_periodic_review")
+
+
 # --- 1.6 Tests: WebSocket server ---
 
 def test_ws_server_start_stop():

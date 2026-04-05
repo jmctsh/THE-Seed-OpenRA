@@ -101,10 +101,17 @@ class RuntimeNLURouter:
         rollout_allowed = bool(self.config.get("rollout", {}).get("enabled", True))
         rollout_reason = "rollout_enabled" if rollout_allowed else "rollout_disabled"
 
-        # Hard confidence floor: below this, always fall back to LLM routing
-        # regardless of router override. Prevents mis-routes like "找到敌人基地"→produce.
+        # Hard confidence floor: by default, fall back to LLM below this.
+        # But allow explicit safe router overrides (e.g. "步兵", "来点步兵")
+        # to pass when the text clearly matches a supported direct intent.
         hard_min_conf = float(self.config.get("hard_min_confidence", 0.7))
-        if pred.confidence < hard_min_conf:
+        allow_safe_override = (
+            bool(route_result.matched)
+            and bool(route_intent)
+            and route_intent in self.SUPPORTED_DIRECT_INTENTS
+            and self._allow_safe_router_override(route_intent, normalized)
+        )
+        if pred.confidence < hard_min_conf and not allow_safe_override:
             return None
 
         if not route_result.matched or not route_intent:
