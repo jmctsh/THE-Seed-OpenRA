@@ -193,6 +193,7 @@ class WorldModel:
         self.constraints: dict[str, Constraint] = {}
         # Per-task job stats (includes terminal jobs): {task_id: {"failed_count": int, "expert_attempts": {type: count}}}
         self._job_stats_by_task: dict[str, dict[str, Any]] = {}
+        self._unfulfilled_requests: list[dict[str, Any]] = []
 
         self._info_experts: list[Any] = []
 
@@ -359,6 +360,8 @@ class WorldModel:
         if query_type == "economy":
             return dict(self.state.economy)
         if query_type == "map":
+            return {k: v for k, v in self.state.map_info.items() if k != "is_explored"}
+        if query_type == "map_raw":
             return dict(self.state.map_info)
         if query_type == "production_queues":
             return {name: dict(queue) for name, queue in self.state.production_queues.items()}
@@ -453,7 +456,7 @@ class WorldModel:
                 ),
                 "bound_resources": len(self.resource_bindings),
             },
-            "map": dict(self.state.map_info),
+            "map": {k: v for k, v in self.state.map_info.items() if k != "is_explored"},
             "known_enemy": {
                 "units_spotted": len(self.state.enemy_ids),
                 "structures": len(
@@ -497,6 +500,7 @@ class WorldModel:
         resource_bindings: Optional[dict[str, str]] = None,
         constraints: Optional[Sequence[Constraint]] = None,
         job_stats_by_task: Optional[dict[str, Any]] = None,
+        unfulfilled_requests: Optional[list[dict[str, Any]]] = None,
     ) -> None:
         if active_tasks is not None:
             self.active_tasks = dict(active_tasks)
@@ -508,6 +512,8 @@ class WorldModel:
             self.constraints = {item.constraint_id: item for item in constraints}
         if job_stats_by_task is not None:
             self._job_stats_by_task = dict(job_stats_by_task)
+        if unfulfilled_requests is not None:
+            self._unfulfilled_requests = list(unfulfilled_requests)
 
     def compute_runtime_facts(self, task_id: str, *, include_buildable: bool = True) -> dict[str, Any]:
         """Structured, decision-oriented runtime facts for LLM context injection.
@@ -611,6 +617,32 @@ class WorldModel:
                 "attack": combat_unit_count > 0,
                 "move_units": (combat_unit_count + mcv_count + harvester_count) > 0,
             }
+
+        # Unfulfilled unit requests (from Kernel via set_runtime_state)
+        facts["unfulfilled_requests"] = list(self._unfulfilled_requests)
+
+        # Production queues — transform game state format to renderer-friendly format
+        # Game state: {queue_type: {"queue_type": str, "items": [{"name":..,"progress":..}]}}
+        # Renderer expects: {queue_type: [{"unit_type": str, "count": int, "source": str}]}
+        prod_queues: dict[str, list[dict[str, Any]]] = {}
+        for qname, qdata in self.state.production_queues.items():
+            items_raw = qdata.get("items", []) if isinstance(qdata, dict) else []
+            items_out: list[dict[str, Any]] = []
+            for item in items_raw:
+                if not isinstance(item, dict):
+                    continue
+                status = item.get("status", "")
+                # Only include items that are actively building or queued
+                if status in ("done", "completed"):
+                    continue
+                items_out.append({
+                    "unit_type": item.get("name", "?"),
+                    "count": 1,
+                    "source": "",
+                    "progress": item.get("progress"),
+                })
+            prod_queues[qname] = items_out
+        facts["production_queues"] = prod_queues
 
         # Enemy intel summary for LLM context
         enemy_buildings: list[dict[str, Any]] = []
@@ -959,7 +991,7 @@ class WorldModel:
         visible_pct = self._grid_ratio(getattr(map_info, "IsVisible", []))
         resources = getattr(map_info, "Resources", []) or []
         remaining_resources = sum(sum(row) for row in resources) if resources else 0
-        # Store IsExplored grid for query("map") consumers (e.g. ReconJob).
+        # Store IsExplored grid for query("map_raw") consumers (e.g. ReconJob).
         is_explored = getattr(map_info, "IsExplored", None)
         result = {
             "width": int(getattr(map_info, "MapWidth", 0) or 0),

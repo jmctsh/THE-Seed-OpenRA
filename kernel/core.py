@@ -437,6 +437,9 @@ class Kernel:
         # Step 2: fast-path bootstrap production for remaining
         self._bootstrap_production_for_request(req)
 
+        # Sync so Capability sees the new request in runtime_facts
+        self._sync_world_runtime()
+
         # If fast-path couldn't handle it, notify Capability
         if req.fulfilled < req.count and req.bootstrap_job_id is None:
             self._notify_capability_unfulfilled(req)
@@ -839,6 +842,14 @@ class Kernel:
                     priority=task.priority,
                 )
             )
+
+        # Direct-managed tasks have no running agent — auto-close on TASK_COMPLETE
+        if signal.kind == SignalKind.TASK_COMPLETE and self.is_direct_managed(signal.task_id):
+            result_map = {"succeeded": "succeeded", "failed": "failed", "aborted": "failed"}
+            result = result_map.get(signal.result, "succeeded")
+            self.complete_task(signal.task_id, result, signal.summary or "direct job completed")
+            return
+
         runtime.agent.push_signal(signal)
 
     def get_task_agent(self, task_id: str) -> Optional[TaskAgentLike]:
@@ -925,7 +936,11 @@ class Kernel:
         self._timed_out_questions.clear()
         self._closed_questions.clear()
         self._delivered_player_responses.clear()
+        self._unit_requests.clear()
+        self._direct_managed_tasks.clear()
+        self._capability_task_id = None
         self._sync_world_runtime()
+        self.ensure_capability_task()
 
     def register_task_message(self, message: TaskMessage) -> bool:
         with bm_span("tool_exec", name=f"kernel:register_task_message:{message.type.value}"):
@@ -1132,6 +1147,23 @@ class Kernel:
             if status == JobStatus.FAILED:
                 stats["failed_count"] += 1
 
+        # Serialize pending/partial unit requests for Capability context
+        unfulfilled = [
+            {
+                "request_id": req.request_id,
+                "task_label": req.task_label,
+                "task_summary": req.task_summary,
+                "category": req.category,
+                "count": req.count,
+                "fulfilled": req.fulfilled,
+                "urgency": req.urgency,
+                "hint": req.hint,
+                "reason": "",
+            }
+            for req in self._unit_requests.values()
+            if req.status in ("pending", "partial")
+        ]
+
         self.world_model.set_runtime_state(
             active_tasks={
                 task.task_id: {
@@ -1155,6 +1187,7 @@ class Kernel:
             resource_bindings=dict(self.world_model.resource_bindings),
             constraints=list(self._constraints.values()),
             job_stats_by_task=job_stats,
+            unfulfilled_requests=unfulfilled,
         )
 
     def _task_world_summary(self) -> WorldSummary:

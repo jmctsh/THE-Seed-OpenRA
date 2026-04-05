@@ -362,14 +362,14 @@ def test_reset_session_clears_runtime_memory() -> None:
 
     kernel.reset_session()
 
-    assert kernel.list_tasks() == []
+    # After reset, only the auto-created EconomyCapability task should exist
+    tasks = kernel.list_tasks()
+    assert len(tasks) == 1
+    assert getattr(tasks[0], "is_capability", False) is True
     assert kernel.list_jobs() == []
     assert kernel.list_player_notifications() == []
     assert kernel.list_task_messages() == []
     assert kernel.list_pending_questions() == []
-    runtime = kernel.world_model.query("runtime_state")
-    assert runtime["active_tasks"] == {}
-    assert runtime["active_jobs"] == {}
     print("  PASS: reset_session_clears_runtime_memory")
 
 
