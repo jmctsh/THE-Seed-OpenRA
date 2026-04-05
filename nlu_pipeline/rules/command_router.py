@@ -843,10 +843,15 @@ class CommandRouter:
             rf"([一二三四五六七八九十两]+)\s*(?:{classifier_pattern})?",
             command,
         )
-        if not chinese_match:
-            return None
+        # Vague quantity words — check before Chinese numbers so "一些/一批"
+        # aren't parsed as the number 1.
+        if re.search(r"多[来造]|[来造]点|一?[些批]|[几多]个|多点", command):
+            return 5
 
-        return self._parse_chinese_number(chinese_match.group(1))
+        if chinese_match:
+            return self._parse_chinese_number(chinese_match.group(1))
+
+        return None
 
     def _render_step_template(self, intent: str, template: str, entities: Dict[str, Any]) -> Optional[str]:
         if not template:

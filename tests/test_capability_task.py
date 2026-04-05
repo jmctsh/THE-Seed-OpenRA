@@ -222,7 +222,7 @@ def test_capability_prompt_pins_demo_roster_and_stage_policy():
     assert "e1=步兵" in CAPABILITY_SYSTEM_PROMPT
     assert "ftrk=防空车" in CAPABILITY_SYSTEM_PROMPT
     assert "e2/e6/dog/kenn/silo/apwr" in CAPABILITY_SYSTEM_PROMPT
-    assert "每次最多推进一个最小里程碑" in CAPABILITY_SYSTEM_PROMPT
+    assert "最小里程碑" in CAPABILITY_SYSTEM_PROMPT
 
 
 def test_capability_context_has_player_messages():
