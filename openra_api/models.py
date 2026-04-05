@@ -115,6 +115,7 @@ class MapQueryResult:
     Terrain: List[List[str]]  # 每个格子的地形类型。
     ResourcesType: List[List[str]]  # 每个格子的资源类型。
     Resources: List[List[int]]  # 每个格子的资源数量。
+    explored_pct: Optional[float] = None  # 已探索百分比（C#端计算）。
 
     def get_value_at_location(self, grid_name: str, location: 'Location'):
         # 根据位置获取指定网格中的值。

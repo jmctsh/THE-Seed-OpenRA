@@ -49,7 +49,7 @@ class MockWorldSource:
         self.economy_fetches += 1
         return self._frame().economy
 
-    def fetch_map(self) -> MapQueryResult:
+    def fetch_map(self, fields=None) -> MapQueryResult:
         self.map_fetches += 1
         return self._frame().map_info
 
@@ -78,9 +78,9 @@ class FailingWorldSource(MockWorldSource):
         self._maybe_fail("economy")
         return super().fetch_economy()
 
-    def fetch_map(self) -> MapQueryResult:
+    def fetch_map(self, fields=None) -> MapQueryResult:
         self._maybe_fail("map")
-        return super().fetch_map()
+        return super().fetch_map(fields=fields)
 
     def fetch_production_queues(self) -> dict[str, dict]:
         self._maybe_fail("queues")
@@ -106,8 +106,8 @@ class DetailedFailingWorldSource(MockWorldSource):
     def fetch_economy(self) -> PlayerBaseInfo:
         return super().fetch_economy()
 
-    def fetch_map(self) -> MapQueryResult:
-        return super().fetch_map()
+    def fetch_map(self, fields=None) -> MapQueryResult:
+        return super().fetch_map(fields=fields)
 
     def fetch_production_queues(self) -> dict[str, dict]:
         return super().fetch_production_queues()

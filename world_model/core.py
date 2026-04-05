@@ -96,7 +96,7 @@ class WorldModelSource(Protocol):
     def fetch_economy(self) -> Optional[PlayerBaseInfo]:
         ...
 
-    def fetch_map(self) -> Optional[MapQueryResult]:
+    def fetch_map(self, fields: list[str] | None = None) -> Optional[MapQueryResult]:
         ...
 
     def fetch_production_queues(self) -> dict[str, dict[str, Any]]:
@@ -137,8 +137,8 @@ class GameAPIWorldSource:
     def fetch_economy(self) -> Optional[PlayerBaseInfo]:
         return self.api.player_base_info_query()
 
-    def fetch_map(self) -> Optional[MapQueryResult]:
-        return self.api.map_query()
+    def fetch_map(self, fields: list[str] | None = None) -> Optional[MapQueryResult]:
+        return self.api.map_query(fields=fields)
 
     def fetch_production_queues(self) -> dict[str, dict[str, Any]]:
         queues: dict[str, dict[str, Any]] = {}
@@ -196,6 +196,7 @@ class WorldModel:
         self._last_actor_refresh = 0.0
         self._last_economy_refresh = 0.0
         self._last_map_refresh = 0.0
+        self._map_static_fetched = False
         self._pending_events: list[Event] = []
         self._event_history: list[Event] = []
         self._last_refresh_layers: list[str] = []
@@ -265,7 +266,14 @@ class WorldModel:
         if "map" in layers:
             t0 = time.time()
             try:
-                self.state.map_info = self._normalize_map(self.source.fetch_map(), timestamp)
+                # First fetch: full data (for static caching). Subsequent: lightweight.
+                if self._map_static_fetched:
+                    map_fields = ["IsExplored_packed", "MapWidth", "MapHeight"]
+                else:
+                    map_fields = None  # full fetch
+                map_result = self.source.fetch_map(fields=map_fields)
+                self.state.map_info = self._normalize_map(map_result, timestamp)
+                self._map_static_fetched = True
                 self._last_map_refresh = timestamp
                 self._clear_refresh_failure_log_state("map")
             except Exception as exc:
@@ -731,6 +739,7 @@ class WorldModel:
         self._last_actor_refresh = 0.0
         self._last_economy_refresh = 0.0
         self._last_map_refresh = 0.0
+        self._map_static_fetched = False
         self._pending_events = []
         self._last_refresh_layers = []
         self._frontline_weak_active = False
@@ -879,11 +888,18 @@ class WorldModel:
     def _normalize_map(self, map_info: Optional[MapQueryResult], timestamp: float) -> dict[str, Any]:
         if map_info is None:
             return {"width": 0, "height": 0, "explored_pct": 0.0, "visible_pct": 0.0, "timestamp": timestamp}
+        # Use C#-computed explored_pct if available, otherwise compute from grid.
+        server_explored_pct = getattr(map_info, "explored_pct", None)
+        if server_explored_pct is not None:
+            explored_pct = float(server_explored_pct)
+        else:
+            explored_pct = self._grid_ratio(getattr(map_info, "IsExplored", []))
         visible_pct = self._grid_ratio(getattr(map_info, "IsVisible", []))
-        explored_pct = self._grid_ratio(getattr(map_info, "IsExplored", []))
         resources = getattr(map_info, "Resources", []) or []
         remaining_resources = sum(sum(row) for row in resources) if resources else 0
-        return {
+        # Store IsExplored grid for query("map") consumers (e.g. ReconJob).
+        is_explored = getattr(map_info, "IsExplored", None)
+        result = {
             "width": int(getattr(map_info, "MapWidth", 0) or 0),
             "height": int(getattr(map_info, "MapHeight", 0) or 0),
             "visible_pct": round(visible_pct, 4),
@@ -891,6 +907,9 @@ class WorldModel:
             "remaining_resources": remaining_resources,
             "timestamp": timestamp,
         }
+        if is_explored and is_explored != [[]]:
+            result["is_explored"] = is_explored
+        return result
 
     def _normalize_queues(self, queues: Mapping[str, dict[str, Any]], timestamp: float) -> dict[str, dict[str, Any]]:
         normalized: dict[str, dict[str, Any]] = {}

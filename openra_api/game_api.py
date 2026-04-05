@@ -19,6 +19,19 @@ class GameAPIError(Exception):
         super().__init__(f"{code}: {message}")
 
 
+def _unpack_bool_grid(packed: list[int], w: int, h: int) -> list[list[bool]]:
+    """Unpack a bitpacked int array into a w×h 2D bool grid (col-major)."""
+    grid: list[list[bool]] = []
+    idx = 0
+    for _x in range(w):
+        col: list[bool] = []
+        for _y in range(h):
+            col.append(bool(packed[idx // 32] & (1 << (idx % 32))) if idx // 32 < len(packed) else False)
+            idx += 1
+        grid.append(col)
+    return grid
+
+
 class GameAPI:
     '''游戏API接口类，用于与游戏服务器进行通信
     提供了一系列方法来与游戏服务器进行交互，包括Actor移动、生产、查询等功能。
@@ -1295,8 +1308,12 @@ class GameAPI:
         except Exception:
             return []
 
-    def map_query(self) -> MapQueryResult:
+    def map_query(self, fields: list[str] | None = None) -> MapQueryResult:
         '''查询地图信息
+
+        Args:
+            fields: Optional list of field names to request. None = all fields.
+                    Supports "IsExplored_packed" / "IsVisible_packed" for bitpacked grids.
 
         Returns:
             MapQueryResult: 地图查询结果
@@ -1305,18 +1322,34 @@ class GameAPI:
             GameAPIError: 当查询地图信息失败时
         '''
         try:
-            response = self._send_request('map_query', {})
+            params: dict = {}
+            if fields:
+                params["fields"] = fields
+            response = self._send_request('map_query', params)
             result = self._handle_response(response, "查询地图信息失败")
 
+            w = result.get('MapWidth', 0)
+            h = result.get('MapHeight', 0)
+
+            # Unpack bitpacked grids if present
+            is_explored = result.get('IsExplored')
+            if is_explored is None and 'IsExplored_packed' in result:
+                is_explored = _unpack_bool_grid(result['IsExplored_packed'], w, h)
+
+            is_visible = result.get('IsVisible')
+            if is_visible is None and 'IsVisible_packed' in result:
+                is_visible = _unpack_bool_grid(result['IsVisible_packed'], w, h)
+
             return MapQueryResult(
-                MapWidth=result.get('MapWidth', 0),
-                MapHeight=result.get('MapHeight', 0),
+                MapWidth=w,
+                MapHeight=h,
                 Height=result.get('Height', [[]]),
-                IsVisible=result.get('IsVisible', [[]]),
-                IsExplored=result.get('IsExplored', [[]]),
+                IsVisible=is_visible or [[]],
+                IsExplored=is_explored or [[]],
                 Terrain=result.get('Terrain', [[]]),
                 ResourcesType=result.get('ResourcesType', [[]]),
-                Resources=result.get('Resources', [[]])
+                Resources=result.get('Resources', [[]]),
+                explored_pct=result.get('explored_pct'),
             )
         except GameAPIError:
             raise
