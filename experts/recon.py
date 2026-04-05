@@ -119,7 +119,11 @@ def _choose_grid_layout(
     origin: int,
     positions: list[tuple[int, int]],
 ) -> str:
-    """Determine row_major vs col_major by checking explored-ness at scout positions."""
+    """Determine row_major vs col_major by checking explored-ness at known positions.
+
+    Uses multiple probe positions for accuracy. Ties default to col_major
+    (OpenRA's native format).
+    """
     def score(layout: str) -> int:
         s = 0
         for pos in positions:
@@ -132,7 +136,8 @@ def _choose_grid_layout(
                     if 0 <= x2 < w and 0 <= y2 < h and _is_explored_cell(exp, x2, y2, w, h, layout):
                         s += 1
         return s
-    return "row_major" if score("row_major") >= score("col_major") else "col_major"
+    # Ties default to col_major (OpenRA native format).
+    return "row_major" if score("row_major") > score("col_major") else "col_major"
 
 
 def _xorshift32(v: int) -> int:
@@ -452,7 +457,13 @@ class ReconJob(BaseJob):
             return None
 
         origin = _detect_grid_origin([cur], w, h)
-        layout = _choose_grid_layout(exp, w, h, origin, [cur])
+        # Use base position + scout position for layout detection — base is
+        # far from diagonal and always explored, giving a reliable signal.
+        probe_positions = [cur]
+        base = self._base_centroid()
+        if base:
+            probe_positions.append(base)
+        layout = _choose_grid_layout(exp, w, h, origin, probe_positions)
 
         # 1-second time bucket stabilises direction between ticks but allows drift
         t_bucket = int(self._now() // 1.0)
@@ -525,7 +536,11 @@ class ReconJob(BaseJob):
             return None
 
         origin = _detect_grid_origin([cur], w, h)
-        layout = _choose_grid_layout(exp, w, h, origin, [cur])
+        probe_positions = [cur]
+        base = self._base_centroid()
+        if base:
+            probe_positions.append(base)
+        layout = _choose_grid_layout(exp, w, h, origin, probe_positions)
 
         # Scan grid in 8x8 blocks, find the block with most unexplored cells
         block = 8

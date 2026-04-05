@@ -436,4 +436,18 @@ class RuntimeNLURouter:
             return False
         if re.search(r"^([0-9一二三四五六七八九十两]+)(个|辆|座|架|名|只|台)?", command):
             return True
-        return bool(re.fullmatch(r"[\u4e00-\u9fffA-Za-z0-9]{1,8}", command))
+        # Only match short strings that contain a known building/unit keyword.
+        # Do NOT use a catch-all regex — it misclassifies informational phrases
+        # like "断电了", "找到敌方基地" as production commands.
+        if re.search(
+            r"(电厂|核电|矿场|精炼|兵营|车间|战车|雷达|科技|维修|狗屋|"
+            r"磁暴|火焰|防空|机枪|碉堡|"
+            r"步兵|火箭兵|工程师|军犬|掷弹|"
+            r"坦克|重坦|猛犸|矿车|基地车|地雷|"
+            r"powr|apwr|proc|barr|weap|dome|stek|fix|kenn|silo|"
+            r"tsla|ftur|sam|pbox|"
+            r"e1|e2|e3|e6|dog|3tnk|4tnk|ttnk|v2rl|harv|mcv|mnly|ftrk)",
+            command,
+        ):
+            return True
+        return False
