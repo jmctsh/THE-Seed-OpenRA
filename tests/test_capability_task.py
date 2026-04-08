@@ -29,6 +29,7 @@ from task_agent.context import (
     build_context_packet,
     context_to_message,
     _build_unfulfilled_requests,
+    _build_unit_reservations,
     _build_active_production,
     _build_player_messages,
 )
@@ -140,6 +141,29 @@ def test_capability_context_has_unfulfilled_requests():
     assert "无机场" in msg["content"]
 
 
+def test_capability_context_has_reservations_block():
+    """Capability context should show active reservations."""
+    rf = {
+        "unit_reservations": [
+            {
+                "reservation_id": "res_001",
+                "task_label": "003",
+                "unit_type": "e1",
+                "count": 3,
+                "assigned_actor_ids": [101],
+                "status": "partial",
+                "bootstrap_job_id": "j_boot",
+            }
+        ]
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "[Reservations]" in msg["content"]
+    assert "res_001" in msg["content"]
+    assert "remaining=2" in msg["content"]
+    assert "bootstrap=j_boot" in msg["content"]
+
+
 def test_capability_context_has_active_production():
     """Capability context should show active production queues."""
     rf = {
@@ -153,6 +177,38 @@ def test_capability_context_has_active_production():
     assert "[生产队列]" in msg["content"]
     assert "3tnk" in msg["content"]
     assert "Kernel fast-path" in msg["content"]
+
+
+def test_capability_context_has_concise_reservations():
+    """Capability context should show concise future-unit reservations."""
+    rf = {
+        "unit_reservations": [
+            {
+                "reservation_id": "res_a1",
+                "request_id": "req_a1",
+                "task_id": "t1",
+                "task_label": "003",
+                "task_summary": "发展科技",
+                "unit_type": "3tnk",
+                "count": 2,
+                "assigned_actor_ids": [11],
+                "produced_actor_ids": [21],
+                "bootstrap_job_id": "j_boot",
+                "status": "partial",
+            }
+        ]
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "[预留]" in msg["content"]
+    assert "res_a1" in msg["content"]
+    assert "REQ-req_a1" in msg["content"]
+    assert "3tnk" in msg["content"]
+    assert "Vehicle" in msg["content"]
+    assert "remaining=1" in msg["content"]
+    assert "assigned=1" in msg["content"]
+    assert "produced=1" in msg["content"]
+    assert "bootstrap=j_boot" in msg["content"]
 
 
 def test_capability_context_has_buildable():
@@ -278,6 +334,11 @@ def test_build_unfulfilled_requests_empty():
 
 def test_build_active_production_empty():
     assert _build_active_production({}) == ""
+
+
+def test_build_unit_reservations_empty():
+    assert _build_unit_reservations({}) == ""
+    assert _build_unit_reservations({"unit_reservations": []}) == ""
 
 
 def test_build_player_messages_no_events():

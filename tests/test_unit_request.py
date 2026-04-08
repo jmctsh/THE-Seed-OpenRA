@@ -254,6 +254,13 @@ def test_bootstrap_creates_economy_job():
     req = kernel._unit_requests[result["request_id"]]
     # Should have created a bootstrap job for the remaining 3
     assert req.bootstrap_job_id is not None
+    assert result["request_id"] == req.request_id
+    assert result["remaining_count"] == 3
+    assert result["unit_type"] == "3tnk"
+    assert result["queue_type"] == "Vehicle"
+    assert result["reservation_id"].startswith("res_")
+    assert result["reservation_status"] == ReservationStatus.PARTIAL.value
+    assert result["bootstrap_job_id"] == req.bootstrap_job_id
     job = kernel._jobs[req.bootstrap_job_id]
     assert job.config.unit_type == "3tnk"
     assert job.config.count == 3
@@ -444,6 +451,27 @@ def test_cancel_unit_request():
     assert kernel.cancel_unit_request(result["request_id"]) is False
 
 
+def test_cancel_unit_request_aborts_bootstrap_job():
+    """Cancelling a request with a bootstrap job should abort that job."""
+    kernel, world = make_kernel_with_base()
+
+    for actor in world.find_actors(owner="self", idle_only=True, category="vehicle"):
+        world.bind_resource(f"actor:{actor.actor_id}", "other_job")
+
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+    result = kernel.register_unit_request(task.task_id, "vehicle", 5, "high", "重坦")
+    req = kernel._unit_requests[result["request_id"]]
+    assert req.bootstrap_job_id is not None
+    bootstrap_job = kernel._jobs[req.bootstrap_job_id]
+    assert bootstrap_job.status == JobStatus.RUNNING
+
+    assert kernel.cancel_unit_request(result["request_id"]) is True
+    assert kernel._unit_requests[result["request_id"]].status == "cancelled"
+    assert kernel._jobs[req.bootstrap_job_id].status == JobStatus.ABORTED
+    reservation = kernel.list_unit_reservations()[0]
+    assert reservation.status == ReservationStatus.CANCELLED
+
+
 def test_register_unit_request_creates_reservation_for_inferred_unit():
     """Inferable requests should create a one-to-one reservation record."""
     kernel, _ = make_kernel_with_base()
@@ -455,6 +483,10 @@ def test_register_unit_request_creates_reservation_for_inferred_unit():
 
     assert len(reservations) == 1
     reservation = reservations[0]
+    assert result["reservation_id"] == reservation.reservation_id
+    assert result["unit_type"] == "3tnk"
+    assert result["queue_type"] == "Vehicle"
+    assert result["remaining_count"] == 0
     assert reservation.request_id == req.request_id
     assert reservation.unit_type == "3tnk"
     assert reservation.task_id == task.task_id
@@ -489,6 +521,36 @@ def test_cancel_unit_request_cancels_reservation():
     assert reservation.cancelled_at is not None
 
 
+def test_waiting_request_result_exposes_bootstrap_contract():
+    """Waiting results should expose reservation and bootstrap metadata."""
+    kernel, _ = make_kernel_with_base()
+    task = kernel.create_task("大规模进攻", TaskKind.MANAGED, 50)
+
+    result = kernel.register_unit_request(task.task_id, "vehicle", 5, "high", "重坦")
+
+    assert result["status"] == "waiting"
+    assert result["unit_type"] == "3tnk"
+    assert result["queue_type"] == "Vehicle"
+    assert result["remaining_count"] == 3
+    assert result["reservation_id"].startswith("res_")
+    assert result["reservation_status"] in {ReservationStatus.PARTIAL.value, ReservationStatus.PENDING.value}
+    assert result["bootstrap_job_id"].startswith("j_")
+
+
+def test_cancel_unit_request_aborts_bootstrap_job():
+    """Cancelling a waiting request should abort its active bootstrap job."""
+    kernel, _ = make_kernel_with_base()
+    task = kernel.create_task("大规模进攻", TaskKind.MANAGED, 50)
+
+    result = kernel.register_unit_request(task.task_id, "vehicle", 5, "high", "重坦")
+    bootstrap_job_id = result["bootstrap_job_id"]
+    assert bootstrap_job_id is not None
+    assert kernel._jobs[bootstrap_job_id].status in {JobStatus.RUNNING, JobStatus.WAITING}
+
+    assert kernel.cancel_unit_request(result["request_id"]) is True
+    assert kernel._jobs[bootstrap_job_id].status == JobStatus.ABORTED
+
+
 def test_sync_unfulfilled_requests_includes_reservation_metadata():
     """Runtime sync should expose reservation metadata for capability context."""
     kernel, world = make_kernel_with_base()
@@ -505,6 +567,7 @@ def test_sync_unfulfilled_requests_includes_reservation_metadata():
     assert pending[0]["request_id"] == req.request_id
     assert pending[0]["reservation_id"].startswith("res_")
     assert pending[0]["unit_type"] == "3tnk"
+    assert pending[0]["queue_type"] == "Vehicle"
     assert pending[0]["reservation_status"] == ReservationStatus.PENDING.value
 
 
@@ -685,6 +748,8 @@ if __name__ == "__main__":
     test_register_unit_request_creates_reservation_for_inferred_unit()
     test_idle_match_updates_reservation_assignment_state()
     test_cancel_unit_request_cancels_reservation()
+    test_waiting_request_result_exposes_bootstrap_contract()
+    test_cancel_unit_request_aborts_bootstrap_job()
     test_sync_unfulfilled_requests_includes_reservation_metadata()
     test_runtime_state_exposes_active_unit_reservations()
     test_list_unit_requests_filter()

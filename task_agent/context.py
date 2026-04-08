@@ -41,11 +41,31 @@ _CAPABILITY_ALLOWED_BUILDABLE: dict[str, tuple[str, ...]] = {
     "Aircraft": ("mig", "yak"),
 }
 
+_QUEUE_TYPE_BY_UNIT_TYPE: dict[str, str] = {
+    "powr": "Building",
+    "proc": "Building",
+    "barr": "Building",
+    "weap": "Building",
+    "dome": "Building",
+    "fix": "Building",
+    "e1": "Infantry",
+    "e3": "Infantry",
+    "ftrk": "Vehicle",
+    "v2rl": "Vehicle",
+    "3tnk": "Vehicle",
+    "4tnk": "Vehicle",
+    "harv": "Vehicle",
+    "mig": "Aircraft",
+    "yak": "Aircraft",
+}
+
 _ORDINARY_RUNTIME_FACTS_HIDDEN_KEYS = {
     "buildable",
     "feasibility",
     "production_queues",
     "unfulfilled_requests",
+    "unit_reservations",
+    "capability_status",
 }
 _ORDINARY_RUNTIME_FACTS_HIDDEN_PREFIXES = ("can_afford_",)
 
@@ -357,6 +377,36 @@ def _build_active_production(rf: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
+def _build_unit_reservations(rf: dict[str, Any]) -> str:
+    """Build [Reservations] block for Capability context."""
+    reservations = rf.get("unit_reservations", [])
+    if not reservations:
+        return ""
+    parts = ["[预留]"]
+    for reservation in reservations[:8]:
+        if not isinstance(reservation, dict):
+            continue
+        reservation_id = reservation.get("reservation_id", "?")
+        request_id = reservation.get("request_id", "?")
+        task_label = reservation.get("task_label", "?")
+        unit_type = reservation.get("unit_type", "?")
+        queue_type = reservation.get("queue_type", "") or _QUEUE_TYPE_BY_UNIT_TYPE.get(str(unit_type).lower(), "")
+        count = int(reservation.get("count", 0) or 0)
+        assigned = len(reservation.get("assigned_actor_ids", []) or [])
+        produced = len(reservation.get("produced_actor_ids", []) or [])
+        remaining = int(reservation.get("remaining_count", max(0, count - assigned - produced)))
+        status = reservation.get("status", "?")
+        bootstrap_job_id = reservation.get("bootstrap_job_id", "")
+        line = f"{reservation_id} REQ-{request_id} #{task_label} {unit_type}"
+        if queue_type:
+            line += f"/{queue_type}"
+        line += f" remaining={remaining} assigned={assigned} produced={produced} status={status}"
+        if bootstrap_job_id:
+            line += f" bootstrap={bootstrap_job_id}"
+        parts.append(line)
+    return "\n".join(parts)
+
+
 def _build_capability_phase_block(rf: dict[str, Any], signals: list[dict[str, Any]]) -> str:
     """Build a phase block for Capability context."""
     entries: list[str] = []
@@ -447,6 +497,27 @@ def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
     if not rf:
         return {}
     filtered = dict(rf)
+    if "unit_reservations" in filtered and isinstance(filtered["unit_reservations"], list):
+        compact_reservations: list[dict[str, Any]] = []
+        for reservation in filtered["unit_reservations"]:
+            if not isinstance(reservation, dict):
+                continue
+            compact_reservations.append({
+                "reservation_id": reservation.get("reservation_id", "?"),
+                "request_id": reservation.get("request_id", "?"),
+                "task_id": reservation.get("task_id", "?"),
+                "task_label": reservation.get("task_label", "?"),
+                "unit_type": reservation.get("unit_type", "?"),
+                "queue_type": reservation.get("queue_type", "") or _QUEUE_TYPE_BY_UNIT_TYPE.get(str(reservation.get("unit_type", "")).lower(), ""),
+                "count": int(reservation.get("count", 0) or 0),
+                "remaining_count": int(reservation.get("remaining_count", max(0, int(reservation.get("count", 0) or 0) - len(reservation.get("assigned_actor_ids", []) or []) - len(reservation.get("produced_actor_ids", []) or [])))),
+                "assigned_actor_ids": list(reservation.get("assigned_actor_ids", []) or []),
+                "produced_actor_ids": list(reservation.get("produced_actor_ids", []) or []),
+                "status": reservation.get("status", "?"),
+                "bootstrap_job_id": reservation.get("bootstrap_job_id", ""),
+                "cancelled_at": reservation.get("cancelled_at"),
+            })
+        filtered["unit_reservations"] = compact_reservations
     buildable = rf.get("buildable", {})
     if isinstance(buildable, dict):
         buildable_out: dict[str, list[str]] = {}
@@ -576,6 +647,10 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         req_block = _build_unfulfilled_requests(rf)
         if req_block:
             lines.append(req_block)
+
+        reservation_block = _build_unit_reservations(rf)
+        if reservation_block:
+            lines.append(reservation_block)
 
         # Buildable units (important for Capability to know what to produce)
         buildable = rf.get("buildable", {})

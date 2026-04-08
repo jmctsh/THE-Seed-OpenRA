@@ -742,6 +742,7 @@ class WorldModel:
 
         # Unfulfilled unit requests (from Kernel via set_runtime_state)
         facts["unfulfilled_requests"] = list(self._unfulfilled_requests)
+        facts["unit_reservations"] = list(self._unit_reservations)
         facts["capability_status"] = dict(self._capability_state)
 
         # Production queues — transform game state format to renderer-friendly format

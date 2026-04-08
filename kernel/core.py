@@ -66,6 +66,10 @@ _HINT_TO_UNIT: dict[str, tuple[str, str]] = {
     "雷达": ("dome", "Building"), "雷达站": ("dome", "Building"),
 }
 
+_UNIT_TYPE_TO_QUEUE: dict[str, str] = {}
+for _unit_type, _queue_type in _HINT_TO_UNIT.values():
+    _UNIT_TYPE_TO_QUEUE.setdefault(_unit_type, _queue_type)
+
 _CATEGORY_DEFAULTS: dict[str, tuple[str, str]] = {
     "infantry": ("e1", "Infantry"),
     "vehicle": ("3tnk", "Vehicle"),
@@ -76,6 +80,21 @@ _CATEGORY_TO_ACTOR_CATEGORY: dict[str, str] = {
     "infantry": "infantry",
     "vehicle": "vehicle",
     "building": "building",
+}
+
+_UNIT_TO_QUEUE_TYPE: dict[str, str] = {
+    # buildings
+    "powr": "Building", "apwr": "Building", "proc": "Building", "barr": "Building",
+    "weap": "Building", "dome": "Building", "fix": "Building", "kenn": "Building",
+    "silo": "Building",
+    # infantry
+    "e1": "Infantry", "e2": "Infantry", "e3": "Infantry", "e6": "Infantry", "dog": "Infantry",
+    # vehicles
+    "ftrk": "Vehicle", "v2rl": "Vehicle", "3tnk": "Vehicle", "4tnk": "Vehicle",
+    "harv": "Vehicle", "mcv": "Vehicle", "mnly": "Vehicle", "ttnk": "Vehicle",
+    "jeep": "Vehicle", "2tnk": "Vehicle",
+    # aircraft
+    "mig": "Aircraft", "yak": "Aircraft",
 }
 
 _URGENCY_WEIGHT: dict[str, int] = {
@@ -89,6 +108,18 @@ def _now() -> float:
 
 def _gen_id(prefix: str) -> str:
     return f"{prefix}{uuid.uuid4().hex[:8]}"
+
+
+def _infer_queue_type(unit_type: Optional[str]) -> Optional[str]:
+    if not unit_type:
+        return None
+    return _UNIT_TO_QUEUE_TYPE.get(unit_type.lower())
+
+
+def _queue_type_for_unit_type(unit_type: Optional[str]) -> str:
+    if not unit_type:
+        return ""
+    return _UNIT_TYPE_TO_QUEUE.get(unit_type, "")
 
 
 class TaskAgentLike(Protocol):
@@ -325,14 +356,9 @@ class Kernel:
             self._release_task_job_resources(task_id)
             self._close_pending_questions_for_task(task_id)
             # Cancel any pending unit requests for this task
-            for req in self._unit_requests.values():
+            for req in list(self._unit_requests.values()):
                 if req.task_id == task_id and req.status in ("pending", "partial"):
-                    req.status = "cancelled"
-                    reservation = self._reservation_for_request(req)
-                    if reservation is not None:
-                        reservation.status = ReservationStatus.CANCELLED
-                        reservation.cancelled_at = _now()
-                        reservation.updated_at = _now()
+                    self.cancel_unit_request(req.request_id)
             task.status = TaskStatus.ABORTED
             task.timestamp = _now()
             self._stop_agent(task_id)
@@ -440,8 +466,9 @@ class Kernel:
             req.status = "fulfilled"
             slog.info("Unit request fulfilled from idle", event="unit_request_fulfilled",
                       task_id=task_id, request_id=request_id, actor_ids=req.assigned_actor_ids)
-            return {"status": "fulfilled", "request_id": request_id,
-                    "actor_ids": list(req.assigned_actor_ids)}
+            result = self._unit_request_result(req, status="fulfilled")
+            result["actor_ids"] = list(req.assigned_actor_ids)
+            return result
 
         # Partial idle match updates status
         if req.fulfilled > 0:
@@ -464,19 +491,25 @@ class Kernel:
                   task_id=task_id, request_id=request_id,
                   category=category, count=count, urgency=urgency, hint=hint,
                   fulfilled=req.fulfilled, status=req.status)
-        return {"status": "waiting", "request_id": request_id}
+        return self._unit_request_result(req, status="waiting")
 
     def cancel_unit_request(self, request_id: str) -> bool:
         """Cancel a pending unit request."""
         req = self._unit_requests.get(request_id)
         if req is None or req.status in ("fulfilled", "cancelled"):
             return False
-        req.status = "cancelled"
         reservation = self._reservation_for_request(req)
+        bootstrap_job_id = req.bootstrap_job_id or (reservation.bootstrap_job_id if reservation is not None else None)
+        if bootstrap_job_id:
+            job = self._jobs.get(bootstrap_job_id)
+            if job is not None and job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}:
+                self.abort_job(bootstrap_job_id)
+        req.status = "cancelled"
         if reservation is not None:
             reservation.status = ReservationStatus.CANCELLED
             reservation.cancelled_at = _now()
             reservation.updated_at = _now()
+        self._sync_world_runtime()
         return True
 
     def list_unit_requests(self, status: Optional[str] = None) -> list[UnitRequest]:
@@ -492,6 +525,31 @@ class Kernel:
             reservations = [r for r in reservations if r.status.value == status]
         reservations.sort(key=lambda item: item.created_at)
         return reservations
+
+    def _unit_request_result(self, req: UnitRequest, *, status: str) -> dict[str, Any]:
+        reservation = self._reservation_for_request(req)
+        unit_type = reservation.unit_type if reservation is not None else ""
+        queue_type = _queue_type_for_unit_type(unit_type)
+        if not queue_type:
+            inferred_unit_type, inferred_queue_type = self._infer_unit_type(req.category, req.hint)
+            if not unit_type and inferred_unit_type:
+                unit_type = inferred_unit_type
+            if not queue_type and inferred_queue_type:
+                queue_type = inferred_queue_type
+        remaining = max(req.count - req.fulfilled, 0)
+        result: dict[str, Any] = {
+            "status": status,
+            "request_id": req.request_id,
+            "remaining_count": remaining,
+            "fulfilled": req.fulfilled,
+            "count": req.count,
+            "reservation_id": reservation.reservation_id if reservation is not None else "",
+            "reservation_status": reservation.status.value if reservation is not None else "",
+            "bootstrap_job_id": req.bootstrap_job_id or (reservation.bootstrap_job_id if reservation is not None else ""),
+            "unit_type": unit_type,
+            "queue_type": queue_type,
+        }
+        return result
 
     # --- Unit request internals ---
 
@@ -1238,9 +1296,13 @@ class Kernel:
                 "unit_type": (self._reservation_for_request(req).unit_type if self._reservation_for_request(req) else ""),
                 "count": req.count,
                 "fulfilled": req.fulfilled,
+                "remaining_count": max(req.count - req.fulfilled, 0),
                 "urgency": req.urgency,
                 "hint": req.hint,
                 "bootstrap_job_id": req.bootstrap_job_id,
+                "queue_type": _queue_type_for_unit_type(
+                    self._reservation_for_request(req).unit_type if self._reservation_for_request(req) else None
+                ),
                 "reservation_status": (
                     self._reservation_for_request(req).status.value if self._reservation_for_request(req) else ""
                 ),
@@ -1298,6 +1360,11 @@ class Kernel:
                 "produced_actor_ids": list(reservation.produced_actor_ids),
                 "bootstrap_job_id": reservation.bootstrap_job_id,
                 "updated_at": reservation.updated_at,
+                "remaining_count": max(
+                    reservation.count - len(reservation.assigned_actor_ids) - len(reservation.produced_actor_ids),
+                    0,
+                ),
+                "queue_type": _queue_type_for_unit_type(reservation.unit_type),
             }
             for reservation in self._unit_reservations.values()
             if reservation.status not in {ReservationStatus.CANCELLED, ReservationStatus.EXPIRED}
@@ -1453,6 +1520,17 @@ class Kernel:
 
     def _infer_resource_needs(self, controller: BaseJob | _ManagedJob, config: ExpertConfig) -> list[ResourceNeed]:
         if controller.expert_type == "ReconExpert":
+            actor_ids = getattr(config, "actor_ids", None)
+            if actor_ids:
+                return [
+                    ResourceNeed(
+                        job_id=controller.job_id,
+                        kind=ResourceKind.ACTOR,
+                        count=1,
+                        predicates={"actor_id": str(actor_id), "owner": "self"},
+                    )
+                    for actor_id in actor_ids
+                ]
             # Soft constraint: any mobile unit works for scouting.
             # Kernel's allocation logic should prefer faster units.
             return [
@@ -1464,6 +1542,17 @@ class Kernel:
                 )
             ]
         if controller.expert_type == "CombatExpert":
+            actor_ids = getattr(config, "actor_ids", None)
+            if actor_ids:
+                return [
+                    ResourceNeed(
+                        job_id=controller.job_id,
+                        kind=ResourceKind.ACTOR,
+                        count=1,
+                        predicates={"actor_id": str(actor_id), "owner": "self"},
+                    )
+                    for actor_id in actor_ids
+                ]
             return [
                 ResourceNeed(
                     job_id=controller.job_id,
