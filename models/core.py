@@ -98,9 +98,12 @@ class UnitReservation:
     category: str  # infantry / vehicle / aircraft / building
     unit_type: str
     count: int
+    urgency: str = "medium"
+    hint: str = ""
     status: ReservationStatus = ReservationStatus.PENDING
     assigned_actor_ids: list[int] = field(default_factory=list)
     produced_actor_ids: list[int] = field(default_factory=list)
+    bootstrap_job_id: Optional[str] = None
     cancelled_at: Optional[float] = None
     created_at: float = field(default_factory=_now)
     updated_at: float = field(default_factory=_now)

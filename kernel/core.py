@@ -26,6 +26,7 @@ from models import (
     Job,
     JobStatus,
     PlayerResponse,
+    ReservationStatus,
     ResourceKind,
     ResourceNeed,
     SignalKind,
@@ -34,6 +35,7 @@ from models import (
     TaskMessage,
     TaskMessageType,
     TaskStatus,
+    UnitReservation,
     UnitRequest,
     validate_job_config,
 )
@@ -252,6 +254,8 @@ class Kernel:
         self._direct_managed_tasks: set[str] = set()  # tasks with skip_agent=True (NLU direct)
         self._capability_task_id: Optional[str] = None
         self._unit_requests: dict[str, UnitRequest] = {}
+        self._unit_reservations: dict[str, UnitReservation] = {}
+        self._request_reservations: dict[str, str] = {}
         self._defend_base_last_created: float = 0.0
         self.register_auto_response_rule(
             "base_under_attack_defend_base",
@@ -324,6 +328,11 @@ class Kernel:
             for req in self._unit_requests.values():
                 if req.task_id == task_id and req.status in ("pending", "partial"):
                     req.status = "cancelled"
+                    reservation = self._reservation_for_request(req)
+                    if reservation is not None:
+                        reservation.status = ReservationStatus.CANCELLED
+                        reservation.cancelled_at = _now()
+                        reservation.updated_at = _now()
             task.status = TaskStatus.ABORTED
             task.timestamp = _now()
             self._stop_agent(task_id)
@@ -422,6 +431,9 @@ class Kernel:
             hint=hint,
         )
         self._unit_requests[request_id] = req
+        unit_type, queue_type = self._infer_unit_type(req.category, req.hint)
+        if unit_type is not None and queue_type is not None:
+            self._ensure_reservation_for_request(req, unit_type)
 
         # Step 1: idle matching
         if self._try_fulfill_from_idle(req):
@@ -460,6 +472,11 @@ class Kernel:
         if req is None or req.status in ("fulfilled", "cancelled"):
             return False
         req.status = "cancelled"
+        reservation = self._reservation_for_request(req)
+        if reservation is not None:
+            reservation.status = ReservationStatus.CANCELLED
+            reservation.cancelled_at = _now()
+            reservation.updated_at = _now()
         return True
 
     def list_unit_requests(self, status: Optional[str] = None) -> list[UnitRequest]:
@@ -469,7 +486,38 @@ class Kernel:
             reqs = [r for r in reqs if r.status == status]
         return reqs
 
+    def list_unit_reservations(self, status: Optional[str] = None) -> list[UnitReservation]:
+        reservations = list(self._unit_reservations.values())
+        if status is not None:
+            reservations = [r for r in reservations if r.status.value == status]
+        reservations.sort(key=lambda item: item.created_at)
+        return reservations
+
     # --- Unit request internals ---
+
+    def _ensure_reservation_for_request(self, req: UnitRequest, unit_type: str) -> UnitReservation:
+        reservation_id = self._request_reservations.get(req.request_id)
+        if reservation_id and reservation_id in self._unit_reservations:
+            return self._unit_reservations[reservation_id]
+        reservation = UnitReservation(
+            reservation_id=_gen_id("res_"),
+            request_id=req.request_id,
+            task_id=req.task_id,
+            task_label=req.task_label,
+            task_summary=req.task_summary,
+            category=req.category,
+            unit_type=unit_type,
+            count=req.count,
+        )
+        self._unit_reservations[reservation.reservation_id] = reservation
+        self._request_reservations[req.request_id] = reservation.reservation_id
+        return reservation
+
+    def _reservation_for_request(self, req: UnitRequest) -> Optional[UnitReservation]:
+        reservation_id = self._request_reservations.get(req.request_id)
+        if not reservation_id:
+            return None
+        return self._unit_reservations.get(reservation_id)
 
     def _try_fulfill_from_idle(self, req: UnitRequest) -> bool:
         """Try to fulfill a request from idle, unbound units on the field."""
@@ -491,12 +539,23 @@ class Kernel:
             self._bind_actor_to_request(req, actor)
         return req.fulfilled >= req.count
 
-    def _bind_actor_to_request(self, req: UnitRequest, actor: Any) -> None:
+    def _bind_actor_to_request(self, req: UnitRequest, actor: Any, *, produced: bool = False) -> None:
         """Bind an actor to a unit request."""
         resource_id = f"actor:{actor.actor_id}"
         self.world_model.bind_resource(resource_id, f"req:{req.request_id}")
         req.assigned_actor_ids.append(actor.actor_id)
         req.fulfilled += 1
+        reservation = self._reservation_for_request(req)
+        if reservation is not None:
+            reservation.assigned_actor_ids.append(actor.actor_id)
+            if produced:
+                reservation.produced_actor_ids.append(actor.actor_id)
+            reservation.status = (
+                ReservationStatus.ASSIGNED
+                if req.fulfilled >= req.count
+                else ReservationStatus.PARTIAL
+            )
+            reservation.updated_at = _now()
 
     @staticmethod
     def _hint_match_score(actor: Any, hint: str) -> int:
@@ -534,6 +593,8 @@ class Kernel:
         unit_type, queue_type = self._infer_unit_type(req.category, req.hint)
         if unit_type is None or queue_type is None:
             return  # Can't infer — leave for Capability
+        reservation = self._ensure_reservation_for_request(req, unit_type)
+        reservation.updated_at = _now()
 
         # Check buildable via world_model derived data
         buildable = self.world_model.runtime_facts_buildable()
@@ -546,6 +607,9 @@ class Kernel:
         try:
             job = self.start_job(req.task_id, "EconomyExpert", config)
             req.bootstrap_job_id = job.job_id
+            if reservation.status == ReservationStatus.PENDING and req.fulfilled > 0:
+                reservation.status = ReservationStatus.PARTIAL
+                reservation.updated_at = _now()
             slog.info("Bootstrap production for request", event="bootstrap_production",
                       request_id=req.request_id, unit_type=unit_type, count=remaining,
                       job_id=job.job_id)
@@ -617,7 +681,7 @@ class Kernel:
                        or a.category.value == actor_category]
             matched.sort(key=lambda a: self._hint_match_score(a, req.hint), reverse=True)
             for actor in matched[:remaining]:
-                self._bind_actor_to_request(req, actor)
+                self._bind_actor_to_request(req, actor, produced=req.bootstrap_job_id is not None)
                 idle.remove(actor)
 
             if req.fulfilled >= req.count:
@@ -804,6 +868,8 @@ class Kernel:
         self._closed_questions.clear()
         self._delivered_player_responses.clear()
         self._unit_requests.clear()
+        self._unit_reservations.clear()
+        self._request_reservations.clear()
         self._direct_managed_tasks.clear()
         self._capability_task_id = None
         self.task_messages.clear()
@@ -946,6 +1012,8 @@ class Kernel:
         self._closed_questions.clear()
         self._delivered_player_responses.clear()
         self._unit_requests.clear()
+        self._unit_reservations.clear()
+        self._request_reservations.clear()
         self._direct_managed_tasks.clear()
         self._capability_task_id = None
         self._sync_world_runtime()
@@ -1161,14 +1229,19 @@ class Kernel:
         unfulfilled = [
             {
                 "request_id": req.request_id,
+                "reservation_id": (self._request_reservations.get(req.request_id) or ""),
                 "task_label": req.task_label,
                 "task_summary": req.task_summary,
                 "category": req.category,
+                "unit_type": (self._reservation_for_request(req).unit_type if self._reservation_for_request(req) else ""),
                 "count": req.count,
                 "fulfilled": req.fulfilled,
                 "urgency": req.urgency,
                 "hint": req.hint,
                 "bootstrap_job_id": req.bootstrap_job_id,
+                "reservation_status": (
+                    self._reservation_for_request(req).status.value if self._reservation_for_request(req) else ""
+                ),
                 "reason": "",
             }
             for req in self._unit_requests.values()

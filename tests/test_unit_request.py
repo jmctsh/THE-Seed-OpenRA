@@ -444,6 +444,70 @@ def test_cancel_unit_request():
     assert kernel.cancel_unit_request(result["request_id"]) is False
 
 
+def test_register_unit_request_creates_reservation_for_inferred_unit():
+    """Inferable requests should create a one-to-one reservation record."""
+    kernel, _ = make_kernel_with_base()
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+
+    result = kernel.register_unit_request(task.task_id, "vehicle", 1, "high", "重坦")
+    req = kernel._unit_requests[result["request_id"]]
+    reservations = kernel.list_unit_reservations()
+
+    assert len(reservations) == 1
+    reservation = reservations[0]
+    assert reservation.request_id == req.request_id
+    assert reservation.unit_type == "3tnk"
+    assert reservation.task_id == task.task_id
+
+
+def test_idle_match_updates_reservation_assignment_state():
+    """Idle fulfillment should immediately assign the reservation."""
+    kernel, _ = make_kernel_with_base()
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+
+    result = kernel.register_unit_request(task.task_id, "vehicle", 2, "high", "重坦")
+    reservation = kernel.list_unit_reservations()[0]
+
+    assert result["status"] == "fulfilled"
+    assert reservation.status == ReservationStatus.ASSIGNED
+    assert set(reservation.assigned_actor_ids) == {10, 11}
+    assert reservation.produced_actor_ids == []
+
+
+def test_cancel_unit_request_cancels_reservation():
+    """Cancelling a request should cancel its reservation too."""
+    kernel, world = make_kernel_with_base()
+    for actor in world.find_actors(owner="self", idle_only=True, category="vehicle"):
+        world.bind_resource(f"actor:{actor.actor_id}", "other_job")
+
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+    result = kernel.register_unit_request(task.task_id, "vehicle", 1, "high", "重坦")
+
+    assert kernel.cancel_unit_request(result["request_id"]) is True
+    reservation = kernel.list_unit_reservations()[0]
+    assert reservation.status == ReservationStatus.CANCELLED
+    assert reservation.cancelled_at is not None
+
+
+def test_sync_unfulfilled_requests_includes_reservation_metadata():
+    """Runtime sync should expose reservation metadata for capability context."""
+    kernel, world = make_kernel_with_base()
+    for actor in world.find_actors(owner="self", idle_only=True, category="vehicle"):
+        world.bind_resource(f"actor:{actor.actor_id}", "other_job")
+
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+    result = kernel.register_unit_request(task.task_id, "vehicle", 1, "high", "重坦")
+    req = kernel._unit_requests[result["request_id"]]
+    runtime_facts = kernel.world_model.compute_runtime_facts(task.task_id)
+    pending = runtime_facts["unfulfilled_requests"]
+
+    assert len(pending) == 1
+    assert pending[0]["request_id"] == req.request_id
+    assert pending[0]["reservation_id"].startswith("res_")
+    assert pending[0]["unit_type"] == "3tnk"
+    assert pending[0]["reservation_status"] == ReservationStatus.PENDING.value
+
+
 def test_list_unit_requests_filter():
     """list_unit_requests should filter by status."""
     kernel, _ = make_kernel_with_base()
@@ -599,6 +663,10 @@ if __name__ == "__main__":
     test_agent_woken_after_fulfillment()
     test_cancel_task_cancels_pending_requests()
     test_cancel_unit_request()
+    test_register_unit_request_creates_reservation_for_inferred_unit()
+    test_idle_match_updates_reservation_assignment_state()
+    test_cancel_unit_request_cancels_reservation()
+    test_sync_unfulfilled_requests_includes_reservation_metadata()
     test_list_unit_requests_filter()
     test_unfulfilled_notifies_capability()
     test_unit_request_dataclass()
