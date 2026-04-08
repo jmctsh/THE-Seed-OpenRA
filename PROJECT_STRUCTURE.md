@@ -1,123 +1,231 @@
-# THE-Seed OpenRA Agent 项目结构说明
+# THE-Seed OpenRA Project Structure
 
-## 1. 项目概览
+This file describes the **current runtime reality** of the repository.
 
-本项目是一个基于 `the-seed` 框架构建的 OpenRA 智能体，旨在实现 AI 在红色警戒游戏中的自主决策与操作。
-目前项目处于**架构演进**阶段，包含两个主要部分：
-1.  **Legacy Framework**: 基于 `the-seed` 框架的早期实现（FSM 驱动）。
-2.  **Next-Gen Modules**: 正在开发中的新一代独立智能体模块（战略、战术、运营），目前独立运行，未来将接入框架。
+It replaces older descriptions that framed the project as:
 
-## 1.1 特别提示 (AI 开发者必读)
+- a `the-seed`-driven legacy agent,
+- a separate “next-gen agents” tree,
+- or an “LLM writes Python” execution pipeline.
 
-⚠️ **请仔细阅读以下内容，避免无效的上下文消耗和错误的方向：**
+The active OpenRA runtime is now centered on:
 
-1.  **忽略 `OpenCodeAlert/`**:
-    *   这是 **OpenRA 游戏本体的 C# 源码**，体积非常庞大。
-    *   我们正在开发的是**外部智能体 (Python)**，通过 Socket API 与游戏通信，**不需要也不应该**阅读游戏源码。
-    *   **切勿**尝试索引或修改该目录下的文件。
+- `Adjutant`
+- `Kernel`
+- `TaskAgent`
+- `Experts`
+- `WorldModel`
+- `OpenRA API / OpenCodeAlert`
+- `web-console-v2`
 
-2.  **暂时忽略 `the-seed/`**:
-    *   这是底层的通用 Agent 框架。
-    *   由于该框架目前正处于频繁重构阶段，为了避免依赖不稳定的接口，我们当前的开发工作主要集中在 **Next-Gen Modules (`agents/`)**。
-    *   未来当 `the-seed` 框架稳定后，我们会进行统一接入。
+---
 
-3.  **遵循“模块化”开发原则**:
-    *   鉴于上述原因，我们在开发 `agents/` 下的各个专家模块（如 `combat`, `strategy`, `economy`）时，必须严格遵循**独立性**原则。
-    *   **Readme 规范**: 每个模块都必须包含详细的 `README.md`，明确定义其**输入 (Input)**、**输出 (Output)** 和**对外接口**。
-    *   **目的**: 确保当未来接入新版 `the-seed` 框架时，只需编写简单的 Adapter 即可集成，而无需重写核心逻辑。
+## 1. Runtime Overview
 
-## 2. 核心架构
-
-### 2.1 Legacy Framework (Based on `the-seed`)
-*   **Agent Core (`main.py`)**: 旧版智能体入口，使用 FSM 驱动。
-*   **Framework (`the-seed/`)**: 基础框架 submodule。
-*   **Visualization (`web-console/`)**: Web 控制台监控面板（Rust dashboard 已移除）。
-*   **Multimodal (`uni_mic/`)**: 语音交互层。
-
-### 2.2 Next-Gen Independent Modules (Standalone)
-这些模块是当前开发重点，设计为独立运行的微服务或 Agent，未来将集成到统一架构中：
-
-*   **Combat Agent (`agents/combat/`)**: 战术专家。负责连队级的微操控制、阵地战与移动攻击。
-*   **Economy Agent (`agents/economy/`)**: 运营专家。负责资源管理、建筑生产与科技攀升。
-*   **Strategy Agent (`agents/strategy/`)**: 战略专家。负责全局战略规划、指挥战术与运营专家。
-*   **Game State & Intel (`openra_state/`)**: 全局状态中心。负责情报聚合、地图分析与可视化，服务于所有 Agent。
-*   **Tactical Core (`tactical_core/`)**: 独立战术算法核心。负责势场微操、协同回退与硬中断逻辑，可被上层模块集成或独立运行。
-
-## 3. 目录结构详解
+### 1.1 Main execution path
 
 ```text
-D:\THE-Seed-OpenRA\
-├── main.py                     # [Legacy] 旧版智能体入口
-├── run.bat / run.sh            # [启动] 启动 Legacy Agent
-│
-├── adapter/                    # [Legacy] 旧版胶水层
-│   └── openra_env.py           
-│
-├── openra_api/                 # [公共] 底层游戏交互库 (Socket Client)
-│   ├── game_api.py             # 原始 JSON 通信
-│   └── macro_actions.py        # 宏指令封装
-│
-├── agents/                     # [Next-Gen] 新一代独立智能体模块
-│   ├── economy/                # 运营专家 (Standalone)
-│   │   ├── agent.py            # 入口
-│   │   └── run_standalone.py   # 独立启动脚本
-│   ├── strategy/               # 战略专家 (Standalone)
-│   │   ├── strategic_agent.py  # 入口
-│   │   └── cli.py              # 交互式 CLI
-│   └── combat/                 # 战术专家 (Standalone)
-│       ├── combat_agent.py     # 入口
-│       └── run_standalone.py   # 独立启动脚本
-│
-├── openra_state/               # [Next-Gen] 独立情报与状态服务
-│   ├── intel/                  # 智能化情报处理 (ZoneManager)
-│   └── visualize_intel.py      # 独立可视化工具
-│
-├── web-console/                # [可视化] Web 控制台
-│   ├── index.html
-│   ├── css/
-│   ├── js/
-│   └── api/
-│
-├── tactical_core/              # [Next-Gen] 独立战术核心 (Algorithm Layer)
-│   ├── enhancer.py             # 统一入口 (BiodsEnhancer)
-│   ├── potential_field.py      # 势场算法
-│   └── decision_guard.py       # 决策守护
-│
-├── the-seed/                   # [框架] (IGNORE) 暂不关注，等待重构
-│
-├── uni_mic/                    # [交互] 语音/多模态交互模块
-│
-└── OpenCodeAlert/              # [游戏] (IGNORE) 游戏本体 C# 源码，切勿读取！
+Player / Frontend
+        |
+        v
+Adjutant
+  - NLU / routing
+  - query / reply / cancel
+  - top-level coordination
+        |
+        v
+Kernel
+  - task lifecycle
+  - job lifecycle
+  - resource arbitration
+  - unit requests
+  - task messaging
+        |
+        +--> Capability-like control paths
+        +--> Optional TaskAgent for complex managed tasks
+        |
+        v
+Experts
+  - deploy
+  - economy
+  - recon
+  - combat
+  - movement
+        |
+        v
+Game API / OpenCodeAlert / OpenRA
 ```
 
-## 4. 关键机制说明 (Legacy Framework)
+Shared substrate:
 
-> **注意**: 以下机制主要适用于 `main.py` 驱动的旧版架构。新模块 (`agents/*`) 拥有独立的运行逻辑。
+- `world_model/`
+  - shared state
+  - runtime facts
+  - event detection
+  - production queue visibility
+- `logging_system/`
+  - structured logs
+  - per-session persistence
+  - per-task slices
+- `ws_server/`
+  - websocket transport to frontend
 
-### 4.1 `the-seed` 框架集成
-项目通过 Git Submodule 引入 `the-seed`。在 `run.bat` / `run.sh` 中，会执行：
-```bash
-uv pip install -e ./the-seed
-```
+---
 
-### 4.2 智能体工作流 (FSM)
-智能体运行在一个无限循环中，驱动 FSM 状态流转：
-1.  **OBSERVE**: 调用 `OpenRAEnv.observe()` 获取当前局势的文本描述。
-2.  **PLAN**: LLM 根据局势和目标，生成高层计划。
-3.  **ACTION_GEN**: LLM 将计划步骤转化为 Python 代码。
-4.  **EXECUTION**: 运行生成的 Python 代码。
-5.  **REVIEW**: 检查执行结果。
+## 2. Active Code Areas
 
-### 4.3 黑板机制
-黑板 (`Blackboard`) 是 FSM 各节点间共享数据的介质。
+### 2.1 Runtime entry and orchestration
 
-## 5. 开发协议与规范
+- `main.py`
+  - backend entrypoint
+  - wires runtime components together
+- `adjutant/`
+  - front door and top-level coordinator
+- `kernel/`
+  - deterministic coordination and lifecycle core
+- `task_agent/`
+  - bounded per-task LLM reasoning loop
 
-### 5.1 Console 通信协议
-Web Console 通过 WebSocket (`ws://localhost:8090`) 接收状态。
-*   **Legacy**: 自动同步 FSM 和 Blackboard。
-*   **Next-Gen**: 目前部分模块 (如 `strategy`) 已开始对接独立的可视化或日志流。
+### 2.2 Execution and information layers
 
-### 5.2 游戏交互协议 (Socket API)
-所有模块（无论是 Legacy 还是 Next-Gen）都统一使用底层的 Socket JSON 协议与 OpenRA 交互。
-*   📄 **协议文档**: [socket-apis.md](socket-apis.md)
+- `experts/`
+  - execution experts
+  - info helper modules
+  - planner helper modules
+- `world_model/`
+  - world refresh
+  - derived facts
+  - event detection
+- `queue_manager.py`
+  - singleton queue maintenance for stuck ready buildings
+
+### 2.3 Game integration
+
+- `openra_api/`
+  - Python-side query and action surface
+- `openra_state/`
+  - supporting game data, datasets, and knowledge inputs
+- `OpenCodeAlert/`
+  - game-side patched bridge; active integration surface, not an ignore-only subtree
+- `unit_registry.py`
+  - YAML-backed unit/building registry
+
+### 2.4 Frontend and observability
+
+- `ws_server/`
+  - websocket server
+- `logging_system/`
+  - structured logging and session persistence
+- `web-console-v2/`
+  - active frontend
+- `voice/`
+  - optional voice subsystem
+
+### 2.5 Tests and docs
+
+- `tests/`
+  - runtime and regression tests
+- `docs/`
+  - active roadmap, audits, reports, and design notes
+
+---
+
+## 3. Important Runtime Boundaries
+
+### 3.1 Adjutant is already the top-level coordinator
+
+Do not treat `Adjutant` as a disposable chat wrapper.
+
+It currently owns:
+- user command ingress
+- NLU/rule routing
+- player query/reply flow
+- some direct execution short-circuits
+- capability merge
+- player-visible response formatting
+
+Near-term work should strengthen `Adjutant`, not bypass it with a second top-level command layer.
+
+### 3.2 Kernel is deterministic infrastructure, not a planner
+
+`Kernel` should continue to own:
+- task/job bookkeeping
+- resource arbitration
+- unit request registration
+- capability handoff hooks
+- task messaging
+- deterministic state transitions
+
+It should not become a hidden second planner.
+
+### 3.3 TaskAgent is not the whole system
+
+`TaskAgent` remains useful for complex managed tasks, but it is no longer the default answer to every command.
+
+Simple and safe commands should continue to be handled via:
+- direct NLU/routing
+- capability logic
+- deterministic expert/job creation
+
+### 3.4 Capability is the convergence path for shared production
+
+Shared production, prerequisites, and queue-related economic control should continue moving into capability logic rather than remaining distributed across many ordinary tasks.
+
+---
+
+## 4. Transitional Areas
+
+These areas are still important, but should be treated as transitional rather than final architecture.
+
+### 4.1 `nlu_pipeline/`
+
+This is not the old runtime in full, but it still supplies assets reused by the current front door:
+- matching
+- routing
+- shorthand recognition
+- legacy intent handling pieces
+
+### 4.2 `agents/`
+
+Parts of `agents/` reflect older standalone experiments and parallel designs.  
+They are useful historical/reference material, but they are not the source of truth for the current runtime path.
+
+### 4.3 `voice/`
+
+Voice remains optional and is disabled by default unless explicitly enabled.  
+It should be treated as an add-on subsystem, not part of the runtime core.
+
+---
+
+## 5. Deprecated / Historical Surfaces
+
+These paths should not be read as the current architecture:
+
+- `web-console/`
+- `dashboard/`
+- `default_runtime/`
+- `adapter/`
+- `tactical_core/`
+- `the_seed/` as a direct description of the current execution stack
+- old top-level “Legacy vs Next-Gen” framing
+
+They may still contain reference code, but they should be considered deprecated, historical, or experimental unless explicitly reactivated.
+
+---
+
+## 6. What Still Needs To Be Built
+
+The repo is no longer in pure feasibility mode. The main remaining work is:
+
+- making `Adjutant` a stronger battlefield coordinator
+- making capability control real for production and prerequisites
+- separating present-resource scheduling from future-unit scheduling
+- adding hard unit ownership for recon/combat style control
+- expanding the OpenRA action surface so the runtime is no longer weaker than direct Python control
+- improving diagnostics, replay, and developer iteration UX
+- cleaning up stale docs and retired control planes
+
+For the execution order, see:
+
+- `docs/yu/openra_remaining_work_20260409.md`
+- `docs/yu/realtime_multiagent_system_roadmap_20260409.md`
