@@ -440,6 +440,23 @@ def test_agent_woken_after_fulfillment_tracks_task_actor_group():
     assert runtime["active_tasks"][task.task_id]["active_group_size"] == 1
 
 
+def test_agent_woken_after_fulfillment_releases_request_binding():
+    """Wake-time transfer should release temporary req: bindings for reassignment."""
+    kernel, world = make_kernel_with_base()
+
+    for actor in world.find_actors(owner="self", idle_only=True, category="vehicle"):
+        world.bind_resource(f"actor:{actor.actor_id}", "other_job")
+
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+    result = kernel.register_unit_request(task.task_id, "vehicle", 1, "high", "重坦")
+    request_id = result["request_id"]
+
+    world.unbind_resource("actor:10")
+    kernel._fulfill_unit_requests()
+
+    assert world.resource_bindings.get("actor:10") != f"req:{request_id}"
+
+
 # =====================================================================
 # 6. Cancel Task Cleanup Tests
 # =====================================================================
@@ -786,6 +803,7 @@ if __name__ == "__main__":
     test_agent_not_suspended_on_fulfilled()
     test_agent_woken_after_fulfillment()
     test_agent_woken_after_fulfillment_tracks_task_actor_group()
+    test_agent_woken_after_fulfillment_releases_request_binding()
     test_cancel_task_cancels_pending_requests()
     test_cancel_unit_request()
     test_register_unit_request_creates_reservation_for_inferred_unit()
