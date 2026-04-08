@@ -206,6 +206,7 @@ class WorldModel:
         self._job_stats_by_task: dict[str, dict[str, Any]] = {}
         self._unfulfilled_requests: list[dict[str, Any]] = []
         self._capability_state: dict[str, Any] = {}
+        self._unit_reservations: list[dict[str, Any]] = []
 
         self._info_experts: list[Any] = []
 
@@ -532,6 +533,7 @@ class WorldModel:
             "resource_bindings": dict(self.resource_bindings),
             "constraints": [self._constraint_to_dict(item) for item in self.constraints.values()],
             "capability_status": dict(self._capability_state),
+            "unit_reservations": list(self._unit_reservations),
             "timestamp": self.state.timestamp,
         }
 
@@ -614,6 +616,7 @@ class WorldModel:
         job_stats_by_task: Optional[dict[str, Any]] = None,
         unfulfilled_requests: Optional[list[dict[str, Any]]] = None,
         capability_status: Optional[dict[str, Any]] = None,
+        unit_reservations: Optional[list[dict[str, Any]]] = None,
     ) -> None:
         if active_tasks is not None:
             self.active_tasks = dict(active_tasks)
@@ -629,6 +632,8 @@ class WorldModel:
             self._unfulfilled_requests = list(unfulfilled_requests)
         if capability_status is not None:
             self._capability_state = dict(capability_status)
+        if unit_reservations is not None:
+            self._unit_reservations = list(unit_reservations)
 
     def compute_runtime_facts(self, task_id: str, *, include_buildable: bool = True) -> dict[str, Any]:
         """Structured, decision-oriented runtime facts for LLM context injection.

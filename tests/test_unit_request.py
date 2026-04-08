@@ -508,6 +508,25 @@ def test_sync_unfulfilled_requests_includes_reservation_metadata():
     assert pending[0]["reservation_status"] == ReservationStatus.PENDING.value
 
 
+def test_runtime_state_exposes_active_unit_reservations():
+    """Kernel runtime_state should expose active reservation summaries."""
+    kernel, world = make_kernel_with_base()
+    for actor in world.find_actors(owner="self", idle_only=True, category="vehicle"):
+        world.bind_resource(f"actor:{actor.actor_id}", "other_job")
+
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+    result = kernel.register_unit_request(task.task_id, "vehicle", 1, "high", "重坦")
+    req = kernel._unit_requests[result["request_id"]]
+    runtime = kernel.world_model.query("runtime_state")
+
+    reservations = runtime["unit_reservations"]
+    assert len(reservations) == 1
+    assert reservations[0]["request_id"] == req.request_id
+    assert reservations[0]["reservation_id"].startswith("res_")
+    assert reservations[0]["unit_type"] == "3tnk"
+    assert reservations[0]["status"] == ReservationStatus.PENDING.value
+
+
 def test_list_unit_requests_filter():
     """list_unit_requests should filter by status."""
     kernel, _ = make_kernel_with_base()
@@ -667,6 +686,7 @@ if __name__ == "__main__":
     test_idle_match_updates_reservation_assignment_state()
     test_cancel_unit_request_cancels_reservation()
     test_sync_unfulfilled_requests_includes_reservation_metadata()
+    test_runtime_state_exposes_active_unit_reservations()
     test_list_unit_requests_filter()
     test_unfulfilled_notifies_capability()
     test_unit_request_dataclass()

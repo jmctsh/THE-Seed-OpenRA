@@ -607,9 +607,10 @@ class Kernel:
         try:
             job = self.start_job(req.task_id, "EconomyExpert", config)
             req.bootstrap_job_id = job.job_id
+            reservation.bootstrap_job_id = job.job_id
             if reservation.status == ReservationStatus.PENDING and req.fulfilled > 0:
                 reservation.status = ReservationStatus.PARTIAL
-                reservation.updated_at = _now()
+            reservation.updated_at = _now()
             slog.info("Bootstrap production for request", event="bootstrap_production",
                       request_id=req.request_id, unit_type=unit_type, count=remaining,
                       job_id=job.job_id)
@@ -879,6 +880,7 @@ class Kernel:
             resource_bindings={},
             constraints=[],
             capability_status={},
+            unit_reservations=[],
         )
         self.push_player_notification(
             "game_reset",
@@ -1280,6 +1282,27 @@ class Kernel:
                     "bootstrapping_request_count": sum(1 for req in capability_requests if req.bootstrap_job_id),
                 }
 
+        active_reservations = [
+            {
+                "reservation_id": reservation.reservation_id,
+                "request_id": reservation.request_id,
+                "task_id": reservation.task_id,
+                "task_label": reservation.task_label,
+                "category": reservation.category,
+                "unit_type": reservation.unit_type,
+                "count": reservation.count,
+                "urgency": reservation.urgency,
+                "hint": reservation.hint,
+                "status": reservation.status.value,
+                "assigned_actor_ids": list(reservation.assigned_actor_ids),
+                "produced_actor_ids": list(reservation.produced_actor_ids),
+                "bootstrap_job_id": reservation.bootstrap_job_id,
+                "updated_at": reservation.updated_at,
+            }
+            for reservation in self._unit_reservations.values()
+            if reservation.status not in {ReservationStatus.CANCELLED, ReservationStatus.EXPIRED}
+        ]
+
         self.world_model.set_runtime_state(
             active_tasks={
                 task.task_id: {
@@ -1307,6 +1330,7 @@ class Kernel:
             job_stats_by_task=job_stats,
             unfulfilled_requests=unfulfilled,
             capability_status=capability_status,
+            unit_reservations=active_reservations,
         )
 
     def _task_world_summary(self) -> WorldSummary:
