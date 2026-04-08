@@ -19,8 +19,8 @@
       <div class="task-meta">
         优先级: {{ task.priority }} · {{ formatTimeAgo(task.timestamp) }}
       </div>
-      <div v-if="getTaskWaitingHint(task)" class="task-hint">
-        {{ getTaskWaitingHint(task) }}
+      <div v-if="getTaskStatusLine(task)" class="task-hint">
+        {{ getTaskStatusLine(task) }}
       </div>
       <div v-if="task.jobs?.length" class="task-jobs">
         <div class="task-jobs-title">Experts · {{ task.job_count }}</div>
@@ -114,7 +114,7 @@ function cancelTask(task) {
   props.send('command_cancel', { task_id: task.task_id })
 }
 
-function getTaskWaitingHint(task) {
+function getLegacyTaskWaitingHint(task) {
   const jobs = task?.jobs || []
   if (!jobs.length) return ''
 
@@ -132,6 +132,11 @@ function getTaskWaitingHint(task) {
   if (hasCapabilityWait) return '任务正在等待能力模块完成前置请求，仍在运行中'
   if (hasResourceWait) return '任务正在等待资源补位或恢复，仍在运行中'
   return '任务正在等待执行条件满足，仍在运行中'
+}
+
+function getTaskStatusLine(task) {
+  if (task?.triage?.status_line) return task.triage.status_line
+  return getLegacyTaskWaitingHint(task)
 }
 
 if (props.on) {

@@ -511,6 +511,8 @@ def test_sync_request_pushes_current_state_directly():
     assert ws.sent[1][0] == "task_list"
     assert ws.sent[1][1]["client_id"] == "client_42"
     assert ws.sent[1][1]["tasks"][0]["task_id"] == "t1"
+    assert ws.sent[1][1]["tasks"][0]["triage"]["state"] == "waiting_player"
+    assert "等待玩家回复" in ws.sent[1][1]["tasks"][0]["triage"]["status_line"]
     assert ws.sent[1][1]["pending_questions"][0]["message_id"] == "msg_1"
     print("  PASS: sync_request_pushes_current_state_directly")
 

@@ -348,12 +348,22 @@ class RuntimeBridge(InboundHandler):
         assert self.ws_server is not None
         for task in self.kernel.list_tasks():
             payload = self._task_to_dict(task, self.kernel.jobs_for_task(task.task_id))
+            triage = payload.get("triage", {})
             fingerprint = (
                 payload.get("task_id"),
                 payload.get("status"),
                 payload.get("priority"),
                 payload.get("timestamp"),
                 payload.get("raw_text"),
+                triage.get("state"),
+                triage.get("phase"),
+                triage.get("status_line"),
+                triage.get("waiting_reason"),
+                triage.get("blocking_reason"),
+                triage.get("active_expert"),
+                triage.get("active_job_id"),
+                tuple(triage.get("reservation_ids", [])),
+                triage.get("world_stale"),
                 tuple(
                     (
                         job.get("job_id"),
@@ -550,8 +560,7 @@ class RuntimeBridge(InboundHandler):
         for response in self._recent_responses[-100:]:
             await self.ws_server.send_to_client(client_id, "query_response", response)
 
-    @staticmethod
-    def _task_to_dict(task: Any, jobs: Optional[list[Any]] = None) -> dict[str, Any]:
+    def _task_to_dict(self, task: Any, jobs: Optional[list[Any]] = None) -> dict[str, Any]:
         task_jobs = jobs or []
         from logging_system import current_session_dir as _csd
         _sess = _csd()
@@ -570,7 +579,242 @@ class RuntimeBridge(InboundHandler):
             "log_path": log_path,
             "jobs": [RuntimeBridge._job_to_dict(job) for job in task_jobs],
             "job_count": len(task_jobs),
+            "triage": self._build_task_triage(task, task_jobs),
         }
+
+    def _build_task_triage(self, task: Any, jobs: list[Any]) -> dict[str, Any]:
+        task_id = getattr(task, "task_id", "")
+        status = getattr(getattr(task, "status", None), "value", str(getattr(task, "status", "")))
+        world_stale = self._world_is_stale()
+        reservations = self._task_reservations(task_id)
+        pending_question = self._task_pending_question(task_id)
+        latest_warning = self._task_latest_message(task_id, TaskMessageType.TASK_WARNING)
+        active_actor_ids = self._task_active_actor_ids(task_id)
+
+        terminal_status_line = {
+            "succeeded": "任务已完成",
+            "failed": "任务已失败",
+            "aborted": "任务已终止",
+            "partial": "任务已部分完成",
+        }
+        if status in terminal_status_line:
+            return {
+                "state": "completed",
+                "phase": status,
+                "status_line": terminal_status_line[status],
+                "waiting_reason": "",
+                "blocking_reason": "",
+                "active_expert": "",
+                "active_job_id": "",
+                "reservation_ids": [r["reservation_id"] for r in reservations],
+                "world_stale": world_stale,
+                "active_group_size": len(active_actor_ids),
+            }
+
+        if world_stale:
+            return {
+                "state": "degraded",
+                "phase": "world_sync",
+                "status_line": "世界状态同步异常，等待恢复",
+                "waiting_reason": "world_stale",
+                "blocking_reason": "world_stale",
+                "active_expert": "",
+                "active_job_id": "",
+                "reservation_ids": [r["reservation_id"] for r in reservations],
+                "world_stale": True,
+                "active_group_size": len(active_actor_ids),
+            }
+
+        if pending_question is not None:
+            question = str(pending_question.get("question", "")).strip()
+            question = question[:36] + "..." if len(question) > 36 else question
+            return {
+                "state": "waiting_player",
+                "phase": "question",
+                "status_line": f"等待玩家回复：{question}" if question else "等待玩家回复",
+                "waiting_reason": "player_response",
+                "blocking_reason": "",
+                "active_expert": "",
+                "active_job_id": "",
+                "reservation_ids": [r["reservation_id"] for r in reservations],
+                "world_stale": False,
+                "active_group_size": len(active_actor_ids),
+            }
+
+        if latest_warning is not None:
+            return {
+                "state": "blocked",
+                "phase": "warning",
+                "status_line": latest_warning.content,
+                "waiting_reason": "",
+                "blocking_reason": "task_warning",
+                "active_expert": "",
+                "active_job_id": "",
+                "reservation_ids": [r["reservation_id"] for r in reservations],
+                "world_stale": False,
+                "active_group_size": len(active_actor_ids),
+            }
+
+        active_jobs = [
+            job for job in jobs
+            if getattr(getattr(job, "status", None), "value", str(getattr(job, "status", "")))
+            not in {"succeeded", "failed", "aborted"}
+        ]
+        waiting_jobs = [
+            job for job in active_jobs
+            if getattr(getattr(job, "status", None), "value", str(getattr(job, "status", ""))) == "waiting"
+        ]
+        running_jobs = [
+            job for job in active_jobs
+            if getattr(getattr(job, "status", None), "value", str(getattr(job, "status", ""))) == "running"
+        ]
+        primary_job = running_jobs[0] if running_jobs else waiting_jobs[0] if waiting_jobs else active_jobs[0] if active_jobs else None
+        primary_expert = getattr(primary_job, "expert_type", "") if primary_job is not None else ""
+        primary_job_id = getattr(primary_job, "job_id", "") if primary_job is not None else ""
+        primary_summary = self._describe_job(primary_job) if primary_job is not None else ""
+
+        if reservations:
+            first = reservations[0]
+            unit_name = first.get("unit_type") or first.get("hint") or first.get("category") or "单位"
+            remaining = max(int(first.get("remaining_count", 0) or 0), 0)
+            if getattr(task, "is_capability", False):
+                status_line = (
+                    f"处理中：{unit_name} × {remaining}"
+                    if remaining > 0
+                    else f"处理中：{unit_name}"
+                )
+            else:
+                status_line = (
+                    f"等待能力模块交付单位：{unit_name} × {remaining}"
+                    if remaining > 0
+                    else f"等待能力模块交付单位：{unit_name}"
+                )
+            return {
+                "state": "waiting_units",
+                "phase": "reservation",
+                "status_line": status_line,
+                "waiting_reason": "unit_reservation",
+                "blocking_reason": "",
+                "active_expert": primary_expert,
+                "active_job_id": primary_job_id,
+                "reservation_ids": [r["reservation_id"] for r in reservations],
+                "world_stale": False,
+                "active_group_size": len(active_actor_ids),
+            }
+
+        if waiting_jobs:
+            status_line = primary_summary or f"等待执行条件满足：{primary_expert or '任务'}"
+            return {
+                "state": "waiting",
+                "phase": "job_waiting",
+                "status_line": status_line,
+                "waiting_reason": "job_waiting",
+                "blocking_reason": "",
+                "active_expert": primary_expert,
+                "active_job_id": primary_job_id,
+                "reservation_ids": [],
+                "world_stale": False,
+                "active_group_size": len(active_actor_ids),
+            }
+
+        if running_jobs:
+            status_line = primary_summary or f"运行中：{primary_expert or '任务'}"
+            return {
+                "state": "running",
+                "phase": "job_running",
+                "status_line": status_line,
+                "waiting_reason": "",
+                "blocking_reason": "",
+                "active_expert": primary_expert,
+                "active_job_id": primary_job_id,
+                "reservation_ids": [],
+                "world_stale": False,
+                "active_group_size": len(active_actor_ids),
+            }
+
+        return {
+            "state": "idle",
+            "phase": "task_running",
+            "status_line": "等待调度",
+            "waiting_reason": "scheduler",
+            "blocking_reason": "",
+            "active_expert": "",
+            "active_job_id": "",
+            "reservation_ids": [],
+            "world_stale": False,
+            "active_group_size": len(active_actor_ids),
+        }
+
+    def _world_is_stale(self) -> bool:
+        refresh_health = getattr(self.world_model, "refresh_health", None)
+        if not callable(refresh_health):
+            return False
+        try:
+            return bool(refresh_health().get("stale", False))
+        except Exception:
+            return False
+
+    def _task_pending_question(self, task_id: str) -> Optional[dict[str, Any]]:
+        list_pending = getattr(self.kernel, "list_pending_questions", None)
+        if not callable(list_pending):
+            return None
+        try:
+            for question in list_pending():
+                if question.get("task_id") == task_id:
+                    return question
+        except Exception:
+            return None
+        return None
+
+    def _task_latest_message(self, task_id: str, message_type: TaskMessageType) -> Optional[Any]:
+        list_messages = getattr(self.kernel, "list_task_messages", None)
+        if not callable(list_messages):
+            return None
+        try:
+            messages = list_messages(task_id)
+        except Exception:
+            return None
+        for message in reversed(messages):
+            if getattr(message, "type", None) == message_type:
+                return message
+        return None
+
+    def _task_reservations(self, task_id: str) -> list[dict[str, Any]]:
+        list_reservations = getattr(self.kernel, "list_unit_reservations", None)
+        if not callable(list_reservations):
+            return []
+        try:
+            reservations = list_reservations()
+        except Exception:
+            return []
+        result: list[dict[str, Any]] = []
+        for reservation in reservations:
+            if getattr(reservation, "task_id", None) != task_id:
+                continue
+            assigned = list(getattr(reservation, "assigned_actor_ids", []) or [])
+            produced = list(getattr(reservation, "produced_actor_ids", []) or [])
+            count = int(getattr(reservation, "count", 0) or 0)
+            result.append(
+                {
+                    "reservation_id": getattr(reservation, "reservation_id", ""),
+                    "task_id": task_id,
+                    "category": getattr(reservation, "category", ""),
+                    "unit_type": getattr(reservation, "unit_type", ""),
+                    "hint": getattr(reservation, "hint", ""),
+                    "status": getattr(getattr(reservation, "status", None), "value", ""),
+                    "remaining_count": max(count - len(assigned) - len(produced), 0),
+                }
+            )
+        return result
+
+    def _task_active_actor_ids(self, task_id: str) -> list[int]:
+        getter = getattr(self.kernel, "task_active_actor_ids", None)
+        if not callable(getter):
+            return []
+        try:
+            return list(getter(task_id))
+        except Exception:
+            return []
 
     @staticmethod
     def _job_to_dict(job: Any) -> dict[str, Any]:

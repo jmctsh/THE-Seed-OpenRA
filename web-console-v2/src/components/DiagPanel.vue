@@ -13,6 +13,16 @@
         📄 {{ selectedTaskLogPath }}
       </div>
     </div>
+    <div v-if="selectedTaskTriage" class="triage-summary">
+      <div class="triage-status">{{ selectedTaskTriage.status_line }}</div>
+      <div class="triage-meta">
+        <span>state={{ selectedTaskTriage.state }}</span>
+        <span v-if="selectedTaskTriage.phase">phase={{ selectedTaskTriage.phase }}</span>
+        <span v-if="selectedTaskTriage.active_expert">expert={{ selectedTaskTriage.active_expert }}</span>
+        <span v-if="selectedTaskTriage.active_group_size">group={{ selectedTaskTriage.active_group_size }}</span>
+        <span v-if="selectedTaskTriage.world_stale">world=stale</span>
+      </div>
+    </div>
     <div class="trace-stream">
       <div v-for="(entry, i) in filteredTraceEntries" :key="`trace-${i}`" class="trace-entry">
         <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
@@ -114,6 +124,12 @@ const selectedTaskLogPath = computed(() => {
   return task?.log_path || null
 })
 
+const selectedTaskTriage = computed(() => {
+  if (selectedTaskId.value === 'ALL') return null
+  const task = knownTasks.value.find(t => t.task_id === selectedTaskId.value)
+  return task?.triage || null
+})
+
 const displayedBenchmarks = computed(() =>
   Object.entries(benchmarkStats)
     .sort(([, left], [, right]) => {
@@ -143,6 +159,23 @@ function normalizeTaskCatalog(tasks) {
       label: formatTaskLabel(task.task_id),
       log_path: task.log_path || null,
     }))
+}
+
+function mergeKnownTask(task) {
+  if (!task?.task_id) return
+  registerTaskLabel(task.task_id)
+  const idx = knownTasks.value.findIndex((item) => item.task_id === task.task_id)
+  const next = {
+    ...(idx >= 0 ? knownTasks.value[idx] : {}),
+    ...task,
+    label: formatTaskLabel(task.task_id),
+    log_path: task.log_path || (idx >= 0 ? knownTasks.value[idx]?.log_path : null) || null,
+  }
+  if (idx >= 0) knownTasks.value.splice(idx, 1, next)
+  else knownTasks.value.push(next)
+  knownTasks.value = [...knownTasks.value].sort(
+    (a, b) => Number(b?.timestamp || b?.created_at || 0) - Number(a?.timestamp || a?.created_at || 0)
+  )
 }
 
 function resolveTaskId(payload = {}) {
@@ -232,6 +265,7 @@ if (props.on) {
   props.on('task_update', (msg) => {
     const task = msg.data || {}
     if (!task.task_id) return
+    mergeKnownTask(task)
     registerTaskLabel(task.task_id)
     addTraceEntry({
       timestamp: task.timestamp || msg.timestamp,
@@ -325,6 +359,27 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.triage-summary {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #eef6ff;
+  border: 1px solid #d4e7fb;
+}
+.triage-status {
+  font-size: 12px;
+  color: #1f3c5b;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.triage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 11px;
+  color: #55708c;
+  font-family: monospace;
 }
 .trace-entry {
   margin-bottom: 6px;
