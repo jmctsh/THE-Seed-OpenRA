@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from openra_state.data.dataset import demo_faction_restriction_for, demo_prerequisites_for
+from openra_state.data.dataset import (
+    demo_display_name_for,
+    demo_faction_restriction_for,
+    demo_prerequisites_for,
+)
 from openra_api.production_names import production_name_matches
 
 
@@ -96,15 +100,15 @@ _COUNTER_TABLE: tuple[dict[str, Any], ...] = (
     {
         "enemy_category": "aircraft",
         "threshold_ratio": 0.3,
-        "counter_unit": "sam",
-        "counter_queue": "Building",
-        "reason": "air_threat_counter_sam",
-        "display_name": "防空导弹",
+        "counter_unit": "ftrk",
+        "counter_queue": "Vehicle",
+        "reason": "air_threat_counter_ftrk",
+        "display_name": "防空车",
     },
     {
         "enemy_category": "infantry",
         "threshold_ratio": 0.6,
-        "counter_unit": "e4",   # rocket soldier — TODO: confirm unit ID
+        "counter_unit": "e3",
         "counter_queue": "Infantry",
         "reason": "infantry_heavy_counter_rocket",
         "display_name": "火箭兵",
@@ -112,10 +116,10 @@ _COUNTER_TABLE: tuple[dict[str, Any], ...] = (
     {
         "enemy_category": "vehicle",
         "threshold_ratio": 0.5,
-        "counter_unit": "arti",  # artillery — TODO: confirm unit ID
+        "counter_unit": "v2rl",
         "counter_queue": "Vehicle",
-        "reason": "vehicle_heavy_counter_artillery",
-        "display_name": "火炮",
+        "reason": "vehicle_heavy_counter_v2",
+        "display_name": "V2火箭发射车",
     },
 )
 
@@ -162,6 +166,9 @@ def display_name_for(unit_type: str) -> str:
 
     Falls back to the unit_type string itself if not found in knowledge rows.
     """
+    dataset_name = demo_display_name_for(unit_type)
+    if dataset_name and dataset_name != unit_type:
+        return dataset_name
     key = (unit_type or "").lower()
     for row in _KNOWLEDGE_ROWS:
         names = row["names"]
@@ -247,8 +254,8 @@ def buildable_power_recovery_options(game_api: ProductionCapabilityAPI) -> list[
     return _buildable_options(
         game_api,
         (
-            ("powr", "发电厂"),
-            ("apwr", "高级发电厂"),
+            ("powr", demo_display_name_for("powr")),
+            ("apwr", demo_display_name_for("apwr")),
         ),
     )
 
@@ -257,8 +264,8 @@ def buildable_economy_recovery_options(game_api: ProductionCapabilityAPI) -> lis
     return _buildable_options(
         game_api,
         (
-            ("proc", "矿场"),
-            ("harv", "采矿车"),
+            ("proc", demo_display_name_for("proc")),
+            ("harv", demo_display_name_for("harv")),
         ),
     )
 
@@ -281,7 +288,7 @@ def radar_loss_impact() -> dict[str, Any]:
 def awareness_recovery_package() -> dict[str, Any]:
     return {
         "kind": "awareness_recovery",
-        "options": [{"unit_type": "dome", "display_name": "雷达站"}],
+        "options": [{"unit_type": "dome", "display_name": demo_display_name_for("dome")}],
     }
 
 

@@ -12,7 +12,11 @@ from dataclasses import asdict, dataclass, field
 from typing import Any, Optional
 
 from models import ExpertSignal, Event, Job, Task
-from openra_state.data.dataset import CN_NAME_MAP, filter_demo_capability_buildable
+from openra_state.data.dataset import (
+    CN_NAME_MAP,
+    demo_queue_type_for,
+    filter_demo_capability_buildable,
+)
 
 # Chinese labels for Job status values — makes completion judgment clearer for LLM.
 _JOB_STATUS_ZH: dict[str, str] = {
@@ -33,26 +37,6 @@ _SUBSCRIPTION_KEYS: dict[str, frozenset] = {
         "base_established", "base_health_summary", "has_production",
     }),
     "production": frozenset(),  # placeholder — no production InfoExpert yet
-}
-
-_QUEUE_TYPE_BY_UNIT_TYPE: dict[str, str] = {
-    "powr": "Building",
-    "proc": "Building",
-    "barr": "Building",
-    "weap": "Building",
-    "dome": "Building",
-    "fix": "Building",
-    "afld": "Building",
-    "stek": "Building",
-    "e1": "Infantry",
-    "e3": "Infantry",
-    "ftrk": "Vehicle",
-    "v2rl": "Vehicle",
-    "3tnk": "Vehicle",
-    "4tnk": "Vehicle",
-    "harv": "Vehicle",
-    "mig": "Aircraft",
-    "yak": "Aircraft",
 }
 
 _ORDINARY_RUNTIME_FACTS_HIDDEN_KEYS = {
@@ -389,7 +373,7 @@ def _build_unit_reservations(rf: dict[str, Any]) -> str:
         request_id = reservation.get("request_id", "?")
         task_label = reservation.get("task_label", "?")
         unit_type = reservation.get("unit_type", "?")
-        queue_type = reservation.get("queue_type", "") or _QUEUE_TYPE_BY_UNIT_TYPE.get(str(unit_type).lower(), "")
+        queue_type = reservation.get("queue_type", "") or demo_queue_type_for(str(unit_type))
         count = int(reservation.get("count", 0) or 0)
         assigned = len(reservation.get("assigned_actor_ids", []) or [])
         produced = len(reservation.get("produced_actor_ids", []) or [])
@@ -507,7 +491,7 @@ def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
                 "task_id": reservation.get("task_id", "?"),
                 "task_label": reservation.get("task_label", "?"),
                 "unit_type": reservation.get("unit_type", "?"),
-                "queue_type": reservation.get("queue_type", "") or _QUEUE_TYPE_BY_UNIT_TYPE.get(str(reservation.get("unit_type", "")).lower(), ""),
+                "queue_type": reservation.get("queue_type", "") or demo_queue_type_for(str(reservation.get("unit_type", ""))),
                 "count": int(reservation.get("count", 0) or 0),
                 "remaining_count": int(reservation.get("remaining_count", max(0, int(reservation.get("count", 0) or 0) - len(reservation.get("assigned_actor_ids", []) or []) - len(reservation.get("produced_actor_ids", []) or [])))),
                 "assigned_actor_ids": list(reservation.get("assigned_actor_ids", []) or []),

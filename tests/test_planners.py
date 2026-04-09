@@ -191,7 +191,7 @@ def test_production_advisor_empty_base_ignores_no_enemy():
 
 
 def test_production_advisor_counter_infantry_heavy() -> None:
-    """Infantry-heavy enemy (≥60%) → recommend rocket infantry counter."""
+    """Infantry-heavy enemy (≥60%) → recommend demo-safe rocket infantry counter."""
     planner = ProductionAdvisor()
 
     enemy = [{"actor_id": i, "category": "infantry"} for i in range(7)]
@@ -208,13 +208,13 @@ def test_production_advisor_counter_infantry_heavy() -> None:
 
     recommendation = proposal["recommendation"]
     assert recommendation["action"] == "produce"
-    assert recommendation["unit_type"] == "e4"
+    assert recommendation["unit_type"] == "e3"
     assert recommendation["reason"] == "infantry_heavy_counter_rocket"
     print("  PASS: production_advisor_counter_infantry_heavy")
 
 
 def test_production_advisor_counter_vehicle_heavy() -> None:
-    """Vehicle-heavy enemy (≥50%) → recommend artillery counter."""
+    """Vehicle-heavy enemy (≥50%) → recommend demo-safe V2 counter."""
     planner = ProductionAdvisor()
 
     enemy = [{"actor_id": i, "category": "vehicle"} for i in range(5)]
@@ -231,8 +231,8 @@ def test_production_advisor_counter_vehicle_heavy() -> None:
 
     recommendation = proposal["recommendation"]
     assert recommendation["action"] == "produce"
-    assert recommendation["unit_type"] == "arti"
-    assert recommendation["reason"] == "vehicle_heavy_counter_artillery"
+    assert recommendation["unit_type"] == "v2rl"
+    assert recommendation["reason"] == "vehicle_heavy_counter_v2"
     print("  PASS: production_advisor_counter_vehicle_heavy")
 
 

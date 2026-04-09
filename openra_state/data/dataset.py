@@ -216,6 +216,11 @@ _DEMO_CAPABILITY_ROSTER: dict[str, tuple[str, ...]] = {
     "Vehicle": ("ftrk", "v2rl", "3tnk", "4tnk", "harv"),
     "Aircraft": ("mig", "yak"),
 }
+_DEMO_QUEUE_TYPE_BY_UNIT_TYPE: dict[str, str] = {
+    unit_type: queue_type
+    for queue_type, units in _DEMO_CAPABILITY_ROSTER.items()
+    for unit_type in units
+}
 
 
 def dataset_entry(unit_type: str) -> UnitInfo | None:
@@ -235,6 +240,18 @@ def demo_capability_units_for_queue(queue_type: str) -> tuple[str, ...]:
     return _DEMO_CAPABILITY_ROSTER.get(queue_type, ())
 
 
+def demo_capability_unit_types() -> tuple[str, ...]:
+    """Return the flattened set of demo capability unit/building ids."""
+    return tuple(_DEMO_QUEUE_TYPE_BY_UNIT_TYPE.keys())
+
+
+def demo_queue_type_for(unit_type: str) -> str | None:
+    """Return the demo queue type for a unit/building id, if it is demo-supported."""
+    if not unit_type:
+        return None
+    return _DEMO_QUEUE_TYPE_BY_UNIT_TYPE.get(str(unit_type).lower())
+
+
 def demo_prerequisites_for(unit_type: str) -> list[str]:
     """Return normalized prerequisites for the demo capability/buildability layer."""
     entry = dataset_entry(unit_type)
@@ -252,6 +269,16 @@ def demo_faction_restriction_for(unit_type: str) -> str | None:
     if faction == "both":
         return None
     return faction
+
+
+def demo_display_name_for(unit_type: str) -> str:
+    """Return the demo-facing Chinese display name for a unit/building id."""
+    entry = dataset_entry(unit_type)
+    if entry is not None and entry.name_cn:
+        return entry.name_cn
+    if not unit_type:
+        return ""
+    return CN_NAME_MAP.get(str(unit_type).upper(), str(unit_type))
 
 
 def filter_demo_capability_buildable(buildable: dict[str, list[str]]) -> dict[str, list[str]]:
