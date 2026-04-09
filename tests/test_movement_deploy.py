@@ -29,6 +29,7 @@ class MockGameAPI:
 
     def __init__(self, deploy_fail: bool = False):
         self.move_calls: list[dict] = []
+        self.path_move_calls: list[dict] = []
         self.deploy_calls: list[dict] = []
         self._deploy_fail = deploy_fail
         # actor_id -> Actor (or None to simulate disappeared)
@@ -38,6 +39,13 @@ class MockGameAPI:
         self.move_calls.append({
             "actor_ids": [a.actor_id for a in actors],
             "position": (location.x, location.y),
+            "attack_move": attack_move,
+        })
+
+    def move_units_by_path(self, actors, path, attack_move=False):
+        self.path_move_calls.append({
+            "actor_ids": [a.actor_id for a in actors],
+            "path": [(point.x, point.y) for point in path],
             "attack_move": attack_move,
         })
 
@@ -157,6 +165,39 @@ def test_movement_attack_move():
     job.do_tick()
     assert api.move_calls[0]["attack_move"] is True
     print("  PASS: movement_attack_move")
+
+
+def test_movement_path_mode_uses_path_api():
+    """Path-aware movement uses GameAPI.move_units_by_path and still targets final waypoint."""
+    signals: list[ExpertSignal] = []
+    wm = MockWorldModel({57: (500, 500)})
+    api = MockGameAPI()
+
+    config = MovementJobConfig(
+        target_position=(120, 260),
+        path=[(400, 420), (250, 300), (120, 260)],
+        move_mode=MoveMode.MOVE,
+        arrival_radius=8,
+    )
+    job = MovementJob(
+        job_id="j_path", task_id="t1", config=config,
+        signal_callback=signals.append, game_api=api, world_model=wm,
+    )
+    job.on_resource_granted(["actor:57"])
+
+    job.do_tick()
+    assert api.move_calls == []
+    assert api.path_move_calls == [{
+        "actor_ids": [57],
+        "path": [(400, 420), (250, 300), (120, 260)],
+        "attack_move": False,
+    }]
+
+    wm.set_position(57, (121, 259))
+    job.do_tick()
+    assert job.status == JobStatus.SUCCEEDED
+    assert signals[-1].result == "succeeded"
+    print("  PASS: movement_path_mode_uses_path_api")
 
 
 def test_movement_retreat_mode():
@@ -410,6 +451,7 @@ if __name__ == "__main__":
     test_movement_arrival_detection()
     test_movement_moves_then_arrives()
     test_movement_attack_move()
+    test_movement_path_mode_uses_path_api()
     test_movement_retreat_mode()
     test_movement_multiple_actors()
     test_movement_expert_creates_job()
@@ -424,4 +466,4 @@ if __name__ == "__main__":
     test_deploy_no_double_command()
     test_deploy_expert_creates_job()
 
-    print(f"\nAll 14 tests passed!")
+    print(f"\nAll 15 tests passed!")

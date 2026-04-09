@@ -11,7 +11,7 @@ import logging
 import math
 from typing import Any, Optional, Protocol
 
-from models import ConstraintEnforcement, MovementJobConfig, MoveMode, SignalKind
+from models import ConstraintEnforcement, MovementJobConfig, MoveMode, ResourceKind, ResourceNeed, SignalKind
 from openra_api.models import Actor, Location
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
@@ -58,6 +58,30 @@ class MovementJob(BaseJob):
     @property
     def expert_type(self) -> str:
         return "MovementExpert"
+
+    def get_resource_needs(self) -> list[ResourceNeed]:
+        config: MovementJobConfig = self.config  # type: ignore[assignment]
+        if config.actor_ids:
+            return [
+                ResourceNeed(
+                    job_id=self.job_id,
+                    kind=ResourceKind.ACTOR,
+                    count=1,
+                    predicates={"actor_id": str(aid), "owner": "self"},
+                )
+                for aid in config.actor_ids
+            ]
+        count = config.unit_count
+        if count <= 0:
+            count = 999
+        return [
+            ResourceNeed(
+                job_id=self.job_id,
+                kind=ResourceKind.ACTOR,
+                count=count,
+                predicates={"owner": "self"},
+            )
+        ]
 
     def tick(self) -> None:
         self._tick_count += 1
@@ -112,8 +136,12 @@ class MovementJob(BaseJob):
                 return
             try:
                 actors = [Actor(actor_id=aid) for aid in actor_ids]
-                location = Location(x=target[0], y=target[1])
-                self.game_api.move_units_by_location(actors, location, attack_move=attack_move)
+                if config.path:
+                    path = [Location(x=point[0], y=point[1]) for point in config.path]
+                    self.game_api.move_units_by_path(actors, path, attack_move=attack_move)
+                else:
+                    location = Location(x=target[0], y=target[1])
+                    self.game_api.move_units_by_location(actors, location, attack_move=attack_move)
                 self._move_issued = True
             except Exception as e:
                 logger.warning("MovementJob move failed: %s", e)

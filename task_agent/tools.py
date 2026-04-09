@@ -207,6 +207,51 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "move_units_by_path",
+            "description": (
+                "Move task-owned units along an explicit waypoint path. "
+                "沿给定路径点移动、沿路推进、按路线穿插。"
+                "Use when the exact route matters more than a single destination."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "array",
+                        "description": "Ordered waypoint list; final point becomes the arrival target.",
+                        "items": {
+                            "type": "array",
+                            "items": {"type": "integer"},
+                            "minItems": 2,
+                            "maxItems": 2,
+                        },
+                    },
+                    "move_mode": {
+                        "type": "string",
+                        "enum": ["move", "attack_move", "retreat"],
+                        "description": "Movement mode along the path (default 'move').",
+                    },
+                    "arrival_radius": {
+                        "type": "integer",
+                        "description": "Distance threshold to final waypoint for success (default 5).",
+                    },
+                    "unit_count": {
+                        "type": "integer",
+                        "description": "Number of units to move. 0 or omit = all available owned units.",
+                    },
+                    "actor_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Optional explicit actor ids. When omitted, use task-bound units.",
+                    },
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "stop_units",
             "description": (
                 "Immediately stop the current task's units. "

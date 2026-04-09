@@ -32,6 +32,7 @@ class MovementJobConfig:
     target_position: tuple[int, int]
     move_mode: MoveMode = MoveMode.MOVE
     arrival_radius: int = 5
+    path: Optional[list[tuple[int, int]]] = None
     actor_ids: Optional[list[int]] = None  # optional, defaults to ResourceNeed
     unit_count: int = 0  # 0 = all available; only used when actor_ids is None
 

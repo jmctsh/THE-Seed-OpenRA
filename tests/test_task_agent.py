@@ -1286,6 +1286,30 @@ def test_move_units_handler_creates_movement_job() -> None:
     print("  PASS: move_units_handler_creates_movement_job")
 
 
+def test_move_units_by_path_handler_creates_movement_job() -> None:
+    """move_units_by_path tool creates a MovementExpert job with waypoint path."""
+    captured = []
+    executor = _make_handlers_executor(captured)
+
+    async def run():
+        from models.configs import MovementJobConfig
+        from models.enums import MoveMode
+        result = await executor.execute("tc1", "move_units_by_path",
+            '{"path": [[10, 20], [30, 40], [50, 60]], "move_mode": "attack_move", "arrival_radius": 9}')
+        assert result.error is None
+        assert len(captured) == 1
+        assert captured[0]["expert_type"] == "MovementExpert"
+        cfg = captured[0]["config"]
+        assert isinstance(cfg, MovementJobConfig)
+        assert cfg.path == [(10, 20), (30, 40), (50, 60)]
+        assert cfg.target_position == (50, 60)
+        assert cfg.arrival_radius == 9
+        assert cfg.move_mode == MoveMode.ATTACK_MOVE
+
+    asyncio.run(run())
+    print("  PASS: move_units_by_path_handler_creates_movement_job")
+
+
 def test_repair_units_handler_creates_repair_job() -> None:
     """repair_units tool creates a RepairExpert job with correct config."""
     captured = []
@@ -1371,6 +1395,7 @@ def test_start_job_removed_from_tool_definitions() -> None:
     assert "produce_units" in names
     assert "attack" in names
     assert "move_units" in names
+    assert "move_units_by_path" in names
     assert "repair_units" in names
     assert "set_rally_point" in names
     assert "deploy_mcv" in names
@@ -2249,6 +2274,7 @@ if __name__ == "__main__":
     test_produce_units_handler_creates_economy_job()
     test_attack_handler_creates_combat_job()
     test_move_units_handler_creates_movement_job()
+    test_move_units_by_path_handler_creates_movement_job()
     test_repair_units_handler_creates_repair_job()
     test_set_rally_point_handler_creates_rally_job_for_capability()
     test_set_rally_point_handler_rejects_normal_task()
@@ -2293,4 +2319,4 @@ if __name__ == "__main__":
     test_smart_wake_no_skip_when_no_jobs()
     test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 58 tests passed!")
+    print(f"\nAll 59 tests passed!")

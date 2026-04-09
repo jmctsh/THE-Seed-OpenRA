@@ -106,6 +106,7 @@ class TaskToolHandlers:
             "produce_units": self.handle_produce_units,
             "request_units": self.handle_request_units,
             "move_units": self.handle_move_units,
+            "move_units_by_path": self.handle_move_units_by_path,
             "stop_units": self.handle_stop_units,
             "repair_units": self.handle_repair_units,
             "set_rally_point": self.handle_set_rally_point,
@@ -189,6 +190,23 @@ class TaskToolHandlers:
             target_position=tuple(args["target_position"]),
             move_mode=MoveMode(args.get("move_mode", "move")),
             arrival_radius=int(args.get("arrival_radius", 5)),
+            actor_ids=actor_ids,
+            unit_count=int(args.get("unit_count", 0)),
+        )
+        job = self.kernel.start_job(self.task_id, "MovementExpert", config)
+        return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}
+
+    async def handle_move_units_by_path(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
+        raw_path = list(args.get("path") or [])
+        if not raw_path:
+            raise ValueError("move_units_by_path requires a non-empty path")
+        normalized_path = [(int(point[0]), int(point[1])) for point in raw_path]
+        actor_ids = list(args["actor_ids"]) if args.get("actor_ids") else self._default_actor_ids()
+        config = MovementJobConfig(
+            target_position=normalized_path[-1],
+            move_mode=MoveMode(args.get("move_mode", "move")),
+            arrival_radius=int(args.get("arrival_radius", 5)),
+            path=normalized_path,
             actor_ids=actor_ids,
             unit_count=int(args.get("unit_count", 0)),
         )
