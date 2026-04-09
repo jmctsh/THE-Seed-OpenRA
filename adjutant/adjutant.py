@@ -150,13 +150,14 @@ class AdjutantContext:
     recent_dialogue: list[dict[str, Any]]
     player_input: str
     recent_completed_tasks: list[dict[str, Any]] = field(default_factory=list)
+    coordinator_snapshot: dict[str, Any] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
 
 
 CLASSIFICATION_SYSTEM_PROMPT = """\
 You are the Adjutant (副官) in a real-time strategy game. Your job is to classify player input.
 
-Given the current context (active tasks, pending questions, recent dialogue, recent completed tasks, battlefield snapshot/disposition), classify the input as ONE of:
+Given the current context (active tasks with triage, pending questions, recent dialogue, recent completed tasks, battlefield snapshot/disposition), classify the input as ONE of:
 1. "reply" — the player is answering a pending question from a task
 2. "command" — the player is giving a new order/instruction
 3. "query" — the player is asking for information (战况, 建议, etc.)
@@ -174,7 +175,8 @@ Rules:
 - "info" is for inputs that provide new facts, intelligence, corrections, or situational awareness to the AI — NOT a question and NOT a direct order. E.g.: "敌人基地在左下角", "发现敌人，被打了", "那个方向没有敌人"
 - If the input describes an urgent situation (被攻击, 被打了, 发现敌人) but has no explicit action verb, classify as "info" NOT "query"
 - "cancel" applies when the player explicitly wants to stop an existing task; set target_task_id to the task label or id mentioned (e.g. "001", "002")
-- Active tasks are listed in the context — use their labels to resolve "取消001" → target_task_id="001"
+- Active tasks are listed in the context with state/phase/waiting_reason/blocking_reason/active_expert — use this information when deciding whether the player is continuing, interrupting, or redirecting an existing task.
+- Use task labels to resolve "取消001" → target_task_id="001"
 - For "info" type: set target_task_id to the label of the most relevant active task if one is clearly related
 
 Dialogue context awareness:
@@ -245,6 +247,27 @@ class Adjutant:
             return None
 
     def _battlefield_snapshot(self, world_summary: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        query_snapshot = self._safe_world_query("battlefield_snapshot")
+        if query_snapshot:
+            return {
+                "summary": str(query_snapshot.get("summary", "")),
+                "disposition": query_snapshot.get("disposition", "unknown"),
+                "focus": query_snapshot.get("focus", "general"),
+                "self_units": int(self._coerce_float(query_snapshot.get("self_units")) or 0),
+                "enemy_units": int(self._coerce_float(query_snapshot.get("enemy_units")) or 0),
+                "self_combat_value": round(self._coerce_float(query_snapshot.get("self_combat_value")) or 0.0, 2),
+                "enemy_combat_value": round(self._coerce_float(query_snapshot.get("enemy_combat_value")) or 0.0, 2),
+                "idle_self_units": int(self._coerce_float(query_snapshot.get("idle_self_units")) or 0),
+                "low_power": bool(query_snapshot.get("low_power")),
+                "queue_blocked": bool(query_snapshot.get("queue_blocked")),
+                "explored_pct": self._coerce_float(query_snapshot.get("explored_pct")),
+                "enemy_bases": int(self._coerce_float(query_snapshot.get("enemy_bases")) or 0),
+                "enemy_spotted": int(self._coerce_float(query_snapshot.get("enemy_spotted")) or 0),
+                "frozen_enemy_count": int(self._coerce_float(query_snapshot.get("frozen_enemy_count")) or 0),
+                "pending_request_count": int(self._coerce_float(query_snapshot.get("pending_request_count")) or 0),
+                "stale": bool(query_snapshot.get("stale")),
+            }
+
         summary = world_summary if isinstance(world_summary, dict) else self._get_world_summary()
         economy = summary.get("economy", {}) if isinstance(summary, dict) else {}
         military = summary.get("military", {}) if isinstance(summary, dict) else {}
@@ -320,6 +343,8 @@ class Adjutant:
             "enemy_bases": enemy_bases,
             "enemy_spotted": enemy_spotted,
             "frozen_enemy_count": frozen_count,
+            "pending_request_count": 0,
+            "stale": False,
         }
 
     @staticmethod
@@ -432,6 +457,212 @@ class Adjutant:
             "enemy_bases": battlefield_snapshot.get("enemy_bases", 0),
             "enemy_spotted": battlefield_snapshot.get("enemy_spotted", 0),
             "frozen_enemy_count": battlefield_snapshot.get("frozen_enemy_count", 0),
+        }
+
+    def _safe_world_query(self, query_type: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        try:
+            result = self.world_model.query(query_type, params)
+        except Exception:
+            logger.exception("Adjutant failed world query: %s", query_type)
+            return {}
+        return result if isinstance(result, dict) else {}
+
+    def _coordinator_snapshot(self) -> dict[str, Any]:
+        battlefield = self._format_query_snapshot(self._battlefield_snapshot())
+        runtime_state = self._safe_world_query("runtime_state")
+        capability_status = dict(runtime_state.get("capability_status") or {})
+        runtime_facts: dict[str, Any] = {}
+        compute_runtime_facts = getattr(self.world_model, "compute_runtime_facts", None)
+        if callable(compute_runtime_facts):
+            try:
+                runtime_facts = compute_runtime_facts("__adjutant__", include_buildable=False) or {}
+            except Exception:
+                logger.exception("Adjutant failed to compute coordinator runtime facts")
+                runtime_facts = {}
+        base_state = {
+            "has_construction_yard": runtime_facts.get("has_construction_yard", False),
+            "mcv_count": runtime_facts.get("mcv_count", 0),
+            "mcv_idle": runtime_facts.get("mcv_idle", False),
+            "power_plant_count": runtime_facts.get("power_plant_count", 0),
+            "refinery_count": runtime_facts.get("refinery_count", 0),
+            "barracks_count": runtime_facts.get("barracks_count", 0),
+            "war_factory_count": runtime_facts.get("war_factory_count", 0),
+            "radar_count": runtime_facts.get("radar_count", 0),
+            "repair_facility_count": runtime_facts.get("repair_facility_count", 0),
+            "airfield_count": runtime_facts.get("airfield_count", 0),
+            "tech_center_count": runtime_facts.get("tech_center_count", 0),
+            "harvester_count": runtime_facts.get("harvester_count", 0),
+            "low_power": battlefield.get("low_power", False),
+            "queue_blocked": battlefield.get("queue_blocked", False),
+        }
+        info_experts = dict(runtime_facts.get("info_experts") or {})
+        return {
+            "battlefield": battlefield,
+            "base_state": base_state,
+            "capability": {
+                "task_id": capability_status.get("task_id"),
+                "label": capability_status.get("label"),
+                "status": capability_status.get("status"),
+                "active_job_types": list(capability_status.get("active_job_types", []) or []),
+                "pending_request_count": int(capability_status.get("pending_request_count", 0) or 0),
+                "bootstrapping_request_count": int(capability_status.get("bootstrapping_request_count", 0) or 0),
+            },
+            "info_experts": {
+                "threat_level": info_experts.get("threat_level"),
+                "threat_direction": info_experts.get("threat_direction"),
+                "enemy_count": info_experts.get("enemy_count"),
+                "base_under_attack": info_experts.get("base_under_attack"),
+                "base_health_summary": info_experts.get("base_health_summary"),
+                "has_production": info_experts.get("has_production"),
+            },
+            "world_sync": self.world_model.refresh_health(),
+            "active_task_count": len(runtime_state.get("active_tasks", {}) or {}),
+            "reservation_count": len(runtime_state.get("unit_reservations", []) or []),
+        }
+
+    @staticmethod
+    def _task_status_line(task_entry: dict[str, Any], capability_status: dict[str, Any]) -> str:
+        if task_entry.get("is_capability"):
+            active_job_types = list(capability_status.get("active_job_types", []) or [])
+            pending_request_count = int(capability_status.get("pending_request_count", 0) or 0)
+            status = task_entry.get("status", "running")
+            parts = [f"能力任务 {status}"]
+            if active_job_types:
+                parts.append(f"job={','.join(active_job_types[:3])}")
+            if pending_request_count:
+                parts.append(f"pending={pending_request_count}")
+            return " | ".join(parts)
+        active_group_size = int(task_entry.get("active_group_size", 0) or 0)
+        status = str(task_entry.get("status", "running"))
+        if active_group_size > 0:
+            return f"{status} | group={active_group_size}"
+        return status
+
+    @staticmethod
+    def _derive_task_triage(
+        task: Any,
+        runtime_task: dict[str, Any],
+        runtime_state: dict[str, Any],
+        capability_status: dict[str, Any],
+        world_sync: dict[str, Any],
+    ) -> dict[str, Any]:
+        task_id = str(getattr(task, "task_id", ""))
+        status = str(getattr(getattr(task, "status", None), "value", ""))
+        active_group_size = int(runtime_task.get("active_group_size", 0) or 0)
+        active_jobs = [
+            info for info in (runtime_state.get("active_jobs") or {}).values()
+            if isinstance(info, dict) and info.get("task_id") == task_id
+        ]
+        running_jobs = [job for job in active_jobs if job.get("status") == "running"]
+        waiting_jobs = [job for job in active_jobs if job.get("status") == "waiting"]
+        primary_job = running_jobs[0] if running_jobs else waiting_jobs[0] if waiting_jobs else active_jobs[0] if active_jobs else {}
+        active_expert = str(primary_job.get("expert_type", "") or "")
+        active_job_id = str(primary_job.get("job_id", "") or "")
+
+        reservations = [
+            reservation for reservation in (runtime_state.get("unit_reservations") or [])
+            if isinstance(reservation, dict) and reservation.get("task_id") == task_id
+        ]
+        reservation_ids = [str(reservation.get("reservation_id", "")) for reservation in reservations if reservation.get("reservation_id")]
+
+        if bool(world_sync.get("stale")):
+            return {
+                "state": "degraded",
+                "phase": "world_sync",
+                "status_line": "世界状态同步异常，等待恢复",
+                "waiting_reason": "world_stale",
+                "blocking_reason": "world_stale",
+                "active_expert": active_expert,
+                "active_job_id": active_job_id,
+                "reservation_ids": reservation_ids,
+                "active_group_size": active_group_size,
+            }
+
+        if bool(runtime_task.get("is_capability", getattr(task, "is_capability", False))):
+            pending_request_count = int(capability_status.get("pending_request_count", 0) or 0)
+            active_job_types = list(capability_status.get("active_job_types", []) or [])
+            phase = "dispatch" if active_job_types else "idle"
+            waiting_reason = "pending_requests" if pending_request_count else ""
+            status_line = "能力处理中"
+            if active_job_types:
+                status_line += f" | {','.join(active_job_types[:3])}"
+            if pending_request_count:
+                status_line += f" | pending={pending_request_count}"
+            return {
+                "state": "running" if active_job_types else "idle",
+                "phase": phase,
+                "status_line": status_line,
+                "waiting_reason": waiting_reason,
+                "blocking_reason": "",
+                "active_expert": ",".join(active_job_types[:3]) if active_job_types else active_expert,
+                "active_job_id": active_job_id,
+                "reservation_ids": reservation_ids,
+                "active_group_size": active_group_size,
+            }
+
+        if reservations:
+            status_line = "等待能力模块完成单位请求"
+            if active_group_size > 0:
+                status_line += f" | group={active_group_size}"
+            return {
+                "state": "waiting_capability",
+                "phase": "unit_request",
+                "status_line": status_line,
+                "waiting_reason": "unit_request",
+                "blocking_reason": "",
+                "active_expert": active_expert,
+                "active_job_id": active_job_id,
+                "reservation_ids": reservation_ids,
+                "active_group_size": active_group_size,
+            }
+
+        if waiting_jobs and not running_jobs:
+            status_line = f"等待 {active_expert} 生效" if active_expert else "等待执行"
+            if active_group_size > 0:
+                status_line += f" | group={active_group_size}"
+            return {
+                "state": "waiting_runtime",
+                "phase": "job_waiting",
+                "status_line": status_line,
+                "waiting_reason": "job_waiting",
+                "blocking_reason": "",
+                "active_expert": active_expert,
+                "active_job_id": active_job_id,
+                "reservation_ids": reservation_ids,
+                "active_group_size": active_group_size,
+            }
+
+        if running_jobs:
+            status_line = "执行中"
+            if active_expert:
+                status_line += f" | {active_expert}"
+            if active_group_size > 0:
+                status_line += f" | group={active_group_size}"
+            return {
+                "state": "running",
+                "phase": "execution",
+                "status_line": status_line,
+                "waiting_reason": "",
+                "blocking_reason": "",
+                "active_expert": active_expert,
+                "active_job_id": active_job_id,
+                "reservation_ids": reservation_ids,
+                "active_group_size": active_group_size,
+            }
+
+        status_line = "任务进行中"
+        if active_group_size > 0:
+            status_line += f" | group={active_group_size}"
+        return {
+            "state": "running" if active_group_size > 0 else status or "running",
+            "phase": "task_active",
+            "status_line": status_line,
+            "waiting_reason": "",
+            "blocking_reason": "",
+            "active_expert": active_expert,
+            "active_job_id": active_job_id,
+            "reservation_ids": reservation_ids,
+            "active_group_size": active_group_size,
         }
 
     # --- Main entry point ---
@@ -1304,14 +1535,16 @@ class Adjutant:
 
     async def _classify_input(self, context: AdjutantContext) -> ClassificationResult:
         """Use LLM to classify player input."""
+        coordinator_snapshot = context.coordinator_snapshot or {}
         context_json = json.dumps({
             "active_tasks": context.active_tasks,
             "pending_questions": context.pending_questions,
             "recent_dialogue": context.recent_dialogue[-10:],
             "recent_completed_tasks": context.recent_completed_tasks,
             "player_input": context.player_input,
-            "battlefield_snapshot": self._format_query_snapshot(self._battlefield_snapshot()),
-            "world_sync_health": self.world_model.refresh_health(),
+            "battlefield_snapshot": coordinator_snapshot.get("battlefield") or self._format_query_snapshot(self._battlefield_snapshot()),
+            "coordinator_snapshot": coordinator_snapshot,
+            "world_sync_health": coordinator_snapshot.get("world_sync") or self.world_model.refresh_health(),
         }, ensure_ascii=False)
 
         messages = [
@@ -1765,25 +1998,38 @@ class Adjutant:
     def _build_context(self, player_input: str) -> AdjutantContext:
         """Build the minimal Adjutant context (~500-1000 tokens)."""
         tasks = self.kernel.list_tasks()
-        active_tasks = [
-            {
+        runtime_state = self._safe_world_query("runtime_state")
+        runtime_tasks = dict(runtime_state.get("active_tasks") or {})
+        capability_status = dict(runtime_state.get("capability_status") or {})
+        coordinator_snapshot = self._coordinator_snapshot()
+        world_sync = dict((coordinator_snapshot.get("world_sync") or {}))
+        active_tasks = []
+        for t in tasks:
+            if t.status.value not in ("pending", "running", "waiting"):
+                continue
+            runtime_task = dict(runtime_tasks.get(t.task_id) or {})
+            task_entry = {
                 "task_id": t.task_id,
                 "label": getattr(t, "label", ""),
                 "raw_text": t.raw_text,
                 "status": t.status.value,
+                "is_capability": bool(runtime_task.get("is_capability", getattr(t, "is_capability", False))),
+                "active_group_size": int(runtime_task.get("active_group_size", 0) or 0),
+                "domain": self._task_domain(str(getattr(t, "raw_text", "") or "").lower()),
             }
-            for t in tasks
-            if t.status.value in ("pending", "running", "waiting")
-        ]
+            triage = self._derive_task_triage(t, runtime_task, runtime_state, capability_status, world_sync)
+            task_entry.update(triage)
+            task_entry["status_line"] = triage.get("status_line") or self._task_status_line(task_entry, capability_status)
+            active_tasks.append(task_entry)
 
         pending_questions = self.kernel.list_pending_questions()
-
         return AdjutantContext(
             active_tasks=active_tasks,
             pending_questions=pending_questions,
             recent_dialogue=self._dialogue_history[-self.config.max_dialogue_history:],
             player_input=player_input,
             recent_completed_tasks=list(self._recent_completed),
+            coordinator_snapshot=coordinator_snapshot,
         )
 
     def _record_dialogue(self, speaker: str, text: str) -> None:
