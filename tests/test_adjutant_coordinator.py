@@ -68,11 +68,19 @@ class _WorldModel:
                 "idle_self_units": 2,
                 "low_power": False,
                 "queue_blocked": False,
+                "recommended_posture": "satisfy_requests",
+                "threat_level": "medium",
+                "threat_direction": "west",
+                "base_under_attack": False,
+                "base_health_summary": "stable",
+                "has_production": True,
                 "explored_pct": 0.42,
                 "enemy_bases": 1,
                 "enemy_spotted": 5,
                 "frozen_enemy_count": 2,
                 "pending_request_count": 3,
+                "bootstrapping_request_count": 1,
+                "reservation_count": 1,
                 "stale": False,
             }
         if query_type == "runtime_state":
@@ -165,6 +173,9 @@ def test_battlefield_snapshot_prefers_runtime_query() -> None:
     assert snapshot["focus"] == "recon"
     assert snapshot["pending_request_count"] == 3
     assert snapshot["frozen_enemy_count"] == 2
+    assert snapshot["recommended_posture"] == "satisfy_requests"
+    assert snapshot["threat_level"] == "medium"
+    assert snapshot["reservation_count"] == 1
     print("  PASS: battlefield_snapshot_prefers_runtime_query")
 
 
@@ -182,6 +193,8 @@ def test_build_context_includes_task_triage_fields() -> None:
     assert by_label["003"]["state"] == "running"
     assert by_label["003"]["active_expert"] == "CombatExpert"
     assert by_label["003"]["active_group_size"] == 3
+    assert context.coordinator_snapshot["recommended_posture"] == "satisfy_requests"
+    assert context.coordinator_snapshot["battlefield"]["threat_direction"] == "west"
     print("  PASS: build_context_includes_task_triage_fields")
 
 

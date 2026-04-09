@@ -341,6 +341,17 @@ def test_runtime_state_exposes_capability_status_and_battlefield_snapshot() -> N
             "pending_request_count": 2,
             "bootstrapping_request_count": 1,
         },
+        unit_reservations=[
+            {
+                "reservation_id": "res_1",
+                "request_id": "req_1",
+                "task_id": "t1",
+                "task_label": "001",
+                "unit_type": "e1",
+                "count": 2,
+                "status": "pending",
+            }
+        ],
     )
 
     runtime = world.query("runtime_state")
@@ -353,6 +364,10 @@ def test_runtime_state_exposes_capability_status_and_battlefield_snapshot() -> N
     assert facts["capability_status"]["bootstrapping_request_count"] == 1
     assert snapshot["focus"] == "economy", snapshot
     assert snapshot["pending_request_count"] == 2, snapshot
+    assert snapshot["bootstrapping_request_count"] == 1, snapshot
+    assert snapshot["reservation_count"] == 1, snapshot
+    assert snapshot["recommended_posture"] == "satisfy_requests", snapshot
+    assert snapshot["threat_level"] == "unknown", snapshot
     assert snapshot["capability_status"]["active_job_count"] == 1, snapshot
     print("  PASS: runtime_state_exposes_capability_status_and_battlefield_snapshot")
 

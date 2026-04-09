@@ -536,6 +536,8 @@ class WorldModel:
         game_map = summary.get("map", {})
         known_enemy = summary.get("known_enemy", {})
         capability = dict(self._capability_state)
+        runtime_facts = self.compute_runtime_facts("__battlefield__", include_buildable=False)
+        info_experts = dict(runtime_facts.get("info_experts") or {})
 
         self_units = int(military.get("self_units", 0) or 0)
         enemy_units = int(military.get("enemy_units", 0) or 0)
@@ -544,10 +546,17 @@ class WorldModel:
         low_power = bool(economy.get("low_power"))
         queue_blocked = bool(economy.get("queue_blocked"))
         pending_requests = int(capability.get("pending_request_count", 0) or 0)
+        bootstrapping_request_count = int(capability.get("bootstrapping_request_count", 0) or 0)
+        reservation_count = len(self._unit_reservations)
         explored_pct = game_map.get("explored_pct")
         enemy_bases = int(known_enemy.get("bases", 0) or 0)
         enemy_spotted = int(known_enemy.get("units_spotted", 0) or 0)
         frozen_count = int(known_enemy.get("frozen_count", 0) or 0)
+        threat_level = str(info_experts.get("threat_level") or "unknown")
+        threat_direction = str(info_experts.get("threat_direction") or "unknown")
+        base_under_attack = bool(info_experts.get("base_under_attack"))
+        has_production = bool(info_experts.get("has_production"))
+        base_health_summary = str(info_experts.get("base_health_summary") or "")
 
         if enemy_score >= max(self_score * 1.2, self_score + 1):
             disposition = "under_pressure"
@@ -567,6 +576,21 @@ class WorldModel:
         else:
             focus = "general"
 
+        if low_power:
+            recommended_posture = "stabilize_power"
+        elif queue_blocked:
+            recommended_posture = "unblock_queue"
+        elif pending_requests or reservation_count:
+            recommended_posture = "satisfy_requests"
+        elif base_under_attack or disposition == "under_pressure":
+            recommended_posture = "defend_base"
+        elif not enemy_bases and not enemy_spotted and frozen_count <= 0:
+            recommended_posture = "expand_recon"
+        elif disposition == "advantage":
+            recommended_posture = "press_advantage"
+        else:
+            recommended_posture = "maintain_posture"
+
         summary_text = f"我方{self_units} / 敌方{enemy_units}，战斗值{self_score:.0f}/{enemy_score:.0f}"
         if explored_pct is not None:
             summary_text += f"，探索{float(explored_pct) * 100:.1f}%"
@@ -576,11 +600,14 @@ class WorldModel:
             summary_text += "，队列阻塞"
         if pending_requests:
             summary_text += f"，待处理请求{pending_requests}"
+        if reservation_count:
+            summary_text += f"，预留{reservation_count}"
 
         return {
             "summary": summary_text,
             "disposition": disposition,
             "focus": focus,
+            "recommended_posture": recommended_posture,
             "self_units": self_units,
             "enemy_units": enemy_units,
             "self_combat_value": round(self_score, 2),
@@ -589,10 +616,17 @@ class WorldModel:
             "low_power": low_power,
             "queue_blocked": queue_blocked,
             "pending_request_count": pending_requests,
+            "bootstrapping_request_count": bootstrapping_request_count,
+            "reservation_count": reservation_count,
             "explored_pct": explored_pct,
             "enemy_bases": enemy_bases,
             "enemy_spotted": enemy_spotted,
             "frozen_enemy_count": frozen_count,
+            "threat_level": threat_level,
+            "threat_direction": threat_direction,
+            "base_under_attack": base_under_attack,
+            "base_health_summary": base_health_summary,
+            "has_production": has_production,
             "capability_status": capability,
             "timestamp": self.state.timestamp,
             "stale": self.state.stale,
