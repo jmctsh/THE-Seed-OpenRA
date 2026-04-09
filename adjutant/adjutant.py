@@ -1310,6 +1310,21 @@ class Adjutant:
         cap_id = getattr(self.kernel, "capability_task_id", None)
         if not cap_id:
             return None
+        runtime_state = self._safe_world_query("runtime_state")
+        capability_status = dict(runtime_state.get("capability_status") or {})
+        recent_directives = list(capability_status.get("recent_directives", []) or [])
+        normalized_text = re.sub(r"\s+", "", text.strip())
+        if recent_directives:
+            last_directive = re.sub(r"\s+", "", str(recent_directives[-1] or "").strip())
+            if last_directive and last_directive == normalized_text:
+                return {
+                    "type": "command",
+                    "ok": True,
+                    "merged": True,
+                    "deduplicated": True,
+                    "existing_task_id": cap_id,
+                    "response_text": "同类经济指令已在处理中，保持当前规划",
+                }
         ok = self.kernel.inject_player_message(cap_id, text)
         if not ok:
             return None

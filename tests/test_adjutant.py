@@ -1509,6 +1509,25 @@ def test_economy_command_merge_reports_capability_phase_and_blocker():
     print("  PASS: economy_command_merge_reports_capability_phase_and_blocker")
 
 
+def test_economy_command_merge_deduplicates_same_directive():
+    kernel = MockKernel()
+    cap_task = kernel.create_task("发展经济", "managed", 80)
+    cap_task.task_id = "t_cap"
+    cap_task.label = "001"
+    cap_task.is_capability = True
+    adjutant = Adjutant(llm=MockProvider(), kernel=kernel, world_model=MockWorldModel())
+
+    async def run():
+        return await adjutant.handle_player_input("优先补电")
+
+    result = asyncio.run(run())
+    assert result["merged"] is True
+    assert result["deduplicated"] is True
+    assert "已在处理中" in result["response_text"]
+    assert getattr(cap_task, "_injected_messages", []) == []
+    print("  PASS: economy_command_merge_deduplicates_same_directive")
+
+
 def test_battlefield_snapshot_tracks_disposition_and_focus():
     class PressureWorldModel(MockWorldModel):
         def query(self, query_type, params=None):
@@ -1736,6 +1755,7 @@ if __name__ == "__main__":
     test_classify_input_sends_recent_completed_to_llm()
     test_classify_input_sends_coordinator_snapshot_to_llm()
     test_economy_command_merge_reports_capability_phase_and_blocker()
+    test_economy_command_merge_deduplicates_same_directive()
     test_battlefield_snapshot_tracks_disposition_and_focus()
     test_query_context_includes_battlefield_snapshot()
     test_info_routes_to_best_active_task_without_creating_new_task()
@@ -1743,4 +1763,4 @@ if __name__ == "__main__":
     test_command_without_disposition_uses_coordinator_hints()
     test_system_prompt_has_dialogue_context_awareness_section()
 
-    print(f"\nAll 51 tests passed!")
+    print(f"\nAll 52 tests passed!")
