@@ -223,7 +223,11 @@ _DEMO_QUEUE_TYPE_BY_UNIT_TYPE: dict[str, str] = {
 }
 
 _DEMO_PROMPT_DISPLAY_NAME_OVERRIDES: dict[str, str] = {
+    "powr": "电厂",
+    "proc": "矿场",
     "ftrk": "防空履带车",
+    "v2rl": "V2火箭车",
+    "3tnk": "重坦",
     "4tnk": "猛犸坦克",
     "harv": "矿车",
 }

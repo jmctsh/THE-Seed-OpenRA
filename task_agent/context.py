@@ -13,7 +13,8 @@ from typing import Any, Optional
 
 from models import ExpertSignal, Event, Job, Task
 from openra_state.data.dataset import (
-    CN_NAME_MAP,
+    demo_capability_queue_types,
+    demo_prompt_display_name_for,
     demo_queue_type_for,
     filter_demo_capability_buildable,
 )
@@ -266,7 +267,7 @@ def _compact_runtime_facts(rf: dict[str, Any]) -> str:
     # Buildable units per queue
     buildable = rf.get("buildable", {})
     if buildable:
-        for queue_type in ("Building", "Infantry", "Vehicle"):
+        for queue_type in demo_capability_queue_types():
             units = buildable.get(queue_type)
             if units:
                 parts.append(f"可造{queue_type}=[{','.join(units)}]")
@@ -673,12 +674,12 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         buildable = rf.get("buildable", {})
         if buildable:
             b_parts = []
-            for queue_type in ("Building", "Infantry", "Vehicle", "Aircraft"):
+            for queue_type in demo_capability_queue_types():
                 units = buildable.get(queue_type)
                 if units:
                     labeled = []
                     for u in units:
-                        cn = CN_NAME_MAP.get(u.upper(), "")
+                        cn = demo_prompt_display_name_for(u)
                         labeled.append(f"{u}({cn})" if cn else u)
                     b_parts.append(f"{queue_type}=[{','.join(labeled)}]")
             if b_parts:

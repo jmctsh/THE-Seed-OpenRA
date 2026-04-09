@@ -21,8 +21,7 @@ from llm import LLMProvider, LLMResponse
 from models import Event, ExpertSignal, Job, JobStatus, SignalKind, Task, TaskMessage, TaskMessageType, TaskStatus
 from openra_state.data.dataset import (
     demo_capability_broad_phase_order,
-    demo_capability_roster_lines,
-    demo_display_name_for,
+    demo_prompt_display_name_for,
     demo_prompt_roster_lines,
 )
 
@@ -37,9 +36,6 @@ from .tools import CAPABILITY_TOOL_NAMES, TOOL_DEFINITIONS, ToolExecutor, ToolRe
 
 logger = logging.getLogger(__name__)
 slog = get_logger("task_agent")
-
-_MANAGED_TASK_PROMPT_ROSTER = "\n".join(demo_prompt_roster_lines(include_buildings=False))
-_CAPABILITY_PROMPT_ROSTER = "\n".join(demo_prompt_roster_lines(include_buildings=True))
 
 # Tools for normal agents: capability-exclusive production posture tools stay hidden.
 _NORMAL_TOOLS = [
@@ -66,9 +62,10 @@ ActiveTasksProvider = Callable[[str], list[dict]]
 MessageCallback = Callable[[TaskMessage], None]
 
 
-_ORDINARY_ROSTER_TEXT = "\n".join(demo_capability_roster_lines(queue_style="detailed"))
+_ORDINARY_ROSTER_TEXT = "\n".join(demo_prompt_roster_lines(include_buildings=False))
+_CAPABILITY_ROSTER_TEXT = "\n".join(demo_prompt_roster_lines(include_buildings=True))
 _CAPABILITY_BROAD_PHASE_TEXT = "\n".join(
-    f"{idx}. 没有{demo_display_name_for(unit_type)} → {unit_type}"
+    f"{idx}. 没有{demo_prompt_display_name_for(unit_type)} → {unit_type}"
     for idx, unit_type in enumerate(demo_capability_broad_phase_order(), start=1)
 )
 
@@ -225,11 +222,11 @@ CAPABILITY_SYSTEM_PROMPT = """\
 """
 
 SYSTEM_PROMPT = SYSTEM_PROMPT.format(
-    managed_task_roster=_MANAGED_TASK_PROMPT_ROSTER,
-    ordinary_roster=_ORDINARY_ROSTER_TEXT,
+    managed_task_roster=_ORDINARY_ROSTER_TEXT,
+    ordinary_roster=_CAPABILITY_ROSTER_TEXT,
 )
 CAPABILITY_SYSTEM_PROMPT = CAPABILITY_SYSTEM_PROMPT.format(
-    capability_roster=_CAPABILITY_PROMPT_ROSTER,
+    capability_roster=_CAPABILITY_ROSTER_TEXT,
     capability_broad_phase=_CAPABILITY_BROAD_PHASE_TEXT,
 )
 
