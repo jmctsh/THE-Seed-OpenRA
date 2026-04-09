@@ -534,8 +534,11 @@ class Adjutant:
                 "blocker": capability_status.get("blocker"),
                 "active_job_types": list(capability_status.get("active_job_types", []) or []),
                 "pending_request_count": int(capability_status.get("pending_request_count", 0) or 0),
+                "dispatch_request_count": int(capability_status.get("dispatch_request_count", 0) or 0),
                 "bootstrapping_request_count": int(capability_status.get("bootstrapping_request_count", 0) or 0),
                 "blocking_request_count": int(capability_status.get("blocking_request_count", 0) or 0),
+                "inference_pending_count": int(capability_status.get("inference_pending_count", 0) or 0),
+                "prerequisite_gap_count": int(capability_status.get("prerequisite_gap_count", 0) or 0),
                 "recent_directives": list(capability_status.get("recent_directives", []) or []),
             },
             "info_experts": {
@@ -667,6 +670,27 @@ class Adjutant:
         return status
 
     @staticmethod
+    def _capability_blocker_status_text(capability_status: dict[str, Any]) -> str:
+        blocker = str(capability_status.get("blocker", "") or "")
+        if blocker == "request_inference_pending":
+            count = int(capability_status.get("inference_pending_count", 0) or 0)
+            suffix = f" ({count})" if count else ""
+            return f"等待解析请求{suffix}"
+        if blocker == "missing_prerequisite":
+            count = int(capability_status.get("prerequisite_gap_count", 0) or 0)
+            suffix = f" ({count})" if count else ""
+            return f"缺少前置建筑{suffix}"
+        if blocker == "pending_requests_waiting_dispatch":
+            count = int(capability_status.get("dispatch_request_count", 0) or 0)
+            suffix = f" ({count})" if count else ""
+            return f"请求待分发{suffix}"
+        if blocker == "bootstrap_in_progress":
+            count = int(capability_status.get("bootstrapping_request_count", 0) or 0)
+            suffix = f" ({count})" if count else ""
+            return f"前置生产中{suffix}"
+        return blocker
+
+    @staticmethod
     def _derive_task_triage(
         task: Any,
         runtime_task: dict[str, Any],
@@ -723,7 +747,7 @@ class Adjutant:
             if blocking_request_count:
                 status_line += f" | blocking={blocking_request_count}"
             if blocker:
-                status_line += f" | blocker={blocker}"
+                status_line += f" | blocker={Adjutant._capability_blocker_status_text(capability_status)}"
             return {
                 "state": "running" if phase in {"bootstrapping", "dispatch", "executing"} or active_job_types or pending_request_count else "idle",
                 "phase": phase,
@@ -1343,6 +1367,8 @@ class Adjutant:
             "idle": "待命中",
         }.get(phase, "")
         blocker_text = {
+            "request_inference_pending": "存在待解析的单位请求",
+            "missing_prerequisite": "部分请求缺少前置建筑",
             "pending_requests_waiting_dispatch": "仍有请求等待分发",
             "bootstrap_in_progress": "已有前置生产在进行",
         }.get(blocker, "")

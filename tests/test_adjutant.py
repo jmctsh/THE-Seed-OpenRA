@@ -1509,6 +1509,34 @@ def test_economy_command_merge_reports_capability_phase_and_blocker():
     print("  PASS: economy_command_merge_reports_capability_phase_and_blocker")
 
 
+def test_economy_command_merge_reports_prerequisite_gap_blocker():
+    class PrereqWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            result = super().query(query_type, params)
+            if query_type == "runtime_state":
+                result["capability_status"]["phase"] = "dispatch"
+                result["capability_status"]["blocker"] = "missing_prerequisite"
+                result["capability_status"]["prerequisite_gap_count"] = 2
+                result["capability_status"]["dispatch_request_count"] = 2
+            return result
+
+    kernel = MockKernel()
+    cap_task = kernel.create_task("发展经济", "managed", 80)
+    cap_task.task_id = "t_cap"
+    cap_task.label = "001"
+    cap_task.is_capability = True
+    adjutant = Adjutant(llm=MockProvider(), kernel=kernel, world_model=PrereqWorldModel())
+
+    async def run():
+        return await adjutant.handle_player_input("发展经济")
+
+    result = asyncio.run(run())
+    assert result["merged"] is True
+    assert "待处理请求 2" in result["response_text"]
+    assert "部分请求缺少前置建筑" in result["response_text"]
+    print("  PASS: economy_command_merge_reports_prerequisite_gap_blocker")
+
+
 def test_economy_command_merge_deduplicates_same_directive():
     kernel = MockKernel()
     cap_task = kernel.create_task("发展经济", "managed", 80)
@@ -1755,6 +1783,7 @@ if __name__ == "__main__":
     test_classify_input_sends_recent_completed_to_llm()
     test_classify_input_sends_coordinator_snapshot_to_llm()
     test_economy_command_merge_reports_capability_phase_and_blocker()
+    test_economy_command_merge_reports_prerequisite_gap_blocker()
     test_economy_command_merge_deduplicates_same_directive()
     test_battlefield_snapshot_tracks_disposition_and_focus()
     test_query_context_includes_battlefield_snapshot()

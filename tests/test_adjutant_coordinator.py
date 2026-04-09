@@ -168,6 +168,16 @@ class _WorldModel:
         }
 
 
+class _WorldModelMissingPrereq(_WorldModel):
+    def query(self, query_type: str, params=None):
+        result = super().query(query_type, params)
+        if query_type == "runtime_state":
+            result["capability_status"]["blocker"] = "missing_prerequisite"
+            result["capability_status"]["prerequisite_gap_count"] = 2
+            result["capability_status"]["dispatch_request_count"] = 2
+        return result
+
+
 def test_battlefield_snapshot_prefers_runtime_query() -> None:
     adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModel())
 
@@ -205,8 +215,21 @@ def test_build_context_includes_task_triage_fields() -> None:
     print("  PASS: build_context_includes_task_triage_fields")
 
 
+def test_build_context_surfaces_prerequisite_gap_blocker_text() -> None:
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelMissingPrereq())
+
+    context = adjutant._build_context("继续")
+    capability = next(task for task in context.active_tasks if task["label"] == "001")
+
+    assert context.coordinator_snapshot["capability"]["prerequisite_gap_count"] == 2
+    assert capability["blocking_reason"] == "missing_prerequisite"
+    assert "缺少前置建筑" in capability["status_line"]
+    print("  PASS: build_context_surfaces_prerequisite_gap_blocker_text")
+
+
 if __name__ == "__main__":
     print("Running Adjutant coordinator tests...\n")
     test_battlefield_snapshot_prefers_runtime_query()
     test_build_context_includes_task_triage_fields()
+    test_build_context_surfaces_prerequisite_gap_blocker_text()
     print("\nAll Adjutant coordinator tests passed!")
