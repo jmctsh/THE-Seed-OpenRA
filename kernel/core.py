@@ -284,6 +284,7 @@ class Kernel:
         self._auto_response_rules: dict[EventType, list[_AutoResponseRule]] = {}
         self._direct_managed_tasks: set[str] = set()  # tasks with skip_agent=True (NLU direct)
         self._capability_task_id: Optional[str] = None
+        self._capability_recent_inputs: list[dict[str, Any]] = []
         self._unit_requests: dict[str, UnitRequest] = {}
         self._unit_reservations: dict[str, UnitReservation] = {}
         self._request_reservations: dict[str, str] = {}
@@ -395,6 +396,7 @@ class Kernel:
         )
         task.is_capability = True
         self._capability_task_id = task.task_id
+        self._capability_recent_inputs = []
         self._sync_world_runtime()
         slog.info(
             "EconomyCapability created",
@@ -427,6 +429,10 @@ class Kernel:
             data={"text": text, "timestamp": _now()},
         )
         runtime.agent.push_event(event)
+        if task_id == self._capability_task_id:
+            self._capability_recent_inputs.append({"text": text, "timestamp": _now()})
+            self._capability_recent_inputs = self._capability_recent_inputs[-5:]
+            self._sync_world_runtime()
         slog.info("Player message injected", event="player_message_injected",
                   task_id=task_id, text=text[:80])
         return True
@@ -991,6 +997,7 @@ class Kernel:
         self._task_actor_groups.clear()
         self._direct_managed_tasks.clear()
         self._capability_task_id = None
+        self._capability_recent_inputs.clear()
         self.task_messages.clear()
         self.world_model.set_runtime_state(
             active_tasks={},
@@ -1137,6 +1144,7 @@ class Kernel:
         self._task_actor_groups.clear()
         self._direct_managed_tasks.clear()
         self._capability_task_id = None
+        self._capability_recent_inputs.clear()
         self._sync_world_runtime()
         self.ensure_capability_task()
 
@@ -1426,6 +1434,7 @@ class Kernel:
                     "pending_request_count": len(capability_requests),
                     "blocking_request_count": blocking_request_count,
                     "bootstrapping_request_count": bootstrapping_request_count,
+                    "recent_directives": [str(item.get("text", "")) for item in self._capability_recent_inputs if item.get("text")],
                 }
 
         active_reservations = [

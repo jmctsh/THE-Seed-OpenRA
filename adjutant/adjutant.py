@@ -536,6 +536,7 @@ class Adjutant:
                 "pending_request_count": int(capability_status.get("pending_request_count", 0) or 0),
                 "bootstrapping_request_count": int(capability_status.get("bootstrapping_request_count", 0) or 0),
                 "blocking_request_count": int(capability_status.get("blocking_request_count", 0) or 0),
+                "recent_directives": list(capability_status.get("recent_directives", []) or []),
             },
             "info_experts": {
                 "threat_level": battlefield.get("threat_level") or info_experts.get("threat_level"),

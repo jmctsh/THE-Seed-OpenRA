@@ -175,6 +175,7 @@ class MockWorldModel:
                     "pending_request_count": 2,
                     "bootstrapping_request_count": 1,
                     "blocking_request_count": 1,
+                    "recent_directives": ["发展经济", "优先补电"],
                 },
                 "unit_reservations": [{"reservation_id": "res_1"}],
                 "timestamp": time.time(),
@@ -1395,6 +1396,7 @@ def test_build_context_includes_coordinator_snapshot_and_task_status_lines():
     assert ctx.coordinator_snapshot["capability"]["pending_request_count"] == 2
     assert ctx.coordinator_snapshot["capability"]["phase"] == "bootstrapping"
     assert ctx.coordinator_snapshot["capability"]["blocker"] == "bootstrap_in_progress"
+    assert ctx.coordinator_snapshot["capability"]["recent_directives"] == ["发展经济", "优先补电"]
     assert ctx.coordinator_snapshot["base_state"]["has_construction_yard"] is True
     assert ctx.coordinator_snapshot["info_experts"]["threat_level"] == "medium"
     assert ctx.coordinator_hints["suggested_disposition"] == "merge"

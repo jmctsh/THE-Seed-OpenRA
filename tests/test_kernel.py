@@ -314,6 +314,19 @@ def test_capability_status_tracks_dispatch_phase_for_pending_requests() -> None:
     print("  PASS: capability_status_tracks_dispatch_phase_for_pending_requests")
 
 
+def test_capability_status_tracks_recent_directives() -> None:
+    kernel = make_kernel()
+    cap_id = kernel.ensure_capability_task()
+
+    assert kernel.inject_player_message(cap_id, "发展经济")
+    assert kernel.inject_player_message(cap_id, "优先补电")
+
+    runtime = kernel.world_model.query("runtime_state")
+    directives = runtime["capability_status"]["recent_directives"]
+    assert directives[-2:] == ["发展经济", "优先补电"], runtime
+    print("  PASS: capability_status_tracks_recent_directives")
+
+
 def test_start_job_validates_and_lifecycle_controls() -> None:
     kernel = make_kernel()
     task = kernel.create_task("侦察敌方基地", TaskKind.MANAGED, 40)
@@ -931,6 +944,7 @@ def main() -> None:
     test_create_task_and_task_agent_registration()
     test_capability_task_syncs_capability_status_to_world_model()
     test_capability_status_tracks_dispatch_phase_for_pending_requests()
+    test_capability_status_tracks_recent_directives()
     test_start_job_validates_and_lifecycle_controls()
     test_cancel_task_and_cancel_tasks_abort_jobs()
     test_reset_session_clears_runtime_memory()
@@ -949,7 +963,7 @@ def main() -> None:
     test_cancel_task_closes_pending_question()
     test_auto_response_rule_registration_and_base_under_attack_dedup()
     test_job_started_logged_before_resource_lost_signal()
-    print("OK: 19 Kernel tests passed")
+    print("OK: 20 Kernel tests passed")
 
 
 if __name__ == "__main__":
