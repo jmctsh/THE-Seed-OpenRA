@@ -23,6 +23,7 @@ class CombatJobConfig:
     engagement_mode: EngagementMode
     max_chase_distance: int = 20
     retreat_threshold: float = 0.3
+    target_actor_id: Optional[int] = None  # explicit visible target for focus-fire / precision strike
     actor_ids: Optional[list[int]] = None  # explicit combat ownership when known
     unit_count: int = 0  # 0 = all available idle combat units; only used when actor_ids is None
 

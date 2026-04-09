@@ -121,6 +121,7 @@ class TaskToolHandlers:
             "repair_units": self.handle_repair_units,
             "set_rally_point": self.handle_set_rally_point,
             "attack": self.handle_attack,
+            "attack_actor": self.handle_attack_actor,
             # Job management
             "patch_job": self.handle_patch_job,
             "pause_job": self.handle_pause_job,
@@ -266,6 +267,27 @@ class TaskToolHandlers:
             engagement_mode=EngagementMode(args.get("engagement_mode", "assault")),
             max_chase_distance=int(args.get("max_chase_distance", 20)),
             retreat_threshold=float(args.get("retreat_threshold", 0.3)),
+            actor_ids=actor_ids,
+            unit_count=int(args.get("unit_count", 0)),
+        )
+        job = self.kernel.start_job(self.task_id, "CombatExpert", config)
+        return {"job_id": job.job_id, "status": job.status.value, "timestamp": job.timestamp}
+
+    async def handle_attack_actor(self, _name: str, args: dict[str, Any]) -> dict[str, Any]:
+        target_actor_id = int(args["target_actor_id"])
+        target_result = self.world_model.query("actor_by_id", {"actor_id": target_actor_id})
+        target_actor = target_result.get("actor") if isinstance(target_result, dict) else None
+        target_position = target_actor.get("position") if isinstance(target_actor, dict) else None
+        if not target_position or len(target_position) != 2:
+            raise ValueError("attack_actor requires a visible/known target actor with position")
+
+        actor_ids = list(args["actor_ids"]) if args.get("actor_ids") else self._default_actor_ids()
+        config = CombatJobConfig(
+            target_position=(int(target_position[0]), int(target_position[1])),
+            engagement_mode=EngagementMode(args.get("engagement_mode", "assault")),
+            max_chase_distance=int(args.get("max_chase_distance", 20)),
+            retreat_threshold=float(args.get("retreat_threshold", 0.3)),
+            target_actor_id=target_actor_id,
             actor_ids=actor_ids,
             unit_count=int(args.get("unit_count", 0)),
         )

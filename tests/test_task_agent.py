@@ -1072,6 +1072,20 @@ def test_normal_context_redacts_capability_planning_hints() -> None:
                 "reason": "无车厂",
             }
         ],
+        "unit_reservations": [
+            {
+                "reservation_id": "res1",
+                "request_id": "r1",
+                "task_id": "t1",
+                "task_label": "003",
+                "unit_type": "3tnk",
+                "count": 2,
+                "assigned_actor_ids": [11],
+                "produced_actor_ids": [],
+                "status": "partial",
+            }
+        ],
+        "capability_status": {"phase": "producing", "blocked": True},
         "can_afford_power_plant": True,
     }
     packet = build_context_packet(
@@ -1084,9 +1098,11 @@ def test_normal_context_redacts_capability_planning_hints() -> None:
     assert "[可造]" not in msg["content"]
     assert "[生产队列]" not in msg["content"]
     assert "[待处理请求]" not in msg["content"]
+    assert "[预留]" not in msg["content"]
     assert "buildable" not in msg["content"]
     assert "production_queues" not in msg["content"]
     assert "unfulfilled_requests" not in msg["content"]
+    assert "unit_reservations" not in msg["content"]
 
     header_json = msg["content"].split("\n", 2)[1]
     header = json.loads(header_json)
@@ -1094,6 +1110,8 @@ def test_normal_context_redacts_capability_planning_hints() -> None:
     assert "buildable" not in rf_out
     assert "production_queues" not in rf_out
     assert "unfulfilled_requests" not in rf_out
+    assert "unit_reservations" not in rf_out
+    assert "capability_status" not in rf_out
     assert "feasibility" not in rf_out
     assert not any(k.startswith("can_afford_") for k in rf_out)
     print("  PASS: normal_context_redacts_capability_planning_hints")
@@ -1179,7 +1197,10 @@ def _make_handlers_executor(captured_jobs: list, *, task: dict | None = None) ->
         def task_has_running_actor_job(self, task_id): return False
 
     class StubWorldModel:
-        def query(self, *a, **kw): return {}
+        def query(self, query_type, params=None):
+            if query_type == "actor_by_id" and params == {"actor_id": 201}:
+                return {"actor": {"actor_id": 201, "position": [600, 700]}}
+            return {}
         def set_constraint(self, *a, **kw): pass
         def remove_constraint(self, *a, **kw): pass
 
@@ -1261,6 +1282,27 @@ def test_attack_handler_creates_combat_job() -> None:
 
     asyncio.run(run())
     print("  PASS: attack_handler_creates_combat_job")
+
+
+def test_attack_actor_handler_creates_precise_combat_job() -> None:
+    """attack_actor tool creates a CombatExpert job locked to a specific target actor."""
+    captured = []
+    executor = _make_handlers_executor(captured)
+
+    async def run():
+        from models.configs import CombatJobConfig
+        result = await executor.execute("tc1", "attack_actor",
+            '{"target_actor_id": 201, "engagement_mode": "assault"}')
+        assert result.error is None
+        assert len(captured) == 1
+        assert captured[0]["expert_type"] == "CombatExpert"
+        cfg = captured[0]["config"]
+        assert isinstance(cfg, CombatJobConfig)
+        assert cfg.target_actor_id == 201
+        assert cfg.target_position == (600, 700)
+
+    asyncio.run(run())
+    print("  PASS: attack_actor_handler_creates_precise_combat_job")
 
 
 def test_move_units_handler_creates_movement_job() -> None:
@@ -1394,6 +1436,7 @@ def test_start_job_removed_from_tool_definitions() -> None:
     assert "scout_map" in names
     assert "produce_units" in names
     assert "attack" in names
+    assert "attack_actor" in names
     assert "move_units" in names
     assert "move_units_by_path" in names
     assert "repair_units" in names
@@ -2273,6 +2316,7 @@ if __name__ == "__main__":
     test_scout_map_handler_creates_recon_job()
     test_produce_units_handler_creates_economy_job()
     test_attack_handler_creates_combat_job()
+    test_attack_actor_handler_creates_precise_combat_job()
     test_move_units_handler_creates_movement_job()
     test_move_units_by_path_handler_creates_movement_job()
     test_repair_units_handler_creates_repair_job()
@@ -2319,4 +2363,4 @@ if __name__ == "__main__":
     test_smart_wake_no_skip_when_no_jobs()
     test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 59 tests passed!")
+    print(f"\nAll 60 tests passed!")

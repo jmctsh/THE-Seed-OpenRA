@@ -381,6 +381,49 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "attack_actor",
+            "description": (
+                "Focus-fire a specific visible enemy actor. "
+                "点杀、集火指定敌方单位/建筑。"
+                "Use this when you already know the enemy actor_id and want precise targeting instead of attacking an area."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target_actor_id": {
+                        "type": "integer",
+                        "description": "Visible enemy actor id to focus-fire.",
+                    },
+                    "engagement_mode": {
+                        "type": "string",
+                        "enum": ["assault", "harass", "hold", "surround"],
+                        "description": "Combat tactic (default 'assault').",
+                    },
+                    "max_chase_distance": {
+                        "type": "integer",
+                        "description": "Maximum cells to chase the target if it retreats (default 20).",
+                    },
+                    "retreat_threshold": {
+                        "type": "number",
+                        "description": "HP fraction at which units retreat (0–1, default 0.3).",
+                    },
+                    "unit_count": {
+                        "type": "integer",
+                        "description": "Number of units to send. 0 or omit = all available idle combat units.",
+                    },
+                    "actor_ids": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Optional explicit combat actor ids. When provided, only these units are controlled.",
+                    },
+                },
+                "required": ["target_actor_id"],
+            },
+        },
+    },
     # --- Job management tools ---
     {
         "type": "function",

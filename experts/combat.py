@@ -166,25 +166,31 @@ class CombatJob(BaseJob):
         if centroid is None:
             return
 
-        dist = self._distance(centroid, config.target_position)
+        target_pos = self._effective_target_position(config)
+        dist = self._distance(centroid, target_pos)
         if dist <= _ENGAGE_RADIUS:
             self._transition(CombatPhase.ENGAGING)
-            self._pursuit_origin = config.target_position
+            self._pursuit_origin = target_pos
             return
 
         # Move toward target
         if config.engagement_mode == EngagementMode.SURROUND:
-            self._issue_surround_approach(actor_ids, config.target_position)
+            self._issue_surround_approach(actor_ids, target_pos)
         else:
-            self._move_units(actor_ids, config.target_position, attack_move=True)
+            self._move_units(actor_ids, target_pos, attack_move=True)
 
     def _tick_engaging(self, actor_ids: list[int], config: CombatJobConfig) -> None:
         """Engage enemies at target position."""
-        enemies = self._find_enemies_near(config.target_position, _ENGAGE_RADIUS * 2)
+        target_pos = self._effective_target_position(config)
+        explicit_target = self._visible_target_actor(config.target_actor_id)
+        enemies = [explicit_target] if explicit_target else self._find_enemies_near(target_pos, _ENGAGE_RADIUS * 2)
 
         if not enemies:
             if self._has_seen_enemy:
-                self._complete("succeeded", f"Area {config.target_position} cleared")
+                if config.target_actor_id is not None:
+                    self._complete("succeeded", f"Target {config.target_actor_id} no longer visible")
+                else:
+                    self._complete("succeeded", f"Area {target_pos} cleared")
             elif config.engagement_mode == EngagementMode.HOLD:
                 # Hold mode never advances — give up immediately
                 self._complete(
@@ -209,7 +215,7 @@ class CombatJob(BaseJob):
                     )
                 elif self._advance_ticks == 1:
                     # First advance: attack-move directly to target_position (fog-of-war may hide enemies)
-                    self._move_units(actor_ids, config.target_position, attack_move=True)
+                    self._move_units(actor_ids, target_pos, attack_move=True)
                 else:
                     self._advance_toward_threat(actor_ids, config)
             return
@@ -233,7 +239,9 @@ class CombatJob(BaseJob):
             self._transition(CombatPhase.ENGAGING)
             return
 
-        enemies = self._find_enemies_near(config.target_position, _PURSUIT_LOST_RADIUS)
+        target_pos = self._effective_target_position(config)
+        explicit_target = self._visible_target_actor(config.target_actor_id)
+        enemies = [explicit_target] if explicit_target else self._find_enemies_near(target_pos, _PURSUIT_LOST_RADIUS)
         if not enemies:
             self._complete("succeeded", "All enemies eliminated or fled")
             return
@@ -422,6 +430,24 @@ class CombatJob(BaseJob):
         """Wrapper: attack a specific enemy unit."""
         for aid in actor_ids:
             self.game_api.attack_target(Actor(actor_id=aid), Actor(actor_id=target_id))
+
+    def _visible_target_actor(self, target_actor_id: Optional[int]) -> Optional[dict[str, Any]]:
+        """Return the currently visible/known target actor, if available."""
+        if target_actor_id is None:
+            return None
+        result = self.world_model.query("actor_by_id", {"actor_id": target_actor_id})
+        actor = result.get("actor") if isinstance(result, dict) else None
+        if isinstance(actor, dict) and actor.get("position"):
+            return actor
+        return None
+
+    def _effective_target_position(self, config: CombatJobConfig) -> tuple[int, int]:
+        """Prefer the explicit target actor's live position when available."""
+        actor = self._visible_target_actor(config.target_actor_id)
+        if actor:
+            pos = actor.get("position", config.target_position)
+            return (int(pos[0]), int(pos[1]))
+        return config.target_position
 
     def _split_into_flanks(self, actor_ids: list[int]) -> list[list[int]]:
         """Split actors into flank groups (2-4 groups based on unit count)."""

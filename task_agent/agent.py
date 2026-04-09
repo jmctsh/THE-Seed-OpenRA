@@ -103,6 +103,7 @@ request_units 时：
 ## 战斗任务
 对于进攻/防守/清除敌人等战斗任务：
 - 用 attack(target_position, unit_count=0) 发起进攻，unit_count=0表示全部闲置战斗单位
+- 如果已知具体敌方 actor_id，优先用 attack_actor(target_actor_id, unit_count=0) 做精确点杀/集火
 - target_position 从 runtime_facts 的 enemy_intel.buildings 位置获取，或从玩家指令中提取
 - 如果不知道敌人位置，先 scout_map 侦察
 - engagement_mode：assault=全力进攻, hold=防守阵地, harass=骚扰, surround=包围
@@ -1092,7 +1093,7 @@ class TaskAgent:
         return None
 
     # Names of Expert action tools whose success warrants a progress message.
-    _EXPERT_TOOL_NAMES = frozenset({"deploy_mcv", "scout_map", "produce_units", "move_units", "stop_units", "repair_units", "attack"})
+    _EXPERT_TOOL_NAMES = frozenset({"deploy_mcv", "scout_map", "produce_units", "move_units", "stop_units", "repair_units", "attack", "attack_actor"})
 
     async def _execute_tools(self, response: LLMResponse) -> list[ToolResult]:
         """Execute all tool calls in parallel and return results in call order.

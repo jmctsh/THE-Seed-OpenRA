@@ -3,12 +3,14 @@ import json
 import time
 import threading
 import uuid
+import logging
 from typing import List, Optional, Tuple, Dict, Any
 from .models import *
 from .production_names import production_name_variants
 
 # API版本常量
 API_VERSION = "1.0"
+logger = logging.getLogger(__name__)
 
 class GameAPIError(Exception):
     """游戏API异常基类"""
@@ -865,8 +867,8 @@ class GameAPI:
             result = self._handle_response(response, "攻击命令执行失败")
             return response.get("status", 0) > 0
         except GameAPIError as e:
-            print(response)
             if e.code == "COMMAND_EXECUTION_ERROR":
+                logger.debug("attack_target command rejected: %s", e)
                 return False
             raise
         except Exception as e:

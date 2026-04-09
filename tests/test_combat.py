@@ -356,6 +356,27 @@ def test_assault_focus_fire_lowest_hp():
     print("  PASS: assault_focus_fire_lowest_hp")
 
 
+def test_explicit_target_actor_overrides_generic_focus_fire():
+    """Explicit target_actor_id should override generic lowest-HP focus selection."""
+    job, signals, api, wm = make_job(engagement_mode=EngagementMode.ASSAULT, target=(100, 100))
+    job.config.target_actor_id = 201
+    wm.set_actor(57, (90, 90))
+    wm.set_actor(58, (180, 180))
+    wm.set_actor(201, (95, 95))
+    wm.set_enemies([
+        {"actor_id": 201, "position": [95, 95], "hp": 100},
+        {"actor_id": 202, "position": [96, 96], "hp": 50},
+    ])
+    job.on_resource_granted(["actor:57", "actor:58"])
+
+    job.do_tick()
+    job.do_tick()
+
+    targets_used = {c["target"] for c in api.attack_calls}
+    assert targets_used == {201}, f"Explicit target_actor_id should be prioritized, got {targets_used}"
+    print("  PASS: explicit_target_actor_overrides_generic_focus_fire")
+
+
 def test_progress_signal_emitted():
     """Progress signals are emitted periodically."""
     job, signals, api, wm = make_job(target=(500, 500))
@@ -392,5 +413,6 @@ if __name__ == "__main__":
     test_assault_advances_when_no_enemy()
     test_assault_completes_partial_after_max_advance()
     test_assault_focus_fire_lowest_hp()
+    test_explicit_target_actor_overrides_generic_focus_fire()
 
-    print(f"\nAll 15 tests passed!")
+    print(f"\nAll 16 tests passed!")
