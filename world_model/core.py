@@ -776,6 +776,10 @@ class WorldModel:
         facts["unfulfilled_requests"] = list(self._unfulfilled_requests)
         facts["unit_reservations"] = list(self._unit_reservations)
         facts["capability_status"] = dict(self._capability_state)
+        if self._capability_state.get("task_id") == task_id:
+            facts["task_phase"] = str(self._capability_state.get("phase", "") or "")
+            facts["capability_blocker"] = str(self._capability_state.get("blocker", "") or "")
+            facts["blocking_request_count"] = int(self._capability_state.get("blocking_request_count", 0) or 0)
 
         # Production queues — transform game state format to renderer-friendly format
         # Game state: {queue_type: {"queue_type": str, "items": [{"name":..,"progress":..}]}}

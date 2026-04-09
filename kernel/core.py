@@ -1398,14 +1398,34 @@ class Kernel:
                     req for req in self._unit_requests.values()
                     if req.status in ("pending", "partial")
                 ]
+                blocking_request_count = sum(1 for req in capability_requests if req.blocking)
+                bootstrapping_request_count = sum(1 for req in capability_requests if req.bootstrap_job_id)
+                if bootstrapping_request_count:
+                    capability_phase = "bootstrapping"
+                elif capability_requests:
+                    capability_phase = "dispatch"
+                elif capability_jobs:
+                    capability_phase = "executing"
+                else:
+                    capability_phase = "idle"
+
+                blocker = ""
+                if capability_requests and not capability_jobs:
+                    blocker = "pending_requests_waiting_dispatch"
+                elif bootstrapping_request_count:
+                    blocker = "bootstrap_in_progress"
+
                 capability_status = {
                     "task_id": capability_task.task_id,
                     "task_label": capability_task.label,
                     "status": capability_task.status.value,
+                    "phase": capability_phase,
+                    "blocker": blocker,
                     "active_job_count": len(capability_jobs),
                     "active_job_types": [controller.expert_type for controller in capability_jobs],
                     "pending_request_count": len(capability_requests),
-                    "bootstrapping_request_count": sum(1 for req in capability_requests if req.bootstrap_job_id),
+                    "blocking_request_count": blocking_request_count,
+                    "bootstrapping_request_count": bootstrapping_request_count,
                 }
 
         active_reservations = [

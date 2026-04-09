@@ -448,6 +448,16 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
     """Build a blocker block for Capability context."""
     entries: list[str] = []
 
+    capability_blocker = str(rf.get("capability_blocker", "") or "")
+    if capability_blocker == "pending_requests_waiting_dispatch":
+        blocking_count = int(rf.get("blocking_request_count", 0) or 0)
+        line = "能力层有待分发请求"
+        if blocking_count:
+            line += f"（blocking={blocking_count}）"
+        entries.append(line)
+    elif capability_blocker == "bootstrap_in_progress":
+        entries.append("Kernel fast-path 生产进行中，等待 Capability 接手与收口")
+
     for req in rf.get("unfulfilled_requests", []):
         if not isinstance(req, dict):
             continue

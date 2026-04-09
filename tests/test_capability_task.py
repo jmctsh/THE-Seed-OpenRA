@@ -284,6 +284,29 @@ def test_capability_context_has_base_state_and_recent_signals():
     assert "weap" in msg["content"]
 
 
+def test_capability_context_renders_task_phase_and_blocker():
+    """Capability context should render kernel-derived phase/blocker hints."""
+    packet = ContextPacket(
+        task={"task_id": "t_cap", "raw_text": "经济能力", "kind": "managed", "priority": 80, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {"cash": 5000, "power_provided": 100, "power_drained": 40}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[],
+        recent_events=[],
+        open_decisions=[],
+        runtime_facts={
+            "task_phase": "dispatch",
+            "capability_blocker": "pending_requests_waiting_dispatch",
+            "blocking_request_count": 2,
+            "unfulfilled_requests": [],
+        },
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "[阶段]" in msg["content"]
+    assert "task=dispatch" in msg["content"]
+    assert "[阻塞]" in msg["content"]
+    assert "blocking=2" in msg["content"]
+
+
 def test_capability_prompt_pins_demo_roster_and_stage_policy():
     """Capability prompt should pin demo-safe units/buildings and broad-command policy."""
     assert "powr=电厂" in CAPABILITY_SYSTEM_PROMPT
