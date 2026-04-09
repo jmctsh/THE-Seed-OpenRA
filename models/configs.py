@@ -68,6 +68,8 @@ class EconomyJobConfig:
     count: int
     queue_type: str
     repeat: bool = False
+    request_id: Optional[str] = None
+    reservation_id: Optional[str] = None
 
 
 # Union type for all expert configs

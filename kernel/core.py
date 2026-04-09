@@ -693,7 +693,13 @@ class Kernel:
         # Start shared production on the capability task when available so
         # requesters remain consumers of units instead of accidental owners of
         # EconomyExpert jobs.
-        config = EconomyJobConfig(unit_type=unit_type, count=remaining, queue_type=queue_type)
+        config = EconomyJobConfig(
+            unit_type=unit_type,
+            count=remaining,
+            queue_type=queue_type,
+            request_id=req.request_id,
+            reservation_id=reservation.reservation_id,
+        )
         try:
             job = self.start_job(bootstrap_task_id, "EconomyExpert", config)
             req.bootstrap_job_id = job.job_id

@@ -273,6 +273,8 @@ def test_bootstrap_creates_economy_job():
     assert job.config.unit_type == "3tnk"
     assert job.config.count == 3
     assert job.config.queue_type == "Vehicle"
+    assert job.config.request_id == req.request_id
+    assert job.config.reservation_id == result["reservation_id"]
 
 
 def test_bootstrap_skipped_when_not_producible():
@@ -334,7 +336,10 @@ def test_bootstrap_prefers_capability_task_ownership():
     assert req.bootstrap_task_id == cap_task.task_id
     assert result["bootstrap_task_id"] == cap_task.task_id
     assert reservation.bootstrap_task_id == cap_task.task_id
-    assert kernel._jobs[req.bootstrap_job_id].task_id == cap_task.task_id
+    bootstrap_job = kernel._jobs[req.bootstrap_job_id]
+    assert bootstrap_job.task_id == cap_task.task_id
+    assert bootstrap_job.config.request_id == req.request_id
+    assert bootstrap_job.config.reservation_id == reservation.reservation_id
 
 
 # =====================================================================
