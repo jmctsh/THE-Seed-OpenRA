@@ -333,6 +333,14 @@ def _build_capability_directives(rf: dict[str, Any]) -> str:
 
 def _build_unfulfilled_requests(rf: dict[str, Any]) -> str:
     """Build [unfulfilled_requests] block for Capability context."""
+    reason_labels = {
+        "waiting_dispatch": "等待 Capability 分发",
+        "bootstrap_in_progress": "Kernel fast-path 生产中",
+        "start_package_released": "已达到启动包，剩余补强中",
+        "reinforcement_waiting_dispatch": "增援待分发",
+        "reinforcement_bootstrapping": "增援生产中",
+        "reinforcement_after_start": "增援补强中",
+    }
     reqs = rf.get("unfulfilled_requests", [])
     if not reqs:
         return ""
@@ -354,7 +362,7 @@ def _build_unfulfilled_requests(rf: dict[str, Any]) -> str:
         if min_start_package > 1:
             line += f" start>={min_start_package}"
         if reason:
-            line += f" 原因:{reason}"
+            line += f" 原因:{reason_labels.get(reason, reason)}"
         parts.append(line)
     return "\n".join(parts)
 
@@ -463,13 +471,17 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
 
     capability_blocker = str(rf.get("capability_blocker", "") or "")
     if capability_blocker == "pending_requests_waiting_dispatch":
-        blocking_count = int(rf.get("blocking_request_count", 0) or 0)
+        blocking_count = int(rf.get("dispatch_request_count", 0) or 0)
         line = "能力层有待分发请求"
         if blocking_count:
             line += f"（blocking={blocking_count}）"
         entries.append(line)
     elif capability_blocker == "bootstrap_in_progress":
-        entries.append("Kernel fast-path 生产进行中，等待 Capability 接手与收口")
+        bootstrap_count = int(rf.get("bootstrapping_request_count", 0) or 0)
+        line = "Kernel fast-path 生产进行中，等待 Capability 接手与收口"
+        if bootstrap_count:
+            line += f"（bootstrapping={bootstrap_count}）"
+        entries.append(line)
 
     for req in rf.get("unfulfilled_requests", []):
         if not isinstance(req, dict):

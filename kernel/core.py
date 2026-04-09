@@ -1405,35 +1405,42 @@ class Kernel:
 
         # Serialize pending/partial unit requests for Capability context.
         # Also include requests with bootstrap_job_id (production in progress).
-        unfulfilled = [
-            {
-                "request_id": req.request_id,
-                "reservation_id": (self._request_reservations.get(req.request_id) or ""),
-                "task_label": req.task_label,
-                "task_summary": req.task_summary,
-                "category": req.category,
-                "unit_type": (self._reservation_for_request(req).unit_type if self._reservation_for_request(req) else ""),
-                "count": req.count,
-                "fulfilled": req.fulfilled,
-                "remaining_count": max(req.count - req.fulfilled, 0),
-                "urgency": req.urgency,
-                "hint": req.hint,
-                "blocking": req.blocking,
-                "min_start_package": req.min_start_package,
-                "start_released": req.start_released,
-                "bootstrap_job_id": req.bootstrap_job_id,
-                "bootstrap_task_id": req.bootstrap_task_id,
-                "queue_type": _queue_type_for_unit_type(
-                    self._reservation_for_request(req).unit_type if self._reservation_for_request(req) else None
-                ),
-                "reservation_status": (
-                    self._reservation_for_request(req).status.value if self._reservation_for_request(req) else ""
-                ),
-                "reason": "",
-            }
-            for req in self._unit_requests.values()
-            if req.status in ("pending", "partial")
-        ]
+        def _request_reason(req: UnitRequest) -> str:
+            if req.start_released:
+                return "reinforcement_after_start" if not req.blocking else "start_package_released"
+            if req.bootstrap_job_id:
+                return "reinforcement_bootstrapping" if not req.blocking else "bootstrap_in_progress"
+            return "reinforcement_waiting_dispatch" if not req.blocking else "waiting_dispatch"
+
+        unfulfilled = []
+        for req in self._unit_requests.values():
+            if req.status not in ("pending", "partial"):
+                continue
+            reservation = self._reservation_for_request(req)
+            unit_type = reservation.unit_type if reservation is not None else ""
+            unfulfilled.append(
+                {
+                    "request_id": req.request_id,
+                    "reservation_id": (self._request_reservations.get(req.request_id) or ""),
+                    "task_label": req.task_label,
+                    "task_summary": req.task_summary,
+                    "category": req.category,
+                    "unit_type": unit_type,
+                    "count": req.count,
+                    "fulfilled": req.fulfilled,
+                    "remaining_count": max(req.count - req.fulfilled, 0),
+                    "urgency": req.urgency,
+                    "hint": req.hint,
+                    "blocking": req.blocking,
+                    "min_start_package": req.min_start_package,
+                    "start_released": req.start_released,
+                    "bootstrap_job_id": req.bootstrap_job_id,
+                    "bootstrap_task_id": req.bootstrap_task_id,
+                    "queue_type": _queue_type_for_unit_type(unit_type),
+                    "reservation_status": reservation.status.value if reservation is not None else "",
+                    "reason": _request_reason(req),
+                }
+            )
         if unfulfilled:
             slog.info("Syncing unfulfilled requests", event="sync_unfulfilled",
                       count=len(unfulfilled),
@@ -1458,20 +1465,27 @@ class Kernel:
                     if req.status in ("pending", "partial")
                 ]
                 blocking_request_count = sum(1 for req in capability_requests if req.blocking)
-                bootstrapping_request_count = sum(1 for req in capability_requests if req.bootstrap_job_id)
-                if bootstrapping_request_count:
-                    capability_phase = "bootstrapping"
-                elif capability_requests:
+                dispatch_request_count = sum(1 for req in capability_requests if not req.bootstrap_job_id and not req.start_released)
+                bootstrap_wait_request_count = sum(
+                    1 for req in capability_requests if req.bootstrap_job_id and not req.start_released
+                )
+                start_released_request_count = sum(1 for req in capability_requests if req.start_released)
+                reinforcement_request_count = sum(1 for req in capability_requests if not req.blocking)
+                if dispatch_request_count:
                     capability_phase = "dispatch"
+                elif bootstrap_wait_request_count:
+                    capability_phase = "bootstrapping"
+                elif start_released_request_count or reinforcement_request_count:
+                    capability_phase = "fulfilling"
                 elif capability_jobs:
                     capability_phase = "executing"
                 else:
                     capability_phase = "idle"
 
                 blocker = ""
-                if capability_requests and not capability_jobs:
+                if dispatch_request_count:
                     blocker = "pending_requests_waiting_dispatch"
-                elif bootstrapping_request_count:
+                elif bootstrap_wait_request_count:
                     blocker = "bootstrap_in_progress"
 
                 capability_status = {
@@ -1484,7 +1498,10 @@ class Kernel:
                     "active_job_types": [controller.expert_type for controller in capability_jobs],
                     "pending_request_count": len(capability_requests),
                     "blocking_request_count": blocking_request_count,
-                    "bootstrapping_request_count": bootstrapping_request_count,
+                    "dispatch_request_count": dispatch_request_count,
+                    "bootstrapping_request_count": bootstrap_wait_request_count,
+                    "start_released_request_count": start_released_request_count,
+                    "reinforcement_request_count": reinforcement_request_count,
                     "recent_directives": [str(item.get("text", "")) for item in self._capability_recent_inputs if item.get("text")],
                 }
 

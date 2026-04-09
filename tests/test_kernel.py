@@ -22,6 +22,7 @@ from models import (
     Job,
     JobStatus,
     PlayerResponse,
+    ReservationStatus,
     ResourceKind,
     ResourceNeed,
     ReconJobConfig,
@@ -309,9 +310,49 @@ def test_capability_status_tracks_dispatch_phase_for_pending_requests() -> None:
     cap_facts = kernel.world_model.compute_runtime_facts(cap_id, include_buildable=True)
 
     assert runtime["capability_status"]["phase"] in {"dispatch", "bootstrapping"}
+    assert runtime["capability_status"]["dispatch_request_count"] >= 0
     assert cap_facts["task_phase"] in {"dispatch", "bootstrapping"}
     assert "capability_blocker" in cap_facts
     print("  PASS: capability_status_tracks_dispatch_phase_for_pending_requests")
+
+
+def test_capability_status_tracks_fulfilling_phase_after_start_release() -> None:
+    kernel = make_kernel()
+    cap_id = kernel.ensure_capability_task()
+
+    task = kernel.create_task("装甲推进", TaskKind.MANAGED, 60)
+    for actor in kernel.world_model.find_actors(owner="self", idle_only=True, category="vehicle"):
+        kernel.world_model.bind_resource(f"actor:{actor.actor_id}", "other_job")
+    result = kernel.register_unit_request(
+        task.task_id,
+        "vehicle",
+        3,
+        "high",
+        "重坦",
+        min_start_package=2,
+    )
+    req = kernel._unit_requests[result["request_id"]]
+    reservation = kernel.list_unit_reservations()[0]
+
+    req.fulfilled = 2
+    req.status = "partial"
+    req.start_released = True
+    req.assigned_actor_ids = [10, 11]
+    reservation.status = ReservationStatus.PARTIAL
+    reservation.start_released = True
+    reservation.assigned_actor_ids = [10, 11]
+    kernel._sync_world_runtime()
+
+    runtime = kernel.world_model.query("runtime_state")
+    cap_facts = kernel.world_model.compute_runtime_facts(cap_id, include_buildable=True)
+    pending = cap_facts["unfulfilled_requests"]
+
+    assert runtime["capability_status"]["phase"] == "fulfilling"
+    assert runtime["capability_status"]["blocker"] == ""
+    assert runtime["capability_status"]["start_released_request_count"] == 1
+    assert runtime["capability_status"]["bootstrapping_request_count"] == 0
+    assert pending[0]["reason"] == "start_package_released"
+    print("  PASS: capability_status_tracks_fulfilling_phase_after_start_release")
 
 
 def test_capability_status_tracks_recent_directives() -> None:
@@ -944,6 +985,7 @@ def main() -> None:
     test_create_task_and_task_agent_registration()
     test_capability_task_syncs_capability_status_to_world_model()
     test_capability_status_tracks_dispatch_phase_for_pending_requests()
+    test_capability_status_tracks_fulfilling_phase_after_start_release()
     test_capability_status_tracks_recent_directives()
     test_start_job_validates_and_lifecycle_controls()
     test_cancel_task_and_cancel_tasks_abort_jobs()

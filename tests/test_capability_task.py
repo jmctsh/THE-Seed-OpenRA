@@ -143,6 +143,29 @@ def test_capability_context_has_unfulfilled_requests():
     assert "无机场" in msg["content"]
 
 
+def test_capability_context_translates_request_reason_labels():
+    """Capability context should render human-readable request lifecycle reasons."""
+    rf = {
+        "unfulfilled_requests": [
+            {
+                "request_id": "r002",
+                "task_label": "004",
+                "category": "vehicle",
+                "count": 3,
+                "fulfilled": 2,
+                "urgency": "high",
+                "hint": "重坦",
+                "blocking": True,
+                "min_start_package": 2,
+                "reason": "start_package_released",
+            }
+        ]
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "已达到启动包，剩余补强中" in msg["content"]
+
+
 def test_capability_context_has_reservations_block():
     """Capability context should show active reservations."""
     rf = {
