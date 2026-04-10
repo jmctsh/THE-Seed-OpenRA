@@ -10,6 +10,7 @@ from ..models import Actor, Location, MapQueryResult, TargetsQueryParam
 from .memory import IntelMemory
 from .model import IntelModel
 from .names import normalize_unit_name
+from openra_api.production_names import production_name_entry
 from .rules import (
     DEFAULT_HIGH_VALUE_TARGETS,
     DEFAULT_UNIT_CATEGORY_RULES,
@@ -45,10 +46,6 @@ class IntelService:
 
         self._snapshot_cache: Optional[Tuple[float, Dict[str, Any]]] = None
         self._intel_cache: Optional[Tuple[float, IntelModel]] = None
-        self._building_names = set(getattr(self.api, "BUILDING_DEPENDENCIES", {}).keys())
-        self._unit_names = set(getattr(self.api, "UNIT_DEPENDENCIES", {}).keys())
-        self._building_names_norm = {normalize_unit_name(n) for n in self._building_names}
-        self._unit_names_norm = {normalize_unit_name(n) for n in self._unit_names}
         self.memory = IntelMemory()
 
     def get_snapshot(self, force: bool = False) -> Dict[str, Any]:
@@ -92,8 +89,9 @@ class IntelService:
         for actor in snapshot.get("my_actors", []):
             actor_type = normalize_unit_name(getattr(actor, "type", None))
             pos = getattr(actor, "position", None)
-            category = UNIT_CATEGORY_RULES.get(actor_type)
-            is_building = actor_type in self._building_names_norm or category in ("building", "defense")
+            entry = production_name_entry(actor_type)
+            category = (entry.category.lower() if entry else UNIT_CATEGORY_RULES.get(actor_type))
+            is_building = category in ("building", "defense")
             if is_building and isinstance(pos, Location):
                 buildings.append(pos)
 
@@ -333,20 +331,10 @@ class IntelService:
         unknown = 0
 
         for view in views:
-            category = UNIT_CATEGORY_RULES.get(view.type)
-            is_building = (
-                view.type in self._building_names_norm
-                or category in ("building", "defense")
-                or view.type.endswith(("厂", "站", "中心"))
-            )
-            is_unit = view.type in self._unit_names_norm or category in (
-                "infantry",
-                "vehicle",
-                "air",
-                "harvester",
-                "support",
-                "mcv",
-            )
+            entry = production_name_entry(view.type)
+            category = entry.category.lower() if entry else UNIT_CATEGORY_RULES.get(view.type)
+            is_building = category in ("building", "defense")
+            is_unit = category in ("infantry", "vehicle", "air", "harvester", "support", "mcv", "aircraft", "ship")
             if is_building:
                 building_counts[view.type] = building_counts.get(view.type, 0) + 1
             elif is_unit:
@@ -765,10 +753,24 @@ class IntelService:
         }
 
     def _categorize_unit(self, unit_type: Optional[str]) -> str:
-        unit_type = normalize_unit_name(unit_type)
-        if not unit_type:
+        normalized = normalize_unit_name(unit_type)
+        if not normalized:
             return "unknown"
-        return UNIT_CATEGORY_RULES.get(unit_type, "unknown")
+        entry = production_name_entry(normalized)
+        if entry is not None:
+            unit_id = entry.unit_id.lower()
+            category = entry.category.lower()
+            if unit_id == "harv":
+                return "harvester"
+            if unit_id == "mcv":
+                return "mcv"
+            if category in ("building", "defense"):
+                return "building"
+            if category == "infantry":
+                return "infantry"
+            if category in ("vehicle", "aircraft", "ship"):
+                return "vehicle"
+        return UNIT_CATEGORY_RULES.get(normalized, "unknown")
 
     def _estimate_unit_value(self, unit_type: Optional[str]) -> float:
         unit_type = normalize_unit_name(unit_type)
@@ -782,5 +784,3 @@ class IntelService:
         avg_x = sum(p.x for p in positions) / len(positions)
         avg_y = sum(p.y for p in positions) / len(positions)
         return Location(int(avg_x), int(avg_y))
-
-

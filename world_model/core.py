@@ -24,24 +24,11 @@ from openra_api.game_api import GameAPI
 from openra_api.intel.names import normalize_unit_name
 from openra_api.intel.rules import DEFAULT_UNIT_CATEGORY_RULES, DEFAULT_UNIT_VALUE_WEIGHTS
 from openra_api.models import Actor, FrozenActor, Location, MapQueryResult, PlayerBaseInfo, TargetsQueryParam
-from openra_api.production_names import production_name_matches
+from openra_api.production_names import production_name_matches, production_name_entry, production_name_unit_id
 from unit_registry import UnitRegistry, get_default_registry
 
 
 QUEUE_TYPES = ("Building", "Defense", "Infantry", "Vehicle", "Aircraft")
-
-# Normalized building name sets for runtime_facts detection.
-# These use the names that normalize_unit_name() produces, plus common aliases.
-_CY_NAMES = {"建造厂", "基地"}               # Construction Yard (fact)
-_POWER_NAMES = {"电厂", "核电"}               # Power Plant (电厂) / Adv. Power Plant (核电)
-_BARRACKS_NAMES = {"兵营", "盟军兵营"}        # Soviet Barracks / Allied Barracks
-_REFINERY_NAMES = {"矿场", "精炼厂"}          # Ore Refinery (proc)
-_WAR_FACTORY_NAMES = {"车间", "战车工厂"}     # War Factory (weap)
-_RADAR_NAMES = {"雷达"}                       # Radar Dome / Radar (dome)
-_TECH_CENTER_NAMES = {"苏军科技中心", "科技中心", "盟军科技中心"}  # stek / atek
-_REPAIR_FACILITY_NAMES = {"维修厂"}           # fix
-_AIRFIELD_NAMES = {"空军基地"}               # afld
-_KENNEL_NAMES = {"狗屋"}                      # kenn
 
 # Approximate build costs for can_afford_* fields (RA default rules).
 _COST_POWER_PLANT = 300
@@ -53,27 +40,6 @@ SLOW_NAMES = {"猛犸坦克", "mamm", "v2", "v2rl"}
 BASE_ATTACK_MIN_DAMAGE_PCT = 5
 BASE_ATTACK_NEARBY_ENEMY_RADIUS = 200
 REFRESH_FAILURE_LOG_COOLDOWN_S = 2.0
-BUILDING_NAMES = {
-    normalize_unit_name(name)
-    for name in (
-        {"建造厂", "基地"}
-        | set(getattr(GameAPI, "BUILDING_DEPENDENCIES", {}).keys())
-        | set(DEFENSIVE_BUILDING_NAMES)
-    )
-}
-UNIT_NAMES = {normalize_unit_name(name) for name in getattr(GameAPI, "UNIT_DEPENDENCIES", {}).keys()}
-VEHICLE_CODES = {"ftrk", "v2rl", "3tnk", "4tnk", "harv"}
-INFANTRY_CODES = {"e1", "e3"}
-BUILDING_CODES = {
-    "powr",
-    "proc",
-    "weap",
-    "barr",
-    "afld",
-    "stek",
-    "fix",
-    "dome",
-}
 
 logger = logging.getLogger(__name__)
 slog = get_logger("world_model")
@@ -933,6 +899,7 @@ class WorldModel:
         for actor in self.state.actors.values():
             if actor.owner != ActorOwner.SELF or not actor.is_alive:
                 continue
+            unit_id = production_name_unit_id(actor.name) or production_name_unit_id(actor.display_name)
             if actor.category == ActorCategory.MCV:
                 mcv_count += 1
                 if actor.is_idle:
@@ -942,24 +909,23 @@ class WorldModel:
             elif actor.category in (ActorCategory.INFANTRY, ActorCategory.VEHICLE):
                 combat_unit_count += 1
             elif actor.category == ActorCategory.BUILDING:
-                names = {actor.name, actor.display_name}
-                if names & _CY_NAMES:
+                if unit_id in {"fact", "const"}:
                     has_construction_yard = True
-                if names & _POWER_NAMES:
+                if unit_id in {"powr", "apwr"}:
                     power_plant_count += 1
-                if names & _BARRACKS_NAMES:
+                if unit_id in {"barr", "tent"}:
                     barracks_count += 1
-                if names & _REFINERY_NAMES:
+                if unit_id == "proc":
                     refinery_count += 1
-                if names & _WAR_FACTORY_NAMES:
+                if unit_id == "weap":
                     war_factory_count += 1
-                if names & _RADAR_NAMES:
+                if unit_id == "dome":
                     radar_count += 1
-                if names & _TECH_CENTER_NAMES:
+                if unit_id in {"stek", "atek"}:
                     tech_center_count += 1
-                if names & _REPAIR_FACILITY_NAMES:
+                if unit_id == "fix":
                     repair_facility_count += 1
-                if names & _AIRFIELD_NAMES:
+                if unit_id == "afld":
                     airfield_count += 1
         return {
             "has_construction_yard": has_construction_yard,
@@ -1516,20 +1482,24 @@ class WorldModel:
 
     def _actor_category(self, name: str) -> ActorCategory:
         lowered = name.lower()
+        entry = production_name_entry(name)
+        if entry is not None:
+            unit_id = entry.unit_id.lower()
+            category = entry.category.lower()
+            if unit_id == "mcv" or lowered == "mcv" or lowered.endswith("mcv"):
+                return ActorCategory.MCV
+            if unit_id == "harv" or lowered == "harv":
+                return ActorCategory.HARVESTER
+            if category in {"building", "defense"}:
+                return ActorCategory.BUILDING
+            if category == "infantry":
+                return ActorCategory.INFANTRY
+            if category in {"vehicle", "aircraft", "ship"}:
+                return ActorCategory.VEHICLE
         if name == "基地车" or lowered == "mcv" or lowered.endswith("mcv"):
             return ActorCategory.MCV
         if name == "矿车" or lowered == "harv":
             return ActorCategory.HARVESTER
-        entry = self.unit_registry.resolve_name(name)
-        if entry is not None:
-            if entry.category == "defense":
-                return ActorCategory.BUILDING
-            if entry.category == "building":
-                return ActorCategory.BUILDING
-            if entry.category == "infantry":
-                return ActorCategory.INFANTRY
-            if entry.category in {"vehicle", "aircraft", "ship"}:
-                return ActorCategory.VEHICLE
         category = DEFAULT_UNIT_CATEGORY_RULES.get(name)
         if category in {"vehicle", "air"}:
             return ActorCategory.VEHICLE
@@ -1541,19 +1511,11 @@ class WorldModel:
             return ActorCategory.HARVESTER
         if category == "mcv":
             return ActorCategory.MCV
-        if name in BUILDING_NAMES:
-            return ActorCategory.BUILDING
-        if name in UNIT_NAMES:
-            if "步兵" in name or "工程师" in name or name == "狗":
-                return ActorCategory.INFANTRY
-            if name == "矿车":
-                return ActorCategory.HARVESTER
+        if lowered.endswith("tnk") or lowered in {"ftrk"}:
             return ActorCategory.VEHICLE
-        if lowered in VEHICLE_CODES or lowered.endswith("tnk"):
-            return ActorCategory.VEHICLE
-        if lowered in INFANTRY_CODES or lowered.startswith("e"):
+        if lowered.startswith("e") and lowered[1:].isdigit():
             return ActorCategory.INFANTRY
-        if lowered in BUILDING_CODES:
+        if lowered in {"powr", "proc", "weap", "barr", "afld", "stek", "fix", "dome"}:
             return ActorCategory.BUILDING
         if lowered in {"harv", "矿车"}:
             return ActorCategory.HARVESTER
@@ -1572,20 +1534,21 @@ class WorldModel:
         return Mobility.MEDIUM
 
     def _combat_value(self, name: str, category: ActorCategory) -> float:
-        if category == ActorCategory.BUILDING and name not in DEFENSIVE_BUILDING_NAMES:
+        unit_id = production_name_unit_id(name) or name.lower()
+        if category == ActorCategory.BUILDING and unit_id not in {"sam", "agun", "gun", "hbox", "pbox", "tsla", "ftur"}:
             return float(DEFAULT_UNIT_VALUE_WEIGHTS.get(name, 80))
         if category == ActorCategory.HARVESTER:
             return float(DEFAULT_UNIT_VALUE_WEIGHTS.get(name, 50))
         return float(DEFAULT_UNIT_VALUE_WEIGHTS.get(name, 100))
 
     def _can_attack(self, name: str, category: ActorCategory) -> bool:
-        entry = self.unit_registry.resolve_name(name)
+        unit_id = production_name_unit_id(name) or name.lower()
         if category == ActorCategory.HARVESTER:
             return False
         if category == ActorCategory.MCV:
             return False
         if category == ActorCategory.BUILDING:
-            if entry is not None and entry.category == "defense":
+            if unit_id in {"sam", "agun", "gun", "hbox", "pbox", "tsla", "ftur"}:
                 return True
             return name in DEFENSIVE_BUILDING_NAMES
         return True

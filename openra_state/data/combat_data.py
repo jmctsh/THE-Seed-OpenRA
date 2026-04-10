@@ -1,5 +1,6 @@
 from typing import Dict, Tuple, Optional
 from .dataset import CN_NAME_MAP
+from openra_api.production_names import production_name_unit_id
 
 
 class UnitCategory:
@@ -68,22 +69,24 @@ class CombatData:
         if not unit_type:
             return None
         cls._ensure_init()
+        if unit_type in cls._CN_TO_ID:
+            return cls._CN_TO_ID[unit_type]
         u_id = unit_type.lower()
         if u_id in UNIT_COMBAT_INFO:
             return u_id
-        if unit_type in cls._CN_TO_ID:
-            return cls._CN_TO_ID[unit_type]
-        return None
+        return production_name_unit_id(unit_type)
 
     @classmethod
     def get_combat_info(cls, unit_type: str) -> Tuple[str, float]:
         if not unit_type:
             return UnitCategory.OTHER, 0.0
         cls._ensure_init()
-        u_id = unit_type.lower()
+        if unit_type in cls._CN_TO_ID:
+            u_id = cls._CN_TO_ID[unit_type]
+        else:
+            u_id = unit_type.lower()
         if u_id not in UNIT_COMBAT_INFO:
-            if unit_type in cls._CN_TO_ID:
-                u_id = cls._CN_TO_ID[unit_type]
+            u_id = production_name_unit_id(unit_type) or u_id
         if u_id in UNIT_COMBAT_INFO:
             category, score = UNIT_COMBAT_INFO[u_id]
             if score is None:

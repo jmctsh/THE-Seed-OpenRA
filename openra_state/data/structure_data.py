@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Dict, Any, Optional
 from .dataset import DATASET, CN_NAME_MAP
+from openra_api.production_names import production_name_unit_id
 
 
 class StructureData:
@@ -18,12 +19,12 @@ class StructureData:
         cls._ensure_init()
         if not type_name:
             return None
+        if type_name in cls._CN_TO_ID:
+            return cls._CN_TO_ID[type_name]
         lower_name = type_name.lower()
         if lower_name in DATASET:
             return lower_name
-        if type_name in cls._CN_TO_ID:
-            return cls._CN_TO_ID[type_name]
-        return None
+        return production_name_unit_id(type_name)
 
     @classmethod
     def is_valid_structure(cls, type_name: str) -> bool:
