@@ -822,6 +822,22 @@ class Kernel:
             return default
         return None, None
 
+    def _request_reason(self, req: UnitRequest, reservation: Optional[UnitReservation], unit_type: str) -> str:
+        """Return the current runtime reason for a still-unfulfilled unit request."""
+        queue_type = _queue_type_for_unit_type(unit_type)
+        if req.start_released:
+            return "reinforcement_after_start" if not req.blocking else "start_package_released"
+        if req.bootstrap_job_id:
+            return "reinforcement_bootstrapping" if not req.blocking else "bootstrap_in_progress"
+        if not unit_type or not queue_type:
+            return "inference_pending"
+
+        readiness = self.world_model.production_readiness_for(unit_type, queue_type=queue_type)
+        readiness_reason = str(readiness.get("reason") or "")
+        if readiness_reason:
+            return readiness_reason
+        return "reinforcement_waiting_dispatch" if not req.blocking else "waiting_dispatch"
+
     def _bootstrap_production_for_request(self, req: UnitRequest) -> None:
         """Start a direct EconomyJob for remaining unfulfilled count."""
         remaining = req.count - req.fulfilled
@@ -833,11 +849,9 @@ class Kernel:
         reservation = self._ensure_reservation_for_request(req, unit_type)
         reservation.updated_at = _now()
 
-        # Check buildable via world_model derived data
-        buildable = self.world_model.runtime_facts_buildable()
-        queue_items = buildable.get(queue_type, [])
-        if unit_type not in queue_items:
-            return  # Not producible — leave for Capability
+        readiness = self.world_model.production_readiness_for(unit_type, queue_type=queue_type)
+        if not bool(readiness.get("can_issue_now")):
+            return  # Not safely producible right now — leave for Capability
 
         bootstrap_task_id = self.ensure_capability_task()
         capability_task = self.tasks.get(bootstrap_task_id)
@@ -1526,20 +1540,6 @@ class Kernel:
 
         # Serialize pending/partial unit requests for Capability context.
         # Also include requests with bootstrap_job_id (production in progress).
-        buildable = self.world_model.runtime_facts_buildable()
-
-        def _request_reason(req: UnitRequest, reservation: Optional[UnitReservation], unit_type: str) -> str:
-            queue_type = _queue_type_for_unit_type(unit_type)
-            buildable_units = buildable.get(queue_type, []) if queue_type else []
-            if req.start_released:
-                return "reinforcement_after_start" if not req.blocking else "start_package_released"
-            if req.bootstrap_job_id:
-                return "reinforcement_bootstrapping" if not req.blocking else "bootstrap_in_progress"
-            if not unit_type or not queue_type:
-                return "inference_pending"
-            if unit_type not in buildable_units:
-                return "missing_prerequisite"
-            return "reinforcement_waiting_dispatch" if not req.blocking else "waiting_dispatch"
 
         unfulfilled = []
         for req in self._unit_requests.values():
@@ -1568,7 +1568,7 @@ class Kernel:
                     "queue_type": _queue_type_for_unit_type(unit_type),
                     "prerequisites": demo_prerequisites_for(unit_type) if unit_type else [],
                     "reservation_status": reservation.status.value if reservation is not None else "",
-                    "reason": _request_reason(req, reservation, unit_type),
+                    "reason": self._request_reason(req, reservation, unit_type),
                 }
             )
         if unfulfilled:
@@ -1624,7 +1624,7 @@ class Kernel:
                         0,
                     ),
                     "queue_type": _queue_type_for_unit_type(reservation.unit_type),
-                    "reason": _request_reason(req, reservation, reservation.unit_type) if req is not None else "",
+                    "reason": self._request_reason(req, reservation, reservation.unit_type) if req is not None else "",
                 }
             )
 

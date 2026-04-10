@@ -1955,8 +1955,13 @@ class Adjutant:
             "idle": "待命中",
         }.get(phase, "")
         blocker_text = {
+            "world_sync_stale": "世界状态同步陈旧",
             "request_inference_pending": "存在待解析的单位请求",
+            "deploy_required": "需先展开基地车",
             "missing_prerequisite": "部分请求缺少前置建筑",
+            "low_power": "当前低电，优先恢复供电",
+            "queue_blocked": "生产队列存在阻塞",
+            "insufficient_funds": "当前资金不足",
             "pending_requests_waiting_dispatch": "仍有请求等待分发",
             "bootstrap_in_progress": "已有前置生产在进行",
         }.get(blocker, "")

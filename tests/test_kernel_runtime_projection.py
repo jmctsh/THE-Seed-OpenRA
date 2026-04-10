@@ -94,3 +94,37 @@ def test_build_capability_status_snapshot_marks_inference_pending() -> None:
     assert snapshot.inference_pending_count == 1
     assert snapshot.dispatch_request_count == 1
     print("  PASS: build_capability_status_snapshot_marks_inference_pending")
+
+
+def test_build_capability_status_snapshot_prioritizes_world_sync_stale() -> None:
+    task = Task(
+        task_id="t_cap",
+        raw_text="发展经济",
+        kind=TaskKind.MANAGED,
+        priority=80,
+        status=TaskStatus.RUNNING,
+        label="001",
+        is_capability=True,
+    )
+    request = UnitRequest(
+        request_id="req_1",
+        task_id="t_other",
+        task_label="002",
+        task_summary="补兵",
+        category="infantry",
+        count=1,
+        urgency="high",
+        hint="步兵",
+    )
+    snapshot = build_capability_status_snapshot(
+        capability_task=task,
+        capability_jobs=[],
+        capability_requests=[request],
+        unfulfilled_requests=[{"reason": "world_sync_stale"}],
+        recent_directives=[],
+    )
+
+    assert snapshot.blocker == "world_sync_stale"
+    assert snapshot.world_sync_stale_count == 1
+    assert snapshot.dispatch_request_count == 1
+    print("  PASS: build_capability_status_snapshot_prioritizes_world_sync_stale")

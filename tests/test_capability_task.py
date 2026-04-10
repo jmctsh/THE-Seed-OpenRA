@@ -377,6 +377,23 @@ def test_capability_context_has_base_state_and_recent_signals():
     assert "weap" in msg["content"]
 
 
+def test_capability_context_marks_deploy_mcv_as_action_not_production():
+    packet = ContextPacket(
+        task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {"cash": 5000, "power_provided": 0, "power_drained": 0}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[],
+        recent_events=[],
+        open_decisions=[],
+        runtime_facts={"has_construction_yard": False, "mcv_count": 1},
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "[基地推进]" in msg["content"]
+    assert "基地车待展开" in msg["content"]
+    assert "action=deploy_mcv" in msg["content"]
+    assert "next=fact" not in msg["content"]
+
+
 def test_capability_context_has_runtime_status_and_parallel_tasks():
     packet = ContextPacket(
         task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},
@@ -494,6 +511,8 @@ def test_capability_prompt_pins_demo_roster_and_stage_policy():
     assert "最小里程碑" in CAPABILITY_SYSTEM_PROMPT
     assert "[前置已满足]" in CAPABILITY_SYSTEM_PROMPT
     assert "[世界同步]" in CAPABILITY_SYSTEM_PROMPT
+    assert "tool_call(deploy_mcv)" in CAPABILITY_SYSTEM_PROMPT
+    assert "不要尝试 produce_units(\"fact\")" in CAPABILITY_SYSTEM_PROMPT
 
 
 def test_capability_context_has_player_messages():

@@ -781,6 +781,91 @@ def test_runtime_facts_buildable_exposes_airfield_and_top_tier_units() -> None:
     assert "yak" in buildable["Aircraft"], buildable
 
 
+def test_production_readiness_blocks_when_world_sync_is_stale() -> None:
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=3, type="兵营", faction="自己", position=Location(12, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=2000, Resources=0, Power=100, PowerDrained=40, PowerProvided=100),
+        map_info=make_map(0.1, 0.05),
+        queues={},
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+    wm.state.stale = True
+    readiness = wm.production_readiness_for("e1")
+    assert readiness["prereq_satisfied"] is True
+    assert readiness["can_issue_now"] is False
+    assert readiness["reason"] == "world_sync_stale"
+
+
+def test_production_readiness_marks_deploy_required_when_only_mcv_exists() -> None:
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="基地车", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=2000, Resources=0, Power=0, PowerDrained=0, PowerProvided=0),
+        map_info=make_map(0.1, 0.05),
+        queues={},
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+    readiness = wm.production_readiness_for("powr")
+    assert readiness["deploy_required"] is True
+    assert readiness["can_issue_now"] is False
+    assert readiness["reason"] == "deploy_required"
+
+
+def test_production_readiness_marks_queue_blocked_for_ready_item() -> None:
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=2000, Resources=0, Power=100, PowerDrained=20, PowerProvided=100),
+        map_info=make_map(0.1, 0.05),
+        queues={
+            "Building": {
+                "queue_type": "Building",
+                "items": [{"name": "powr", "done": True, "paused": False, "status": "done", "owner_actor_id": 1}],
+                "has_ready_item": True,
+            }
+        },
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+    readiness = wm.production_readiness_for("powr")
+    assert readiness["prereq_satisfied"] is True
+    assert readiness["can_issue_now"] is False
+    assert readiness["reason"] == "queue_blocked"
+
+
+def test_production_readiness_allows_power_recovery_while_low_power() -> None:
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=2000, Resources=0, Power=50, PowerDrained=80, PowerProvided=50),
+        map_info=make_map(0.1, 0.05),
+        queues={},
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+    powr = wm.production_readiness_for("powr")
+    proc = wm.production_readiness_for("proc")
+    assert powr["can_issue_now"] is True
+    assert powr["reason"] == ""
+    assert proc["can_issue_now"] is False
+    assert proc["reason"] == "low_power"
+
+
 def test_compute_runtime_facts_this_task_jobs() -> None:
     """this_task_jobs reflects active_jobs for the queried task_id."""
     source = MockWorldSource([Frame(

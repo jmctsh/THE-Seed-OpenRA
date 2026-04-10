@@ -46,6 +46,26 @@ def build_capability_status_snapshot(
         1 for item in unfulfilled_requests
         if isinstance(item, dict) and item.get("reason") == "missing_prerequisite"
     )
+    world_sync_stale_count = sum(
+        1 for item in unfulfilled_requests
+        if isinstance(item, dict) and item.get("reason") == "world_sync_stale"
+    )
+    deploy_required_count = sum(
+        1 for item in unfulfilled_requests
+        if isinstance(item, dict) and item.get("reason") == "deploy_required"
+    )
+    low_power_count = sum(
+        1 for item in unfulfilled_requests
+        if isinstance(item, dict) and item.get("reason") == "low_power"
+    )
+    queue_blocked_count = sum(
+        1 for item in unfulfilled_requests
+        if isinstance(item, dict) and item.get("reason") == "queue_blocked"
+    )
+    insufficient_funds_count = sum(
+        1 for item in unfulfilled_requests
+        if isinstance(item, dict) and item.get("reason") == "insufficient_funds"
+    )
 
     if dispatch_request_count:
         phase = "dispatch"
@@ -59,10 +79,20 @@ def build_capability_status_snapshot(
         phase = "idle"
 
     blocker = ""
-    if inference_pending_count:
+    if world_sync_stale_count:
+        blocker = "world_sync_stale"
+    elif inference_pending_count:
         blocker = "request_inference_pending"
+    elif deploy_required_count:
+        blocker = "deploy_required"
     elif prerequisite_gap_count:
         blocker = "missing_prerequisite"
+    elif low_power_count:
+        blocker = "low_power"
+    elif queue_blocked_count:
+        blocker = "queue_blocked"
+    elif insufficient_funds_count:
+        blocker = "insufficient_funds"
     elif dispatch_request_count:
         blocker = "pending_requests_waiting_dispatch"
     elif bootstrap_wait_request_count:
@@ -84,5 +114,10 @@ def build_capability_status_snapshot(
         reinforcement_request_count=reinforcement_request_count,
         inference_pending_count=inference_pending_count,
         prerequisite_gap_count=prerequisite_gap_count,
+        world_sync_stale_count=world_sync_stale_count,
+        deploy_required_count=deploy_required_count,
+        low_power_count=low_power_count,
+        queue_blocked_count=queue_blocked_count,
+        insufficient_funds_count=insufficient_funds_count,
         recent_directives=[str(text) for text in recent_directives if str(text or "")],
     )

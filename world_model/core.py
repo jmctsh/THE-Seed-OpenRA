@@ -29,9 +29,11 @@ from openra_state.data.dataset import (
     dataset_actor_category_for,
     dataset_cost_for,
     demo_base_counter_field_for,
+    demo_base_progression,
     demo_capability_buildability_snapshot,
     demo_faction_hint_for_unit_types,
     demo_capability_queue_types,
+    demo_queue_type_for,
 )
 from runtime_views import (
     CapabilityStatusSnapshot,
@@ -954,6 +956,91 @@ class WorldModel:
             airfield_count=c["airfield_count"],
         )
         return dict(snapshot.get("buildable") or {})
+
+    def production_readiness_for(self, unit_type: str, *, queue_type: str | None = None) -> dict[str, Any]:
+        """Return whether a demo production order is safe to issue right now.
+
+        This is intentionally stricter than prerequisite-only buildability. It
+        folds in stale world state, MCV deployment requirements, queue jams, low
+        power, and affordability so Kernel fast-paths do not over-infer
+        producibility from raw prereq truth.
+        """
+        canonical = str(unit_type or "").lower()
+        resolved_queue = str(queue_type or demo_queue_type_for(canonical) or "")
+        counts = self._count_self_actors()
+        snapshot = demo_capability_buildability_snapshot(
+            has_construction_yard=counts["has_construction_yard"],
+            mcv_count=counts["mcv_count"],
+            power_plant_count=counts["power_plant_count"],
+            refinery_count=counts["refinery_count"],
+            barracks_count=counts["barracks_count"],
+            war_factory_count=counts["war_factory_count"],
+            radar_count=counts["radar_count"],
+            repair_facility_count=counts["repair_facility_count"],
+            tech_center_count=counts["tech_center_count"],
+            airfield_count=counts["airfield_count"],
+        )
+        buildable = dict(snapshot.get("buildable") or {})
+        base_progression = demo_base_progression(
+            has_construction_yard=counts["has_construction_yard"],
+            mcv_count=counts["mcv_count"],
+            power_plant_count=counts["power_plant_count"],
+            refinery_count=counts["refinery_count"],
+            barracks_count=counts["barracks_count"],
+            war_factory_count=counts["war_factory_count"],
+            buildable=buildable,
+        )
+        economy = dict(self.state.economy)
+        queue_state = self.state.production_queues.get(resolved_queue, {}) if resolved_queue else {}
+        queue_blocked = bool(queue_state.get("has_ready_item")) or any(
+            bool(item.get("paused")) for item in queue_state.get("items", []) if isinstance(item, dict)
+        )
+        low_power = bool(economy.get("low_power"))
+        deploy_required = (
+            not counts["has_construction_yard"]
+            and int(counts["mcv_count"] or 0) > 0
+            and str(base_progression.get("phase") or "") == "deploy_mcv"
+        )
+        prereq_satisfied = canonical in {
+            str(item).lower() for item in list(buildable.get(resolved_queue, []) or [])
+        }
+        cost = dataset_cost_for(canonical) or 0
+        affordable = cost <= 0 or int(economy.get("total_credits", 0) or 0) >= cost
+
+        reason = ""
+        can_issue_now = prereq_satisfied
+        if self.state.stale:
+            reason = "world_sync_stale"
+            can_issue_now = False
+        elif deploy_required:
+            reason = "deploy_required"
+            can_issue_now = False
+        elif not prereq_satisfied:
+            reason = "missing_prerequisite"
+            can_issue_now = False
+        elif queue_blocked:
+            reason = "queue_blocked"
+            can_issue_now = False
+        elif low_power and canonical not in {"powr", "apwr"}:
+            reason = "low_power"
+            can_issue_now = False
+        elif not affordable:
+            reason = "insufficient_funds"
+            can_issue_now = False
+
+        return {
+            "unit_type": canonical,
+            "queue_type": resolved_queue,
+            "prereq_satisfied": prereq_satisfied,
+            "can_issue_now": can_issue_now,
+            "reason": reason,
+            "world_sync_stale": self.state.stale,
+            "deploy_required": deploy_required,
+            "low_power": low_power,
+            "queue_blocked": queue_blocked,
+            "affordable": affordable,
+            "cost": cost,
+        }
 
     def register_info_expert(self, expert: Any) -> None:
         """Register an Information Expert whose analyze() output is merged into runtime_facts."""

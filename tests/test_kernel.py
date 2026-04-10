@@ -357,6 +357,24 @@ def test_capability_status_marks_missing_prerequisite_requests() -> None:
     print("  PASS: capability_status_marks_missing_prerequisite_requests")
 
 
+def test_capability_status_marks_world_sync_stale_requests() -> None:
+    kernel = make_kernel()
+    cap_id = kernel.ensure_capability_task()
+
+    task = kernel.create_task("补步兵", TaskKind.MANAGED, 60)
+    kernel.world_model.state.stale = True
+    kernel.register_unit_request(task.task_id, "infantry", 1, "high", "步兵")
+
+    runtime = kernel.world_model.query("runtime_state")
+    cap_facts = kernel.world_model.compute_runtime_facts(cap_id, include_buildable=True)
+    pending = cap_facts["unfulfilled_requests"]
+
+    assert runtime["capability_status"]["blocker"] == "world_sync_stale"
+    assert runtime["capability_status"]["world_sync_stale_count"] == 1
+    assert pending[0]["reason"] == "world_sync_stale"
+    print("  PASS: capability_status_marks_world_sync_stale_requests")
+
+
 def test_capability_status_tracks_fulfilling_phase_after_start_release() -> None:
     kernel = make_kernel()
     cap_id = kernel.ensure_capability_task()

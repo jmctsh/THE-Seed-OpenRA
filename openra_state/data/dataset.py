@@ -531,8 +531,9 @@ def demo_base_progression(
                 "phase": "deploy_mcv",
                 "status": "基地车待展开",
                 "missing": ["construction_yard"],
-                "next_unit_type": "fact",
-                "next_queue_type": "Building",
+                "next_unit_type": "",
+                "next_queue_type": "",
+                "action_required": "deploy_mcv",
                 "buildable_now": False,
             }
         return {
@@ -541,6 +542,7 @@ def demo_base_progression(
             "missing": ["construction_yard", "mcv"],
             "next_unit_type": "",
             "next_queue_type": "",
+            "action_required": "",
             "buildable_now": False,
         }
 
@@ -568,6 +570,7 @@ def demo_base_progression(
             "missing": [unit_type],
             "next_unit_type": unit_type,
             "next_queue_type": queue_type,
+            "action_required": "",
             "buildable_now": buildable_now,
         }
 
@@ -577,6 +580,7 @@ def demo_base_progression(
         "missing": [],
         "next_unit_type": "",
         "next_queue_type": "",
+        "action_required": "",
         "buildable_now": False,
     }
 

@@ -182,6 +182,7 @@ def build_capability_system_prompt() -> str:
 - 不要把“发展科技，经济”解释成无限扩张；每次最多推进一个**最小里程碑**
 - 不要在已有同 unit_type 的 running / waiting Job 时重复下单
 - 如果某个 unit_type 刚刚 failed/blocked 且基地状态未变化，不要立刻重试同一项
+- 如果 [基地推进] / [阻塞] 表示 `action=deploy_mcv`、`需先展开基地车` 或“基地车待展开”，不要尝试 produce_units("fact")；这是 deploy 动作，不是生产
 - 不需要分配单位（Kernel自动处理）
 - 不需要complete_task（你是持久任务）
 
@@ -193,6 +194,7 @@ def build_capability_system_prompt() -> str:
 - [最近信号]里的 failed/blocked 比你自己的猜测更可靠
 - [阶段] 和 [阻塞] 比历史对话更重要：按当前阶段收敛，不要越级补链
 - 如果 [世界同步] 显示 stale=true 或连续失败增长，说明 runtime_facts 可能陈旧；此时不要新开生产/补链，直接 wait，等同步恢复
+- 如果 [阻塞] 提示低电/队列阻塞/资金不足，先解除该阻塞，不要继续扩张到下一个里程碑
 - 当兵营/战车工厂/空军基地已存在且玩家需要前线持续出兵时，可用 set_rally_point(actor_ids=[...], target_position=[x,y]) 设置集结点；不要频繁改写同一建筑的集结点
 
 ## Broad 经济指令的最小阶段化
@@ -202,7 +204,7 @@ def build_capability_system_prompt() -> str:
 **每次wake只推进一步。[玩家追加指令]为”无”时，不继续推进里程碑，即使历史对话中有旧的经济指令。**
 
 ## 输出协议
-- 需要行动: 只输出tool_call(produce_units)
+- 需要行动: 只输出tool_call(produce_units) 或 tool_call(deploy_mcv)
 - 无事可做: 只输出"wait"
 - 禁止输出思考过程
 """.format(

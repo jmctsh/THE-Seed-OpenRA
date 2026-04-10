@@ -350,7 +350,12 @@ def _build_unfulfilled_requests(rf: dict[str, Any]) -> str:
         "reinforcement_bootstrapping": "增援生产中",
         "reinforcement_after_start": "增援补强中",
         "inference_pending": "等待解析具体单位",
+        "world_sync_stale": "世界状态陈旧，暂停下单",
+        "deploy_required": "需先展开基地车",
         "missing_prerequisite": "缺少前置建筑",
+        "low_power": "当前低电，先恢复供电",
+        "queue_blocked": "生产队列阻塞，需先解阻",
+        "insufficient_funds": "资金不足",
     }
     reqs = rf.get("unfulfilled_requests", [])
     if not reqs:
@@ -513,11 +518,41 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
         if inference_count:
             line += f"（inference={inference_count}）"
         entries.append(line)
+    elif capability_blocker == "world_sync_stale":
+        stale_count = capability_status.world_sync_stale_count
+        line = "世界状态同步陈旧，暂停新生产/补链"
+        if stale_count:
+            line += f"（stale={stale_count}）"
+        entries.append(line)
+    elif capability_blocker == "deploy_required":
+        deploy_count = capability_status.deploy_required_count
+        line = "当前仅有基地车，需先展开建造厂"
+        if deploy_count:
+            line += f"（deploy={deploy_count}）"
+        entries.append(line)
     elif capability_blocker == "missing_prerequisite":
         prerequisite_count = capability_status.prerequisite_gap_count
         line = "存在缺前置建筑的请求，需先补链后再分发"
         if prerequisite_count:
             line += f"（prereq_gap={prerequisite_count}）"
+        entries.append(line)
+    elif capability_blocker == "low_power":
+        low_power_count = capability_status.low_power_count
+        line = "当前低电，先恢复供电再继续产能扩张"
+        if low_power_count:
+            line += f"（low_power={low_power_count}）"
+        entries.append(line)
+    elif capability_blocker == "queue_blocked":
+        queue_blocked_count = capability_status.queue_blocked_count
+        line = "生产队列阻塞，需先处理已就绪/暂停条目"
+        if queue_blocked_count:
+            line += f"（queue_blocked={queue_blocked_count}）"
+        entries.append(line)
+    elif capability_blocker == "insufficient_funds":
+        insufficient_funds_count = capability_status.insufficient_funds_count
+        line = "当前资金不足，暂不继续新下单"
+        if insufficient_funds_count:
+            line += f"（funds={insufficient_funds_count}）"
         entries.append(line)
     elif capability_blocker == "pending_requests_waiting_dispatch":
         blocking_count = (
@@ -679,6 +714,9 @@ def _build_capability_base_progression(rf: dict[str, Any]) -> str:
     if not status:
         return ""
     line = f"[基地推进] {status}"
+    action_required = str(progression.get("action_required", "") or "")
+    if action_required:
+        line += f" | action={action_required}"
     next_unit_type = str(progression.get("next_unit_type", "") or "")
     if next_unit_type:
         line += f" | next={next_unit_type}"
