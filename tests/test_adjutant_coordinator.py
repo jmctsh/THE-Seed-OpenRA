@@ -225,6 +225,9 @@ def test_build_context_includes_task_triage_fields() -> None:
     assert context.coordinator_snapshot["battlefield"]["threat_direction"] == "west"
     assert context.coordinator_snapshot["capability"]["phase"] == "dispatch"
     assert context.coordinator_snapshot["capability"]["blocker"] == "pending_requests_waiting_dispatch"
+    assert context.coordinator_snapshot["task_overview"]["active_count"] == 3
+    assert context.coordinator_snapshot["task_overview"]["reservation_wait_count"] == 1
+    assert context.coordinator_snapshot["task_overview"]["combat_group_count"] == 1
     print("  PASS: build_context_includes_task_triage_fields")
 
 

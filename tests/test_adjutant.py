@@ -1399,6 +1399,9 @@ def test_build_context_includes_coordinator_snapshot_and_task_status_lines():
     assert ctx.coordinator_snapshot["capability"]["recent_directives"] == ["发展经济", "优先补电"]
     assert ctx.coordinator_snapshot["base_state"]["has_construction_yard"] is True
     assert ctx.coordinator_snapshot["info_experts"]["threat_level"] == "medium"
+    assert ctx.coordinator_snapshot["task_overview"]["active_count"] == 2
+    assert ctx.coordinator_snapshot["task_overview"]["running_count"] == 2
+    assert ctx.coordinator_snapshot["task_overview"]["largest_group_label"] == "002"
     assert ctx.coordinator_hints["suggested_disposition"] == "merge"
     assert ctx.coordinator_hints["likely_target_label"] == "001"
     active_by_label = {task["label"]: task for task in ctx.active_tasks}

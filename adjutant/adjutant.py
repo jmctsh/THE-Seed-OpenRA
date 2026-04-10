@@ -487,6 +487,59 @@ class Adjutant:
             "reservation_count": battlefield_snapshot.get("reservation_count", 0),
         }
 
+    @staticmethod
+    def _build_task_overview(active_tasks: list[dict[str, Any]]) -> dict[str, Any]:
+        counts_by_state: dict[str, int] = {}
+        counts_by_domain: dict[str, int] = {}
+        running_labels: list[str] = []
+        waiting_labels: list[str] = []
+        reservation_wait_labels: list[str] = []
+        combat_groups = 0
+        recon_groups = 0
+        busiest_label = ""
+        busiest_group_size = 0
+
+        for task in active_tasks:
+            state = str(task.get("state", "") or "unknown")
+            domain = str(task.get("domain", "") or "general")
+            label = str(task.get("label", "") or "")
+            active_group_size = int(task.get("active_group_size", 0) or 0)
+
+            counts_by_state[state] = counts_by_state.get(state, 0) + 1
+            counts_by_domain[domain] = counts_by_domain.get(domain, 0) + 1
+
+            if state == "running" and label:
+                running_labels.append(label)
+            if state == "waiting" and label:
+                waiting_labels.append(label)
+            if state == "waiting_units" and label:
+                reservation_wait_labels.append(label)
+            if domain == "combat" and active_group_size > 0:
+                combat_groups += 1
+            if domain == "recon" and active_group_size > 0:
+                recon_groups += 1
+            if active_group_size > busiest_group_size and label:
+                busiest_group_size = active_group_size
+                busiest_label = label
+
+        return {
+            "active_count": len(active_tasks),
+            "running_count": counts_by_state.get("running", 0),
+            "waiting_count": counts_by_state.get("waiting", 0),
+            "reservation_wait_count": counts_by_state.get("waiting_units", 0),
+            "blocked_count": counts_by_state.get("blocked", 0),
+            "degraded_count": counts_by_state.get("degraded", 0),
+            "counts_by_state": counts_by_state,
+            "counts_by_domain": counts_by_domain,
+            "combat_group_count": combat_groups,
+            "recon_group_count": recon_groups,
+            "running_labels": running_labels[:5],
+            "waiting_labels": waiting_labels[:5],
+            "reservation_wait_labels": reservation_wait_labels[:5],
+            "largest_group_label": busiest_label,
+            "largest_group_size": busiest_group_size,
+        }
+
     def _safe_world_query(self, query_type: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         try:
             result = self.world_model.query(query_type, params)
@@ -2130,6 +2183,7 @@ class Adjutant:
             active_tasks,
             coordinator_snapshot.get("battlefield") or {},
         )
+        coordinator_snapshot["task_overview"] = self._build_task_overview(active_tasks)
         return AdjutantContext(
             active_tasks=active_tasks,
             pending_questions=pending_questions,
