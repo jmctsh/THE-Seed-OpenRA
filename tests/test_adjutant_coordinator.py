@@ -268,6 +268,8 @@ def test_build_context_includes_task_triage_fields() -> None:
     assert by_label["003"]["state"] == "running"
     assert by_label["003"]["active_expert"] == "CombatExpert"
     assert by_label["003"]["active_group_size"] == 3
+    assert by_label["003"]["unit_mix"] == ["3tnk×2", "v2rl×1"]
+    assert "3tnk×2" in by_label["003"]["status_line"]
     assert context.coordinator_snapshot["recommended_posture"] == "satisfy_requests"
     assert context.coordinator_snapshot["battlefield"]["threat_direction"] == "west"
     assert context.coordinator_snapshot["capability"]["phase"] == "dispatch"

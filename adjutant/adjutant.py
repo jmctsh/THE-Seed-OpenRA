@@ -931,7 +931,10 @@ class Adjutant:
             return " | ".join(parts)
         active_group_size = int(task_entry.get("active_group_size", 0) or 0)
         status = str(task_entry.get("status", "running"))
+        unit_mix = list(task_entry.get("unit_mix", []) or [])
         if active_group_size > 0:
+            if unit_mix:
+                return f"{status} | group={active_group_size} | {', '.join(unit_mix[:3])}"
             return f"{status} | group={active_group_size}"
         return status
 
@@ -2350,6 +2353,8 @@ class Adjutant:
             if t.status.value not in ("pending", "running", "waiting"):
                 continue
             runtime_task = dict(runtime_tasks.get(t.task_id) or {})
+            active_actor_ids = [int(actor_id) for actor_id in list(runtime_task.get("active_actor_ids", []) or []) if actor_id is not None]
+            group_summary = self._summarize_group_actor_ids(active_actor_ids)
             task_entry = {
                 "task_id": t.task_id,
                 "label": getattr(t, "label", ""),
@@ -2357,12 +2362,19 @@ class Adjutant:
                 "status": t.status.value,
                 "is_capability": bool(runtime_task.get("is_capability", getattr(t, "is_capability", False))),
                 "active_group_size": int(runtime_task.get("active_group_size", 0) or 0),
-                "active_actor_ids": list(runtime_task.get("active_actor_ids", []) or []),
+                "active_actor_ids": active_actor_ids,
+                "group_known_count": int(group_summary.get("known_count", 0) or 0),
+                "group_combat_count": int(group_summary.get("combat_count", 0) or 0),
+                "unit_mix": list(group_summary.get("unit_mix", []) or []),
                 "domain": self._task_domain(str(getattr(t, "raw_text", "") or "").lower()),
             }
             triage = self._derive_task_triage(t, runtime_task, runtime_state, capability_status, world_sync)
             task_entry.update(triage)
-            task_entry["status_line"] = triage.get("status_line") or self._task_status_line(task_entry, capability_status)
+            status_line = str(triage.get("status_line") or self._task_status_line(task_entry, capability_status) or "")
+            unit_mix = list(task_entry.get("unit_mix", []) or [])
+            if unit_mix and "×" not in status_line:
+                status_line = f"{status_line} | {', '.join(unit_mix[:3])}" if status_line else ", ".join(unit_mix[:3])
+            task_entry["status_line"] = status_line
             active_tasks.append(task_entry)
 
         pending_questions = self.kernel.list_pending_questions()

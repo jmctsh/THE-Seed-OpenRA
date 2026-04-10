@@ -7,6 +7,7 @@ import json
 import sys
 import os
 import time
+from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -15,6 +16,7 @@ from typing import Any, Optional
 import logging_system
 from llm import LLMResponse, MockProvider
 from models import PlayerResponse, Task, TaskKind, TaskMessage, TaskMessageType, TaskStatus
+from openra_api.models import Actor, Location
 from adjutant import (
     Adjutant, AdjutantConfig, AdjutantContext, ClassificationResult, InputType,
     CLASSIFICATION_SYSTEM_PROMPT,
@@ -109,6 +111,14 @@ class MockKernel:
 
 
 class MockWorldModel:
+    def __init__(self):
+        self.state = SimpleNamespace(
+            actors={
+                401: Actor(actor_id=401, type="重坦", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+                402: Actor(actor_id=402, type="重坦", faction="自己", position=Location(12, 10), hppercent=100, activity="Idle"),
+            }
+        )
+
     def world_summary(self):
         return {
             "economy": {"cash": 5000, "income": 200},
@@ -163,6 +173,7 @@ class MockWorldModel:
                         "status": "running",
                         "is_capability": False,
                         "active_group_size": 2,
+                        "active_actor_ids": [401, 402],
                     },
                 },
                 "capability_status": {
@@ -1422,7 +1433,9 @@ def test_build_context_includes_coordinator_snapshot_and_task_status_lines():
     assert "补前置中" in active_by_label["001"]["status_line"]
     assert "pending=2" in active_by_label["001"]["status_line"]
     assert active_by_label["002"]["active_group_size"] == 2
+    assert active_by_label["002"]["unit_mix"] == ["重坦×2"]
     assert "group=2" in active_by_label["002"]["status_line"]
+    assert "重坦×2" in active_by_label["002"]["status_line"]
     print("  PASS: build_context_includes_coordinator_snapshot_and_task_status_lines")
 
 
