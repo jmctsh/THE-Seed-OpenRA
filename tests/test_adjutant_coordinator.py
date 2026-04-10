@@ -246,6 +246,26 @@ class _WorldModelWithFreeCombat(_WorldModel):
         return result
 
 
+class _WorldModelCountingCalls(_WorldModel):
+    def __init__(self) -> None:
+        super().__init__()
+        self.query_counts: dict[str, int] = {}
+        self.compute_runtime_facts_count = 0
+        self.refresh_health_count = 0
+
+    def query(self, query_type: str, params=None):
+        self.query_counts[query_type] = self.query_counts.get(query_type, 0) + 1
+        return super().query(query_type, params)
+
+    def compute_runtime_facts(self, task_id: str, include_buildable: bool = False):
+        self.compute_runtime_facts_count += 1
+        return super().compute_runtime_facts(task_id, include_buildable)
+
+    def refresh_health(self):
+        self.refresh_health_count += 1
+        return super().refresh_health()
+
+
 class _WorldModelNoPower(_WorldModel):
     def query(self, query_type: str, params=None):
         result = super().query(query_type, params)
@@ -363,6 +383,32 @@ def test_build_context_includes_task_triage_fields() -> None:
     assert battle_groups[0]["group_combat_count"] == 3
     assert battle_groups[1]["state"] == "waiting_units"
     print("  PASS: build_context_includes_task_triage_fields")
+
+
+def test_build_context_prefers_runtime_domain_over_generic_task_text() -> None:
+    kernel = _Kernel()
+    for task in kernel._tasks:
+        task.raw_text = "继续"
+
+    context = Adjutant(llm=MockProvider(), kernel=kernel, world_model=_WorldModel())._build_context("继续")
+    by_label = {task["label"]: task for task in context.active_tasks}
+
+    assert by_label["001"]["domain"] == "economy"
+    assert by_label["002"]["domain"] == "recon"
+    assert by_label["003"]["domain"] == "combat"
+    print("  PASS: build_context_prefers_runtime_domain_over_generic_task_text")
+
+
+def test_build_context_collects_coordinator_inputs_once() -> None:
+    world_model = _WorldModelCountingCalls()
+    context = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=world_model)._build_context("继续")
+
+    assert context.coordinator_snapshot["battlefield"]["focus"] == "recon"
+    assert world_model.query_counts.get("battlefield_snapshot") == 1
+    assert world_model.query_counts.get("runtime_state") == 1
+    assert world_model.compute_runtime_facts_count == 1
+    assert world_model.refresh_health_count == 1
+    print("  PASS: build_context_collects_coordinator_inputs_once")
 
 
 def test_build_context_uses_shared_triage_inputs_for_questions_and_warnings() -> None:
@@ -484,6 +530,20 @@ def test_coordinator_hints_merge_capability_followup_on_fulfilling_phase() -> No
     print("  PASS: coordinator_hints_merge_capability_followup_on_fulfilling_phase")
 
 
+def test_coordinator_hints_use_runtime_domain_when_task_text_is_generic() -> None:
+    kernel = _Kernel()
+    for task in kernel._tasks:
+        if task.label in {"002", "003"}:
+            task.raw_text = "继续"
+
+    context = Adjutant(llm=MockProvider(), kernel=kernel, world_model=_WorldModel())._build_context("继续进攻")
+
+    assert context.coordinator_hints["suggested_disposition"] == "merge"
+    assert context.coordinator_hints["likely_target_label"] == "003"
+    assert context.coordinator_hints["likely_target_domain"] == "combat"
+    print("  PASS: coordinator_hints_use_runtime_domain_when_task_text_is_generic")
+
+
 def test_coordinator_hints_prefer_active_combat_group_over_waiting_group() -> None:
     adjutant = Adjutant(
         llm=MockProvider(),
@@ -538,6 +598,8 @@ if __name__ == "__main__":
     print("Running Adjutant coordinator tests...\n")
     test_battlefield_snapshot_prefers_runtime_query()
     test_build_context_includes_task_triage_fields()
+    test_build_context_prefers_runtime_domain_over_generic_task_text()
+    test_build_context_collects_coordinator_inputs_once()
     test_build_context_uses_shared_triage_inputs_for_questions_and_warnings()
     test_build_context_surfaces_prerequisite_gap_blocker_text()
     test_coordinator_hints_merge_capability_followup_on_prerequisite_gap()
@@ -545,6 +607,7 @@ if __name__ == "__main__":
     test_coordinator_snapshot_surfaces_base_readiness_when_no_alerts()
     test_coordinator_snapshot_prefers_runtime_base_progression_when_present()
     test_coordinator_hints_merge_capability_followup_on_fulfilling_phase()
+    test_coordinator_hints_use_runtime_domain_when_task_text_is_generic()
     test_coordinator_hints_prefer_active_combat_group_over_waiting_group()
     test_coordinator_hints_reuse_active_group_when_no_free_combat_units()
     test_coordinator_hints_do_not_force_merge_when_free_combat_units_exist()

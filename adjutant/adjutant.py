@@ -441,6 +441,48 @@ class Adjutant:
             return "recon"
         return "general"
 
+    def _infer_task_domain(
+        self,
+        task_text: str,
+        runtime_task: Optional[dict[str, Any]] = None,
+        triage: Optional[dict[str, Any]] = None,
+    ) -> str:
+        runtime_task = dict(runtime_task or {})
+        triage = dict(triage or {})
+
+        if bool(runtime_task.get("is_capability")):
+            return "economy"
+
+        active_expert = str(triage.get("active_expert", "") or runtime_task.get("active_expert", "") or "")
+        expert_domain = {
+            "EconomyExpert": "economy",
+            "DeployExpert": "economy",
+            "ReconExpert": "recon",
+            "CombatExpert": "combat",
+        }.get(active_expert)
+        if expert_domain:
+            return expert_domain
+
+        phase = str(triage.get("phase", "") or runtime_task.get("phase", "") or "")
+        if phase in {"dispatch", "bootstrapping", "fulfilling"}:
+            return "economy"
+
+        active_group_size = int(
+            triage.get("active_group_size", runtime_task.get("active_group_size", 0)) or 0
+        )
+        if active_group_size > 0:
+            blocking_reason = str(triage.get("blocking_reason", "") or "")
+            waiting_reason = str(triage.get("waiting_reason", "") or "")
+            if waiting_reason == "unit_reservation":
+                if any(hint in task_text for hint in _INFO_RECON_HINTS):
+                    return "recon"
+                if any(hint in task_text for hint in _INFO_COMBAT_HINTS):
+                    return "combat"
+            if blocking_reason == "task_warning" and any(hint in task_text for hint in _INFO_COMBAT_HINTS):
+                return "combat"
+
+        return self._task_domain(task_text)
+
     def _score_info_target(self, text: str, task: Any, battlefield_snapshot: dict[str, Any]) -> int:
         task_text = self._task_text(task)
         if not task_text:
@@ -683,8 +725,9 @@ class Adjutant:
                 logger.exception("Adjutant failed to read kernel runtime state")
         return self._safe_world_query("runtime_state")
 
-    def _coordinator_snapshot(self) -> dict[str, Any]:
-        battlefield = self._format_query_snapshot(self._battlefield_snapshot())
+    def _collect_coordinator_inputs(self) -> dict[str, Any]:
+        world_summary = self._get_world_summary()
+        battlefield = self._format_query_snapshot(self._battlefield_snapshot(world_summary))
         runtime_state = self._runtime_state_snapshot()
         capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
         runtime_facts: dict[str, Any] = {}
@@ -695,6 +738,21 @@ class Adjutant:
             except Exception:
                 logger.exception("Adjutant failed to compute coordinator runtime facts")
                 runtime_facts = {}
+        return {
+            "world_summary": world_summary,
+            "battlefield": battlefield,
+            "runtime_state": runtime_state,
+            "capability_status": capability_status,
+            "runtime_facts": runtime_facts,
+            "world_sync": self.world_model.refresh_health(),
+        }
+
+    def _coordinator_snapshot(self, collected_inputs: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        inputs = dict(collected_inputs or self._collect_coordinator_inputs())
+        battlefield = dict(inputs.get("battlefield") or {})
+        runtime_state = dict(inputs.get("runtime_state") or {})
+        capability_status = CapabilityStatusSnapshot.from_mapping(inputs.get("capability_status"))
+        runtime_facts = dict(inputs.get("runtime_facts") or {})
         ready_queue_items = []
         for item in list(runtime_facts.get("ready_queue_items", []) or [])[:3]:
             if not isinstance(item, dict):
@@ -756,7 +814,7 @@ class Adjutant:
                 "has_production": battlefield.get("has_production"),
             },
             "recommended_posture": battlefield.get("recommended_posture", "maintain_posture"),
-            "world_sync": self.world_model.refresh_health(),
+            "world_sync": dict(inputs.get("world_sync") or {}),
             "active_task_count": len(runtime_state.get("active_tasks", {}) or {}),
             "reservation_count": battlefield.get("reservation_count", len(runtime_state.get("unit_reservations", []) or [])),
         }
@@ -2679,10 +2737,11 @@ class Adjutant:
         list_task_messages = getattr(self.kernel, "list_task_messages", None)
         task_messages = list_task_messages() if callable(list_task_messages) else []
         jobs_for_task = getattr(self.kernel, "jobs_for_task", None)
-        runtime_state = self._runtime_state_snapshot()
+        collected_inputs = self._collect_coordinator_inputs()
+        runtime_state = dict(collected_inputs.get("runtime_state") or {})
         runtime_tasks = dict(runtime_state.get("active_tasks") or {})
-        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
-        coordinator_snapshot = self._coordinator_snapshot()
+        capability_status = CapabilityStatusSnapshot.from_mapping(collected_inputs.get("capability_status"))
+        coordinator_snapshot = self._coordinator_snapshot(collected_inputs)
         world_sync = dict((coordinator_snapshot.get("world_sync") or {}))
         active_tasks = []
         for t in tasks:
@@ -2702,7 +2761,6 @@ class Adjutant:
                 "group_known_count": int(group_summary.get("known_count", 0) or 0),
                 "group_combat_count": int(group_summary.get("combat_count", 0) or 0),
                 "unit_mix": list(group_summary.get("unit_mix", []) or []),
-                "domain": self._task_domain(str(getattr(t, "raw_text", "") or "").lower()),
             }
             jobs = jobs_for_task(t.task_id) if callable(jobs_for_task) else []
             triage_inputs = collect_task_triage_inputs(
@@ -2721,6 +2779,11 @@ class Adjutant:
                 triage_inputs,
             )
             task_entry.update(triage)
+            task_entry["domain"] = self._infer_task_domain(
+                str(getattr(t, "raw_text", "") or "").lower(),
+                runtime_task,
+                task_entry,
+            )
             task_entry["status_line"] = str(triage.get("status_line") or "")
             active_tasks.append(task_entry)
 
