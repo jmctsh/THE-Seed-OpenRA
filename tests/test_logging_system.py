@@ -50,7 +50,7 @@ class SimpleWorldSource:
     def fetch_economy(self):
         return PlayerBaseInfo(Cash=1000, Resources=500, Power=100, PowerDrained=30, PowerProvided=130)
 
-    def fetch_map(self):
+    def fetch_map(self, fields=None):
         size = 2
         return MapQueryResult(
             MapWidth=size,
