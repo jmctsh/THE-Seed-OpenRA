@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -463,6 +464,29 @@ def test_refresh_failure_logs_include_exception_detail_when_available() -> None:
     assert actor_logs[0].data.get("error_detail") == "Actor query failed in server"
     assert actor_logs[0].data.get("error_meta", {}).get("type") == "System.InvalidOperationException"
     print("  PASS: refresh_failure_logs_include_exception_detail_when_available")
+
+
+def test_slow_refresh_logging_is_throttled_with_suppressed_count() -> None:
+    logging_system.clear()
+
+    class SlowMapWorldSource(MockWorldSource):
+        def fetch_map(self, fields=None) -> MapQueryResult:
+            time.sleep(0.11)
+            return super().fetch_map(fields=fields)
+
+    source = SlowMapWorldSource([make_frames()[0]])
+    world = WorldModel(source)
+
+    world.refresh(now=100.0, force=True)
+    world.refresh(now=101.0, force=True)
+    world.refresh(now=111.0, force=True)
+
+    slow_logs = logging_system.query(component="world_model", event="world_refresh_slow")
+    assert len(slow_logs) == 2
+    assert slow_logs[0].data.get("suppressed_count") == 0
+    assert slow_logs[1].data.get("suppressed_count") == 1
+    assert slow_logs[1].data.get("layer_ms", {}).get("map", 0) >= 100
+    print("  PASS: slow_refresh_logging_is_throttled_with_suppressed_count")
 
 
 def test_base_under_attack_requires_nearby_enemy_combat_and_meaningful_damage() -> None:
@@ -926,6 +950,7 @@ def main() -> None:
     test_refresh_failure_marks_stale_and_recovers()
     test_refresh_failure_logging_is_throttled_per_layer_until_recovery()
     test_refresh_failure_logs_include_exception_detail_when_available()
+    test_slow_refresh_logging_is_throttled_with_suppressed_count()
     test_base_under_attack_requires_nearby_enemy_combat_and_meaningful_damage()
     test_mcv_deploy_is_not_reported_as_structure_loss_or_base_attack()
     test_match_reset_emits_game_reset_event()
@@ -939,7 +964,7 @@ def main() -> None:
     test_compute_runtime_facts_ordinary_view_omits_buildability()
     test_runtime_facts_injected_in_context_packet()
     test_runtime_facts_exposes_ready_queue_items_and_capability_context_renders_them()
-    print("OK: 20 WorldModel tests passed")
+    print("OK: WorldModel tests passed")
 
 
 if __name__ == "__main__":

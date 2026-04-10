@@ -49,6 +49,7 @@ SLOW_NAMES = {"猛犸坦克", "mamm", "v2", "v2rl"}
 BASE_ATTACK_MIN_DAMAGE_PCT = 5
 BASE_ATTACK_NEARBY_ENEMY_RADIUS = 200
 REFRESH_FAILURE_LOG_COOLDOWN_S = 2.0
+SLOW_REFRESH_LOG_COOLDOWN_S = 10.0
 
 logger = logging.getLogger(__name__)
 slog = get_logger("world_model")
@@ -191,6 +192,7 @@ class WorldModel:
         self._total_refresh_failures = 0
         self._last_refresh_error: Optional[str] = None
         self._refresh_failure_log_state: dict[str, dict[str, Any]] = {}
+        self._slow_refresh_log_state: dict[str, Any] = {"last_log_at": 0.0, "suppressed_count": 0}
 
     @timed("world_refresh")
     def refresh(self, *, now: Optional[float] = None, force: bool = False) -> list[Event]:
@@ -289,13 +291,7 @@ class WorldModel:
         # Log slow refreshes for diagnostics (T-R5-5).
         total_ms = sum(layer_timings.values())
         if total_ms > 100:
-            slog.warn(
-                "Slow world refresh",
-                event="world_refresh_slow",
-                total_ms=round(total_ms, 1),
-                layer_ms={k: round(v, 1) for k, v in layer_timings.items()},
-                actor_count=len(self.state.actors),
-            )
+            self._log_slow_refresh(total_ms, layer_timings, len(self.state.actors), timestamp)
 
         if stale:
             self._consecutive_refresh_failures += 1
@@ -1006,6 +1002,7 @@ class WorldModel:
         self._total_refresh_failures = 0
         self._last_refresh_error = None
         self._refresh_failure_log_state = {}
+        self._slow_refresh_log_state = {"last_log_at": 0.0, "suppressed_count": 0}
         if clear_history:
             self._event_history = []
 
@@ -1045,6 +1042,40 @@ class WorldModel:
 
     def _clear_refresh_failure_log_state(self, layer: str) -> None:
         self._refresh_failure_log_state.pop(layer, None)
+
+    def _log_slow_refresh(
+        self,
+        total_ms: float,
+        layer_timings: Mapping[str, float],
+        actor_count: int,
+        timestamp: float,
+    ) -> None:
+        state = self._slow_refresh_log_state
+        if timestamp - float(state.get("last_log_at", 0.0) or 0.0) < SLOW_REFRESH_LOG_COOLDOWN_S:
+            state["suppressed_count"] = int(state.get("suppressed_count", 0) or 0) + 1
+            return
+
+        suppressed_count = int(state.get("suppressed_count", 0) or 0)
+        summary = (
+            f"Slow world refresh: total={round(total_ms, 1)}ms "
+            f"layers={{{', '.join(f'{key}={round(value, 1)}' for key, value in layer_timings.items())}}}"
+        )
+        if suppressed_count:
+            summary = f"{summary} ({suppressed_count} repeat(s) suppressed)"
+
+        logger.warning(summary)
+        slog.warn(
+            "Slow world refresh",
+            event="world_refresh_slow",
+            total_ms=round(total_ms, 1),
+            layer_ms={key: round(value, 1) for key, value in layer_timings.items()},
+            actor_count=actor_count,
+            suppressed_count=suppressed_count,
+        )
+        self._slow_refresh_log_state = {
+            "last_log_at": timestamp,
+            "suppressed_count": 0,
+        }
 
     def _extract_exception_detail(self, exc: Exception) -> Optional[str]:
         details = getattr(exc, "details", None)
