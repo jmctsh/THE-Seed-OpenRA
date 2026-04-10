@@ -242,7 +242,7 @@ class GameLoop:
 
             # 6. Shared queue manager
             if self._queue_manager is not None:
-                self._queue_manager.tick(now=now)
+                await asyncio.to_thread(self._queue_manager.tick, now=now)
 
             # 7. Dashboard push (placeholder)
             if self._dashboard_callback:

@@ -185,6 +185,17 @@ class BlockingWorldModel(MockWorldModel):
         return {}
 
 
+class BlockingQueueManager:
+    def __init__(self, block_s: float = 0.3) -> None:
+        self.block_s = block_s
+        self.tick_calls = 0
+
+    def tick(self, *, now: float) -> None:
+        del now
+        self.tick_calls += 1
+        time.sleep(self.block_s)
+
+
 class SleepLLM:
     async def chat(
         self,
@@ -516,6 +527,33 @@ def test_blocking_world_refresh_does_not_starve_adjutant_llm():
     print(f"  PASS: blocking_world_refresh_does_not_starve_adjutant_llm (elapsed={elapsed:.3f}s)")
 
 
+def test_blocking_queue_manager_does_not_starve_adjutant_llm():
+    wm = MockWorldModel()
+    kernel = MockKernel()
+    queue_manager = BlockingQueueManager(block_s=0.3)
+    loop = GameLoop(wm, kernel, config=GameLoopConfig(tick_hz=10), queue_manager=queue_manager)
+    adjutant = Adjutant(llm=SleepLLM(), kernel=kernel, world_model=wm)
+
+    async def run():
+        task = asyncio.create_task(loop.start())
+        await asyncio.sleep(0.05)
+        start = time.perf_counter()
+        try:
+            result = await asyncio.wait_for(adjutant.handle_player_input("战况如何？"), timeout=0.5)
+            elapsed = time.perf_counter() - start
+            return result, elapsed
+        finally:
+            loop.stop()
+            await asyncio.wait_for(task, timeout=2.0)
+
+    result, elapsed = asyncio.run(run())
+
+    assert result["type"] == "query"
+    assert elapsed < 0.25
+    assert queue_manager.tick_calls >= 1
+    print(f"  PASS: blocking_queue_manager_does_not_starve_adjutant_llm (elapsed={elapsed:.3f}s)")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -532,5 +570,6 @@ if __name__ == "__main__":
     test_job_exception_emits_failed_signal()
     test_job_terminal_status_immediately_wakes_agent()
     test_blocking_world_refresh_does_not_starve_adjutant_llm()
+    test_blocking_queue_manager_does_not_starve_adjutant_llm()
 
-    print(f"\nAll 11 tests passed!")
+    print(f"\nAll 12 tests passed!")
