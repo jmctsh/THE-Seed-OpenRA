@@ -59,18 +59,18 @@ _KNOWLEDGE_ROWS: tuple[dict[str, Any], ...] = (
     {
         "names": ("dome", "雷达站", "雷达"),
         "roles": ("awareness_gateway", "tech_gateway"),
-        "downstream_unlocks": ("afld", "stek"),
+        "downstream_unlocks": ("apwr", "afld", "stek"),
         "awareness_effects": ("radar_minimap", "online_shroud_reveal", "offline_local_reveal"),
     },
     {
         "names": ("barr", "兵营"),
         "roles": ("infantry_gateway",),
-        "downstream_unlocks": ("infantry_production", "e1", "e3"),
+        "downstream_unlocks": ("infantry_production", "e1", "e3", "e6"),
     },
     {
         "names": ("tent", "盟军兵营"),
         "roles": ("infantry_gateway",),
-        "downstream_unlocks": ("infantry_production", "e1", "e3"),
+        "downstream_unlocks": ("infantry_production", "e1", "e3", "e6"),
     },
     {
         "names": ("afld", "空军基地"),

@@ -192,7 +192,7 @@ def test_knowledge_downstream_unlocks_stay_within_demo_truth() -> None:
     assert dome["in_demo_roster"] is True
     assert dome["display_name"] == "雷达站"
     assert dome["prerequisites"] == ["proc", "fact"]
-    assert dome["downstream_unlocks"] == ["afld", "stek"]
+    assert dome["downstream_unlocks"] == ["apwr", "afld", "stek"]
     assert afld["roles"] == ["air_gateway", "tech_gateway"]
     assert afld["downstream_unlocks"] == ["mig", "yak"]
     assert stek["downstream_unlocks"] == ["4tnk"]
