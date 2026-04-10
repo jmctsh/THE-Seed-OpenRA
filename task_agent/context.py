@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from models import ExpertSignal, Event, Job, Task
 from openra_state.data.dataset import (
+    demo_base_progression,
     demo_capability_buildable_lines,
     demo_capability_queue_types,
     demo_queue_type_for,
@@ -447,7 +448,8 @@ def _build_unit_reservations(rf: dict[str, Any]) -> str:
 def _build_capability_phase_block(rf: dict[str, Any], signals: list[dict[str, Any]]) -> str:
     """Build a phase block for Capability context."""
     entries: list[str] = []
-    current_phase = rf.get("task_phase") or rf.get("phase")
+    capability_status = CapabilityStatusSnapshot.from_mapping(rf.get("capability_status", {}))
+    current_phase = rf.get("task_phase") or capability_status.phase or rf.get("phase")
     if current_phase:
         entries.append(f"task={current_phase}")
 
@@ -489,27 +491,28 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
     """Build a blocker block for Capability context."""
     entries: list[str] = []
 
-    capability_blocker = str(rf.get("capability_blocker", "") or "")
+    capability_status = CapabilityStatusSnapshot.from_mapping(rf.get("capability_status", {}))
+    capability_blocker = str(rf.get("capability_blocker", "") or capability_status.blocker)
     if capability_blocker == "request_inference_pending":
-        inference_count = int(rf.get("inference_pending_count", 0) or 0)
+        inference_count = capability_status.inference_pending_count
         line = "存在待解析的单位请求，等待 Capability 先确定具体生产目标"
         if inference_count:
             line += f"（inference={inference_count}）"
         entries.append(line)
     elif capability_blocker == "missing_prerequisite":
-        prerequisite_count = int(rf.get("prerequisite_gap_count", 0) or 0)
+        prerequisite_count = capability_status.prerequisite_gap_count
         line = "存在缺前置建筑的请求，需先补链后再分发"
         if prerequisite_count:
             line += f"（prereq_gap={prerequisite_count}）"
         entries.append(line)
     elif capability_blocker == "pending_requests_waiting_dispatch":
-        blocking_count = int(rf.get("dispatch_request_count", 0) or 0)
+        blocking_count = capability_status.dispatch_request_count
         line = "能力层有待分发请求"
         if blocking_count:
             line += f"（blocking={blocking_count}）"
         entries.append(line)
     elif capability_blocker == "bootstrap_in_progress":
-        bootstrap_count = int(rf.get("bootstrapping_request_count", 0) or 0)
+        bootstrap_count = capability_status.bootstrapping_request_count
         line = "Kernel fast-path 生产进行中，等待 Capability 接手与收口"
         if bootstrap_count:
             line += f"（bootstrapping={bootstrap_count}）"
@@ -617,6 +620,31 @@ def _build_capability_base_state(rf: dict[str, Any]) -> str:
     return "[基地状态] " + " ".join(fields)
 
 
+def _build_capability_base_progression(rf: dict[str, Any]) -> str:
+    """Build the shared demo base-progression hint for Capability context."""
+    if not rf:
+        return ""
+    progression = demo_base_progression(
+        has_construction_yard=bool(rf.get("has_construction_yard")),
+        mcv_count=int(rf.get("mcv_count", 0) or 0),
+        power_plant_count=int(rf.get("power_plant_count", 0) or 0),
+        refinery_count=int(rf.get("refinery_count", 0) or 0),
+        barracks_count=int(rf.get("barracks_count", 0) or 0),
+        war_factory_count=int(rf.get("war_factory_count", 0) or 0),
+        buildable=dict(rf.get("buildable") or {}),
+    )
+    status = str(progression.get("status", "") or "")
+    if not status:
+        return ""
+    line = f"[基地推进] {status}"
+    next_unit_type = str(progression.get("next_unit_type", "") or "")
+    if next_unit_type:
+        line += f" | next={next_unit_type}"
+    if progression.get("buildable_now"):
+        line += " | 可直接推进"
+    return line
+
+
 def _build_capability_recent_signals(signals: list[dict[str, Any]]) -> str:
     """Build a compact recent-signals block for capability decisions."""
     if not signals:
@@ -685,6 +713,9 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         base_block = _build_capability_base_state(rf)
         if base_block:
             lines.append(base_block)
+        progression_block = _build_capability_base_progression(rf)
+        if progression_block:
+            lines.append(progression_block)
         if eco:
             cash = eco.get("cash", 0)
             pwr = eco.get("power_provided", 0)

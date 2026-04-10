@@ -118,6 +118,25 @@ def test_capability_context_has_economy_block():
     assert "资金:5000" in msg["content"]
 
 
+def test_capability_context_has_base_progression_hint():
+    """Capability context should expose the shared demo base progression hint."""
+    rf = {
+        "has_construction_yard": True,
+        "mcv_count": 0,
+        "power_plant_count": 1,
+        "refinery_count": 0,
+        "barracks_count": 0,
+        "war_factory_count": 0,
+        "buildable": {"Building": ["proc", "barr"]},
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "[基地推进]" in msg["content"]
+    assert "下一步：矿场" in msg["content"]
+    assert "next=proc" in msg["content"]
+    assert "可直接推进" in msg["content"]
+
+
 def test_capability_context_has_unfulfilled_requests():
     """Capability context should show unfulfilled requests."""
     rf = {
