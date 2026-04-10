@@ -592,6 +592,26 @@ def test_complete_task_releases_resources_from_terminal_jobs() -> None:
     print("  PASS: complete_task_releases_resources_from_terminal_jobs")
 
 
+def test_actor_job_resource_grant_seeds_task_owned_group() -> None:
+    def needs_factory(job_id, _config):
+        return [ResourceNeed(job_id=job_id, kind=ResourceKind.ACTOR, count=1, predicates={"mobility": "fast", "owner": "self"})]
+
+    kernel, _ = make_resource_kernel(needs_factory)
+    task = kernel.create_task("突击", TaskKind.MANAGED, 60)
+    job = kernel.start_job(
+        task.task_id,
+        "CombatExpert",
+        CombatJobConfig(target_position=(100, 100), engagement_mode=EngagementMode.HARASS),
+    )
+
+    assert job.resources == ["actor:10"]
+    assert kernel.task_active_actor_ids(task.task_id) == [10]
+    runtime = kernel.world_model.query("runtime_state")
+    assert runtime["active_tasks"][task.task_id]["active_actor_ids"] == [10]
+    assert runtime["active_tasks"][task.task_id]["active_group_size"] == 1
+    print("  PASS: actor_job_resource_grant_seeds_task_owned_group")
+
+
 def test_route_events_batches_through_route_event() -> None:
     kernel = make_kernel()
     received: list[Event] = []

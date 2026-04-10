@@ -2065,6 +2065,13 @@ class Kernel:
     def _grant_resource(self, controller: BaseJob | _ManagedJob, resource_id: str) -> None:
         self.world_model.bind_resource(resource_id, controller.job_id)
         controller.on_resource_granted([resource_id])
+        if resource_id.startswith("actor:"):
+            try:
+                actor_id = int(resource_id.split(":", 1)[1])
+            except (TypeError, ValueError):
+                actor_id = None
+            if actor_id is not None:
+                self._set_task_actor_group(controller.task_id, [actor_id])
         slog.info("Kernel granted resource", event="resource_granted", job_id=controller.job_id, task_id=controller.task_id, resource_id=resource_id)
 
     def _resources_for_need(self, controller: BaseJob | _ManagedJob, need: ResourceNeed) -> list[str]:
