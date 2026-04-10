@@ -297,7 +297,7 @@ def test_capability_context_has_concise_reservations():
 
 
 def test_capability_context_has_buildable():
-    """Capability context should include buildable units."""
+    """Capability context should include prerequisite-satisfied units."""
     rf = {
         "buildable": {
             "Building": ["powr", "barr", "proc", "stek", "afld", "kenn", "silo"],
@@ -308,7 +308,7 @@ def test_capability_context_has_buildable():
     }
     packet = _make_context_packet(runtime_facts=rf)
     msg = context_to_message(packet, is_capability=True)
-    assert "[可造]" in msg["content"]
+    assert "[前置已满足]" in msg["content"]
     assert "powr" in msg["content"]
     assert "stek" in msg["content"]
     assert "afld" in msg["content"]
@@ -319,6 +319,22 @@ def test_capability_context_has_buildable():
     assert "e2" not in msg["content"]
     assert "dog" not in msg["content"]
     assert "heli" not in msg["content"]
+
+
+def test_capability_context_surfaces_world_sync_staleness():
+    """Capability context should make stale-world status explicit."""
+    rf = {
+        "world_sync_stale": True,
+        "world_sync_consecutive_failures": 3,
+        "world_sync_total_failures": 7,
+        "world_sync_last_error": "actors refresh failed",
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "[世界同步]" in msg["content"]
+    assert "stale=true" in msg["content"]
+    assert "failures=3/7" in msg["content"]
+    assert "actors refresh failed" in msg["content"]
 
 
 def test_capability_context_header_includes_runtime_facts():
@@ -476,6 +492,8 @@ def test_capability_prompt_pins_demo_roster_and_stage_policy():
     assert "ftrk=防空履带车（前置: 战车工厂）" in CAPABILITY_SYSTEM_PROMPT
     assert "不在上述 roster 内的单位/建筑" in CAPABILITY_SYSTEM_PROMPT
     assert "最小里程碑" in CAPABILITY_SYSTEM_PROMPT
+    assert "[前置已满足]" in CAPABILITY_SYSTEM_PROMPT
+    assert "[世界同步]" in CAPABILITY_SYSTEM_PROMPT
 
 
 def test_capability_context_has_player_messages():

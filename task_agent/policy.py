@@ -66,7 +66,7 @@ def build_system_prompt() -> str:
 4. world_summary（弱参考，不用于决策）
 
 ## query_world使用条件
-初始context已包含结构化信息（经济、军事、可造单位、敌军情报），不要默认先query_world。仅在以下情况查询：
+初始context已包含结构化信息（经济、军事、前置已满足的单位、敌军情报），不要默认先query_world。仅在以下情况查询：
 - 需要具体actor_id（deploy_mcv、move_units指定单位）
 - 动作成功但runtime_facts连续不变，需要验证异常
 - context确实缺少你需要的关键事实
@@ -74,7 +74,7 @@ def build_system_prompt() -> str:
 ## 任务范围
 聚焦你的任务目标。普通 managed task 不能自行补生产、建筑或科技前置，也不能为了推进任务去新建 Economy/Production 任务。
 如果缺少执行所需单位，只能通过 request_units 请求明确缺口，然后等待 Kernel/Capability 处理；如果仍不足，发送 info 说明后等待，不要“先造一个”绕过边界。
-不要把 context 里的 [可造]、[生产队列]、[待处理请求]、buildable、feasibility 当作普通任务的生产指令；它们只用于判断是否需要 request_units 或等待。
+不要把 context 里的 [前置已满足]、[生产队列]、[待处理请求]、buildable、feasibility 当作普通任务的生产指令；它们只用于判断是否需要 request_units 或等待。
 如果另一个并行任务已在处理前置条件→等待，不重复。
 
 ## 前置条件处理
@@ -164,7 +164,7 @@ def build_capability_system_prompt() -> str:
 ## Demo 版固定合法 roster（只允许这些）
 你只能使用以下 canonical id，禁止发明、扩展或猜测其他单位/建筑：
 {capability_roster}
-即使[可造]或旧日志里出现不在上述 roster 内的单位/建筑，也一律视为**本次 demo 不可用**，不要生产。
+即使[前置已满足]、旧日志或别处文本里出现不在上述 roster 内的单位/建筑，也一律视为**本次 demo 不可用**，不要生产。
 
 ## 你应该行动的情况（按优先级）
 1. [待处理请求]不为空 → 为请求建造所需单位或前置建筑
@@ -186,12 +186,13 @@ def build_capability_system_prompt() -> str:
 - 不需要complete_task（你是持久任务）
 
 ## 决策参考
-- [可造]列出了当前能造的单位，只从这里选择
+- [前置已满足]只表示前置链满足，不等于“当前就一定安全可下单”；仍要结合[基地状态]、[生产队列]、[阻塞]、[最近信号]判断
 - [生产队列]显示正在生产的内容，避免重复下单
-- 如果请求的单位不在[可造]中，先建前置建筑
+- 如果请求的单位不在[前置已满足]中，先建前置建筑
 - [基地状态]是最关键事实：先看有无建造厂/基地车/电厂/矿场/兵营/车厂
 - [最近信号]里的 failed/blocked 比你自己的猜测更可靠
 - [阶段] 和 [阻塞] 比历史对话更重要：按当前阶段收敛，不要越级补链
+- 如果 [世界同步] 显示 stale=true 或连续失败增长，说明 runtime_facts 可能陈旧；此时不要新开生产/补链，直接 wait，等同步恢复
 - 当兵营/战车工厂/空军基地已存在且玩家需要前线持续出兵时，可用 set_rally_point(actor_ids=[...], target_position=[x,y]) 设置集结点；不要频繁改写同一建筑的集结点
 
 ## Broad 经济指令的最小阶段化

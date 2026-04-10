@@ -520,7 +520,12 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
             line += f"（prereq_gap={prerequisite_count}）"
         entries.append(line)
     elif capability_blocker == "pending_requests_waiting_dispatch":
-        blocking_count = capability_status.dispatch_request_count
+        blocking_count = (
+            capability_status.dispatch_request_count
+            or capability_status.blocking_request_count
+            or int(rf.get("dispatch_request_count", 0) or 0)
+            or int(rf.get("blocking_request_count", 0) or 0)
+        )
         line = "能力层有待分发请求"
         if blocking_count:
             line += f"（blocking={blocking_count}）"
@@ -639,6 +644,22 @@ def _build_capability_base_state(rf: dict[str, Any]) -> str:
         f"矿车={rf.get('harvester_count', 0)}",
     ]
     return "[基地状态] " + " ".join(fields)
+
+
+def _build_capability_world_sync(rf: dict[str, Any]) -> str:
+    """Expose stale-world status explicitly for capability fail-closed behavior."""
+    if not rf:
+        return ""
+    stale = bool(rf.get("world_sync_stale", False))
+    failures = int(rf.get("world_sync_consecutive_failures", 0) or 0)
+    total = int(rf.get("world_sync_total_failures", 0) or 0)
+    error = str(rf.get("world_sync_last_error", "") or "")
+    if not stale and failures <= 0 and not error:
+        return ""
+    line = f"[世界同步] stale={'true' if stale else 'false'} failures={failures}/{total}"
+    if error:
+        line += f" error={error}"
+    return line
 
 
 def _build_capability_base_progression(rf: dict[str, Any]) -> str:
@@ -779,6 +800,9 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         ws = packet.world_summary or {}
         eco = ws.get("economy", {})
         rf = _capability_runtime_facts_view(packet.runtime_facts or {})
+        world_sync_block = _build_capability_world_sync(rf)
+        if world_sync_block:
+            lines.append(world_sync_block)
         base_block = _build_capability_base_state(rf)
         if base_block:
             lines.append(base_block)
@@ -830,7 +854,7 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         if buildable:
             b_parts = list(demo_capability_buildable_lines(buildable))
             if b_parts:
-                lines.append(f"[可造] {' | '.join(b_parts)}")
+                lines.append(f"[前置已满足] {' | '.join(b_parts)}")
 
         sig_block = _build_capability_recent_signals(packet.recent_signals)
         if sig_block:

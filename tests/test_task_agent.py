@@ -1097,6 +1097,7 @@ def test_normal_context_redacts_capability_planning_hints() -> None:
     )
     msg = context_to_message(packet, is_capability=False)
     assert "[可造]" not in msg["content"]
+    assert "[前置已满足]" not in msg["content"]
     assert "[生产队列]" not in msg["content"]
     assert "[待处理请求]" not in msg["content"]
     assert "[预留]" not in msg["content"]

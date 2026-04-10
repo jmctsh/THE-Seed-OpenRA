@@ -253,6 +253,8 @@ _DEMO_PROMPT_DISPLAY_NAME_OVERRIDES: dict[str, str] = {
     "3tnk": "重坦",
     "4tnk": "猛犸坦克",
     "harv": "矿车",
+    "mig": "MIG",
+    "yak": "YAK",
 }
 _DEMO_QUEUE_ORDER: tuple[str, ...] = ("Building", "Infantry", "Vehicle", "Aircraft")
 _DEMO_QUEUE_LABELS: dict[str, str] = {

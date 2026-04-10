@@ -189,7 +189,7 @@ def test_demo_capability_buildable_lines_follow_truth_table() -> None:
     assert lines == (
         "Building=[powr(电厂),proc(矿场)]",
         "Vehicle=[ftrk(防空履带车),3tnk(重坦)]",
-        "Aircraft=[mig(米格战机),yak(雅克战机)]",
+        "Aircraft=[mig(MIG),yak(YAK)]",
     )
     print("  PASS: demo_capability_buildable_lines_follow_truth_table")
 
