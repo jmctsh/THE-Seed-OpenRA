@@ -266,6 +266,17 @@ def test_build_context_uses_capability_task_label_fallback_and_fulfilling_counts
     print("  PASS: build_context_uses_capability_task_label_fallback_and_fulfilling_counts")
 
 
+def test_coordinator_hints_merge_capability_followup_on_fulfilling_phase() -> None:
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelFulfilling())
+
+    context = adjutant._build_context("继续发展经济")
+
+    assert context.coordinator_hints["suggested_disposition"] == "merge"
+    assert context.coordinator_hints["likely_target_label"] == "001"
+    assert context.coordinator_hints["reason"] == "capability_phase_fulfilling"
+    print("  PASS: coordinator_hints_merge_capability_followup_on_fulfilling_phase")
+
+
 if __name__ == "__main__":
     print("Running Adjutant coordinator tests...\n")
     test_battlefield_snapshot_prefers_runtime_query()
@@ -273,4 +284,5 @@ if __name__ == "__main__":
     test_build_context_surfaces_prerequisite_gap_blocker_text()
     test_coordinator_hints_merge_capability_followup_on_prerequisite_gap()
     test_build_context_uses_capability_task_label_fallback_and_fulfilling_counts()
+    test_coordinator_hints_merge_capability_followup_on_fulfilling_phase()
     print("\nAll Adjutant coordinator tests passed!")

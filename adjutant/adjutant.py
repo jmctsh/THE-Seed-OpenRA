@@ -602,9 +602,15 @@ class Adjutant:
             reason = "urgent_combat_under_pressure"
         elif best_task is not None:
             task_blocking_reason = str(best_task.get("blocking_reason", "") or "")
+            task_phase = str(best_task.get("phase", "") or "")
             capability_followup = bool(best_task.get("is_capability")) and task_blocking_reason in {
                 "missing_prerequisite",
                 "request_inference_pending",
+            }
+            capability_phase_followup = bool(best_task.get("is_capability")) and task_phase in {
+                "dispatch",
+                "bootstrapping",
+                "fulfilling",
             }
             if self._has_any_token(text, override_tokens):
                 suggested_disposition = "override"
@@ -612,6 +618,9 @@ class Adjutant:
             elif capability_followup and (is_follow_up or text_domain == "economy"):
                 suggested_disposition = "merge"
                 reason = f"capability_followup_{task_blocking_reason}"
+            elif capability_phase_followup and (is_follow_up or text_domain == "economy"):
+                suggested_disposition = "merge"
+                reason = f"capability_phase_{task_phase}"
             elif is_follow_up or text_domain != "general":
                 suggested_disposition = "merge"
                 reason = "followup_merge"
