@@ -294,7 +294,13 @@ class Adjutant:
         except (TypeError, ValueError):
             return None
 
-    def _battlefield_snapshot(self, world_summary: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    def _battlefield_snapshot(
+        self,
+        world_summary: Optional[dict[str, Any]] = None,
+        *,
+        runtime_state: Optional[dict[str, Any]] = None,
+        runtime_facts: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         query_snapshot = self._safe_world_query("battlefield_snapshot")
         if query_snapshot:
             return {
@@ -328,6 +334,10 @@ class Adjutant:
             }
 
         summary = world_summary if isinstance(world_summary, dict) else self._get_world_summary()
+        runtime_state = dict(runtime_state or {})
+        runtime_facts = dict(runtime_facts or {})
+        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
+        active_tasks = dict(runtime_state.get("active_tasks") or {})
         economy = summary.get("economy", {}) if isinstance(summary, dict) else {}
         military = summary.get("military", {}) if isinstance(summary, dict) else {}
         game_map = summary.get("map", {}) if isinstance(summary, dict) else {}
@@ -344,6 +354,21 @@ class Adjutant:
         enemy_bases = int(self._coerce_float(known_enemy.get("bases")) or self._coerce_float(known_enemy.get("structures")) or 0)
         enemy_spotted = int(self._coerce_float(known_enemy.get("units_spotted")) or 0)
         frozen_count = int(self._coerce_float(known_enemy.get("frozen_count")) or 0)
+        total_combat_units = int(runtime_facts.get("combat_unit_count", 0) or 0)
+        committed_combat_units = sum(
+            int(task.get("active_group_size", 0) or 0)
+            for task in active_tasks.values()
+            if isinstance(task, dict) and not bool(task.get("is_capability"))
+        )
+        committed_combat_units = max(committed_combat_units, 0)
+        free_combat_units = max(total_combat_units - committed_combat_units, 0)
+        pending_request_count = int(capability_status.pending_request_count or 0)
+        bootstrapping_request_count = int(capability_status.bootstrapping_request_count or 0)
+        reservation_count = len(list(runtime_state.get("unit_reservations") or []))
+        has_production = any(
+            int(runtime_facts.get(field, 0) or 0) > 0
+            for field in ("barracks_count", "war_factory_count", "airfield_count")
+        )
 
         combat_known = self_combat_value is not None or enemy_combat_value is not None
         if combat_known:
@@ -396,6 +421,9 @@ class Adjutant:
             "self_combat_value": round(self_score, 2),
             "enemy_combat_value": round(enemy_score, 2),
             "idle_self_units": idle_self_units,
+            "self_combat_units": total_combat_units,
+            "committed_combat_units": committed_combat_units,
+            "free_combat_units": free_combat_units,
             "low_power": low_power,
             "queue_blocked": queue_blocked,
             "recommended_posture": "stabilize_power" if low_power else ("unblock_queue" if queue_blocked else "maintain_posture"),
@@ -403,14 +431,14 @@ class Adjutant:
             "threat_direction": "unknown",
             "base_under_attack": False,
             "base_health_summary": "",
-            "has_production": False,
+            "has_production": has_production,
             "explored_pct": explored_pct,
             "enemy_bases": enemy_bases,
             "enemy_spotted": enemy_spotted,
             "frozen_enemy_count": frozen_count,
-            "pending_request_count": 0,
-            "bootstrapping_request_count": 0,
-            "reservation_count": 0,
+            "pending_request_count": pending_request_count,
+            "bootstrapping_request_count": bootstrapping_request_count,
+            "reservation_count": reservation_count,
             "stale": False,
         }
 
@@ -727,7 +755,6 @@ class Adjutant:
 
     def _collect_coordinator_inputs(self) -> dict[str, Any]:
         world_summary = self._get_world_summary()
-        battlefield = self._format_query_snapshot(self._battlefield_snapshot(world_summary))
         runtime_state = self._runtime_state_snapshot()
         capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
         runtime_facts: dict[str, Any] = {}
@@ -738,6 +765,13 @@ class Adjutant:
             except Exception:
                 logger.exception("Adjutant failed to compute coordinator runtime facts")
                 runtime_facts = {}
+        battlefield = self._format_query_snapshot(
+            self._battlefield_snapshot(
+                world_summary,
+                runtime_state=runtime_state,
+                runtime_facts=runtime_facts,
+            )
+        )
         return {
             "world_summary": world_summary,
             "battlefield": battlefield,

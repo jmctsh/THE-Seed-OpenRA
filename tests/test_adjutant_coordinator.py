@@ -170,6 +170,7 @@ class _WorldModel:
             "airfield_count": 0,
             "tech_center_count": 0,
             "harvester_count": 2,
+            "combat_unit_count": 3,
             "buildable": {
                 "Building": ["dome", "fix"],
                 "Vehicle": ["ftrk", "v2rl", "harv"],
@@ -293,6 +294,13 @@ class _WorldModelNoPower(_WorldModel):
         return result
 
 
+class _WorldModelBattlefieldFallback(_WorldModel):
+    def query(self, query_type: str, params=None):
+        if query_type == "battlefield_snapshot":
+            return {}
+        return super().query(query_type, params)
+
+
 class _WorldModelWithRuntimeProgression(_WorldModelNoPower):
     def compute_runtime_facts(self, task_id: str, include_buildable: bool = False):
         result = super().compute_runtime_facts(task_id, include_buildable)
@@ -345,6 +353,21 @@ def test_battlefield_snapshot_prefers_runtime_query() -> None:
     assert snapshot["threat_level"] == "medium"
     assert snapshot["reservation_count"] == 1
     print("  PASS: battlefield_snapshot_prefers_runtime_query")
+
+
+def test_battlefield_snapshot_fallback_reuses_runtime_state_and_facts() -> None:
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelBattlefieldFallback())
+
+    snapshot = adjutant._collect_coordinator_inputs()["battlefield"]
+
+    assert snapshot["has_production"] is True
+    assert snapshot["pending_request_count"] == 3
+    assert snapshot["bootstrapping_request_count"] == 1
+    assert snapshot["reservation_count"] == 1
+    assert snapshot["self_combat_units"] == 3
+    assert snapshot["committed_combat_units"] == 3
+    assert snapshot["free_combat_units"] == 0
+    print("  PASS: battlefield_snapshot_fallback_reuses_runtime_state_and_facts")
 
 
 def test_build_context_includes_task_triage_fields() -> None:
@@ -597,6 +620,7 @@ def test_coordinator_hints_do_not_force_merge_when_free_combat_units_exist() -> 
 if __name__ == "__main__":
     print("Running Adjutant coordinator tests...\n")
     test_battlefield_snapshot_prefers_runtime_query()
+    test_battlefield_snapshot_fallback_reuses_runtime_state_and_facts()
     test_build_context_includes_task_triage_fields()
     test_build_context_prefers_runtime_domain_over_generic_task_text()
     test_build_context_collects_coordinator_inputs_once()
