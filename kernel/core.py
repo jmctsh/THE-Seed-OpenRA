@@ -40,6 +40,7 @@ from models import (
     validate_job_config,
 )
 from models.configs import EXPERT_CONFIG_REGISTRY
+from openra_state.data.dataset import demo_prerequisites_for
 from .runtime_projection import build_capability_status_snapshot
 from runtime_views import CapabilityStatusSnapshot
 from task_agent import AgentConfig, TaskAgent, TaskToolHandlers, ToolExecutor, WorldSummary
@@ -1565,6 +1566,7 @@ class Kernel:
                     "bootstrap_job_id": req.bootstrap_job_id,
                     "bootstrap_task_id": req.bootstrap_task_id,
                     "queue_type": _queue_type_for_unit_type(unit_type),
+                    "prerequisites": demo_prerequisites_for(unit_type) if unit_type else [],
                     "reservation_status": reservation.status.value if reservation is not None else "",
                     "reason": _request_reason(req, reservation, unit_type),
                 }

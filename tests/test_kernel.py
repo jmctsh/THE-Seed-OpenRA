@@ -353,6 +353,7 @@ def test_capability_status_marks_missing_prerequisite_requests() -> None:
     assert runtime["capability_status"]["blocker"] == "missing_prerequisite"
     assert runtime["capability_status"]["prerequisite_gap_count"] == 1
     assert pending[0]["reason"] == "missing_prerequisite"
+    assert pending[0]["prerequisites"] == ["fix", "weap"]
     print("  PASS: capability_status_marks_missing_prerequisite_requests")
 
 

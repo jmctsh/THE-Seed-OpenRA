@@ -758,6 +758,7 @@ def test_sync_unfulfilled_requests_includes_reservation_metadata():
     assert pending[0]["reservation_id"].startswith("res_")
     assert pending[0]["unit_type"] == "3tnk"
     assert pending[0]["queue_type"] == "Vehicle"
+    assert pending[0]["prerequisites"] == ["fix", "weap"]
     assert pending[0]["reservation_status"] == ReservationStatus.PENDING.value
     assert pending[0]["blocking"] is True
     assert pending[0]["min_start_package"] == 1

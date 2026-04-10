@@ -16,6 +16,7 @@ from openra_state.data.dataset import (
     demo_base_progression,
     demo_capability_buildable_lines,
     demo_capability_queue_types,
+    demo_prompt_display_name_for,
     demo_queue_type_for,
     filter_demo_capability_buildable,
     filter_demo_capability_production_queues,
@@ -373,6 +374,13 @@ def _build_unfulfilled_requests(rf: dict[str, Any]) -> str:
             line += f" start>={min_start_package}"
         if reason:
             line += f" 原因:{reason_labels.get(reason, reason)}"
+        prerequisites = [
+            demo_prompt_display_name_for(item)
+            for item in list(r.get("prerequisites", []) or [])
+            if item
+        ]
+        if reason == "missing_prerequisite" and prerequisites:
+            line += f" 前置:{' + '.join(prerequisites)}"
         parts.append(line)
     return "\n".join(parts)
 
@@ -534,6 +542,13 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
             line += f' "{hint}"'
         if reason:
             line += f" 原因:{reason}"
+        prerequisites = [
+            demo_prompt_display_name_for(item)
+            for item in list(req.get("prerequisites", []) or [])
+            if item
+        ]
+        if reason == "missing_prerequisite" and prerequisites:
+            line += f" 前置:{' + '.join(prerequisites)}"
         entries.append(line)
 
     for sig in reversed(signals):
@@ -667,6 +682,54 @@ def _build_capability_recent_signals(signals: list[dict[str, Any]]) -> str:
     return "\n".join(parts)
 
 
+def _build_capability_runtime_status(rf: dict[str, Any], other_active_tasks: list[dict[str, Any]]) -> str:
+    """Build a compact status line so Capability sees live workload at a glance."""
+    capability_status = CapabilityStatusSnapshot.from_mapping(rf.get("capability_status", {}))
+    parts: list[str] = []
+
+    if capability_status.active_job_types:
+        counts: dict[str, int] = {}
+        for job_type in capability_status.active_job_types:
+            counts[job_type] = counts.get(job_type, 0) + 1
+        jobs = ",".join(
+            f"{job_type}x{count}" if count > 1 else job_type
+            for job_type, count in sorted(counts.items())
+        )
+        parts.append(f"jobs={jobs}")
+    elif capability_status.active_job_count:
+        parts.append(f"jobs={capability_status.active_job_count}")
+
+    if capability_status.pending_request_count:
+        parts.append(f"pending={capability_status.pending_request_count}")
+    if capability_status.blocking_request_count:
+        parts.append(f"blocking={capability_status.blocking_request_count}")
+    if capability_status.dispatch_request_count:
+        parts.append(f"dispatch={capability_status.dispatch_request_count}")
+    if capability_status.bootstrapping_request_count:
+        parts.append(f"boot={capability_status.bootstrapping_request_count}")
+    if capability_status.start_released_request_count:
+        parts.append(f"start_released={capability_status.start_released_request_count}")
+    if capability_status.reinforcement_request_count:
+        parts.append(f"reinforcement={capability_status.reinforcement_request_count}")
+
+    if other_active_tasks:
+        summaries: list[str] = []
+        for task in other_active_tasks[:4]:
+            label = str(task.get("label") or "?")
+            raw_text = str(task.get("raw_text") or "")
+            status = str(task.get("status") or "")
+            if raw_text:
+                summaries.append(f"{label}:{raw_text}({status})")
+            else:
+                summaries.append(f"{label}({status})")
+        if summaries:
+            parts.append(f"parallel={'; '.join(summaries)}")
+
+    if not parts:
+        return ""
+    return "[能力态势] " + " | ".join(parts)
+
+
 def context_to_message(packet: ContextPacket, *, is_capability: bool = False) -> dict[str, str]:
     """Convert a context packet to a compact LLM user message.
 
@@ -739,6 +802,10 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         blocker_block = _build_capability_blocker_block(rf, packet.recent_signals)
         if blocker_block:
             lines.append(blocker_block)
+
+        runtime_status_block = _build_capability_runtime_status(rf, packet.other_active_tasks)
+        if runtime_status_block:
+            lines.append(runtime_status_block)
 
         prod_block = _build_active_production(rf)
         if prod_block:

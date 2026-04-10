@@ -358,6 +358,38 @@ def test_capability_context_has_base_state_and_recent_signals():
     assert "weap" in msg["content"]
 
 
+def test_capability_context_has_runtime_status_and_parallel_tasks():
+    packet = ContextPacket(
+        task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {"cash": 5000, "power_provided": 100, "power_drained": 40}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[],
+        recent_events=[],
+        open_decisions=[],
+        runtime_facts={
+            "capability_status": {
+                "active_job_count": 2,
+                "active_job_types": ["EconomyExpert", "EconomyExpert"],
+                "pending_request_count": 3,
+                "blocking_request_count": 2,
+                "dispatch_request_count": 1,
+                "reinforcement_request_count": 1,
+            }
+        },
+        other_active_tasks=[
+            {"label": "001", "raw_text": "建造电厂", "status": "running"},
+            {"label": "002", "raw_text": "探索地图", "status": "running"},
+        ],
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "[能力态势]" in msg["content"]
+    assert "jobs=EconomyExpertx2" in msg["content"]
+    assert "pending=3" in msg["content"]
+    assert "blocking=2" in msg["content"]
+    assert "dispatch=1" in msg["content"]
+    assert "parallel=001:建造电厂(running); 002:探索地图(running)" in msg["content"]
+
+
 def test_capability_context_renders_task_phase_and_blocker():
     """Capability context should render kernel-derived phase/blocker hints."""
     packet = ContextPacket(
@@ -399,6 +431,36 @@ def test_capability_context_renders_inference_and_prerequisite_blockers():
     msg = context_to_message(packet, is_capability=True)
     assert "等待 Capability 先确定具体生产目标" in msg["content"]
     assert "等待解析具体单位" in msg["content"]
+
+
+def test_capability_context_renders_missing_prerequisite_details() -> None:
+    packet = ContextPacket(
+        task={"task_id": "t_cap", "raw_text": "经济能力", "kind": "managed", "priority": 80, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {"cash": 5000, "power_provided": 100, "power_drained": 40}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[],
+        recent_events=[],
+        open_decisions=[],
+        runtime_facts={
+            "capability_blocker": "missing_prerequisite",
+            "capability_status": {"prerequisite_gap_count": 1},
+            "unfulfilled_requests": [
+                {
+                    "request_id": "r2",
+                    "task_label": "008",
+                    "category": "vehicle",
+                    "count": 1,
+                    "fulfilled": 0,
+                    "hint": "猛犸坦克",
+                    "reason": "missing_prerequisite",
+                    "prerequisites": ["fix", "stek", "weap"],
+                }
+            ],
+        },
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "需先补链后再分发" in msg["content"]
+    assert "前置:维修厂 + 科技中心 + 战车工厂" in msg["content"]
 
 
 def test_capability_prompt_pins_demo_roster_and_stage_policy():
