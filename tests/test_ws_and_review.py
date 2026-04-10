@@ -631,6 +631,44 @@ def test_task_replay_request_returns_persisted_task_log():
                             {
                                 "timestamp": 123.8,
                                 "component": "task_agent",
+                                "level": "DEBUG",
+                                "message": "TaskAgent context snapshot",
+                                "event": "context_snapshot",
+                                "data": {
+                                    "task_id": "t_demo",
+                                    "packet": {
+                                        "jobs": [{"job_id": "j_1"}],
+                                        "recent_signals": [{"kind": "risk_alert"}],
+                                        "recent_events": [{"event": "job_started"}],
+                                        "other_active_tasks": [{"task_id": "t_other"}],
+                                        "open_decisions": [{"kind": "need_target"}],
+                                        "runtime_facts": {"cash": 5000, "power_drained": 100},
+                                    },
+                                },
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "timestamp": 123.9,
+                                "component": "task_agent",
+                                "level": "DEBUG",
+                                "message": "TaskAgent llm input",
+                                "event": "llm_input",
+                                "data": {
+                                    "task_id": "t_demo",
+                                    "messages": [{"role": "system"}, {"role": "user"}],
+                                    "tools": [{"name": "query_world"}],
+                                    "attempt": 2,
+                                    "wake": 7,
+                                },
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "timestamp": 124.0,
+                                "component": "task_agent",
                                 "level": "INFO",
                                 "message": "TaskAgent LLM call succeeded",
                                 "event": "llm_succeeded",
@@ -644,7 +682,7 @@ def test_task_replay_request_returns_persisted_task_log():
                         ),
                         json.dumps(
                             {
-                                "timestamp": 124.0,
+                                "timestamp": 124.2,
                                 "component": "expert",
                                 "level": "WARN",
                                 "message": "Expert signal emitted",
@@ -686,7 +724,7 @@ def test_task_replay_request_returns_persisted_task_log():
     assert ws.sent[0][1]["client_id"] == "client_7"
     payload = ws.sent[0][1]["payload"]
     assert payload["task_id"] == "t_demo"
-    assert payload["entry_count"] == 5
+    assert payload["entry_count"] == 7
     assert payload["entries"][1]["data"]["job_id"] == "j_1"
     assert payload["bundle"]["summary"] == "侦察完成，发现目标"
     assert payload["bundle"]["last_transition"]["label"] == "task_completed"
@@ -696,6 +734,14 @@ def test_task_replay_request_returns_persisted_task_log():
     assert payload["bundle"]["tools"][0]["name"] == "query_world"
     assert payload["bundle"]["experts"][0]["name"] == "ReconExpert"
     assert payload["bundle"]["signals"][0]["name"] == "risk_alert"
+    assert payload["bundle"]["current_runtime"] is None
+    assert payload["bundle"]["debug"]["latest_context"]["job_count"] == 1
+    assert payload["bundle"]["debug"]["latest_context"]["signal_count"] == 1
+    assert payload["bundle"]["debug"]["latest_context"]["runtime_fact_keys"] == ["cash", "power_drained"]
+    assert payload["bundle"]["debug"]["latest_llm_input"]["message_count"] == 2
+    assert payload["bundle"]["debug"]["latest_llm_input"]["tool_count"] == 1
+    assert payload["bundle"]["debug"]["latest_llm_input"]["attempt"] == 2
+    assert payload["bundle"]["debug"]["latest_llm_input"]["wake"] == 7
     print("  PASS: task_replay_request_returns_persisted_task_log")
 
 

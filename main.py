@@ -358,13 +358,14 @@ class RuntimeBridge(InboundHandler):
         entries = read_task_replay_records(task_id)
         session_dir = current_session_dir()
         log_path = str(session_dir / "tasks" / f"{task_id}.jsonl") if session_dir else None
+        runtime_state = self.world_model.runtime_state()
         await self.ws_server.send_task_replay_to_client(
             client_id,
             {
                 "task_id": task_id,
                 "log_path": log_path,
                 "entry_count": len(entries),
-                "bundle": self._build_task_replay_bundle(task_id, entries),
+                "bundle": self._build_task_replay_bundle(task_id, entries, runtime_state=runtime_state),
                 "entries": entries,
             },
         )
@@ -644,8 +645,13 @@ class RuntimeBridge(InboundHandler):
             "triage": self._build_task_triage(task, task_jobs, runtime_task=runtime_task, runtime_state=runtime_state),
         }
 
-    @staticmethod
-    def _build_task_replay_bundle(task_id: str, entries: list[dict[str, Any]]) -> dict[str, Any]:
+    def _build_task_replay_bundle(
+        self,
+        task_id: str,
+        entries: list[dict[str, Any]],
+        *,
+        runtime_state: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         """Summarize persisted task logs into a task-centric debug bundle."""
         if not entries:
             return {
@@ -661,6 +667,8 @@ class RuntimeBridge(InboundHandler):
                 "tools": [],
                 "experts": [],
                 "signals": [],
+                "current_runtime": None,
+                "debug": {},
             }
 
         def _preview(entry: dict[str, Any]) -> dict[str, Any]:
@@ -705,6 +713,8 @@ class RuntimeBridge(InboundHandler):
         tool_counts: dict[str, int] = {}
         expert_counts: dict[str, int] = {}
         signal_counts: dict[str, int] = {}
+        latest_context_packet: Optional[dict[str, Any]] = None
+        latest_llm_input: Optional[dict[str, Any]] = None
 
         for entry in entries:
             event = entry.get("event")
@@ -725,6 +735,12 @@ class RuntimeBridge(InboundHandler):
                         tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
             elif event == "llm_failed":
                 llm_failures += 1
+            elif event == "context_snapshot":
+                packet = data.get("packet")
+                if isinstance(packet, dict):
+                    latest_context_packet = packet
+            elif event == "llm_input":
+                latest_llm_input = data
 
             if event in {"tool_execute", "tool_execute_completed", "tool_execute_failed"}:
                 tool_name = str(
@@ -820,6 +836,42 @@ class RuntimeBridge(InboundHandler):
             else:
                 summary = previews[-1]["message"]
 
+        current_runtime = None
+        runtime_state = runtime_state or self.world_model.runtime_state()
+        runtime_tasks = runtime_state.get("active_tasks") if isinstance(runtime_state, dict) else {}
+        runtime_task = runtime_tasks.get(task_id) if isinstance(runtime_tasks, dict) else None
+        live_task = next((task for task in self.kernel.list_tasks() if task.task_id == task_id), None)
+        if live_task is not None:
+            current_runtime = self._task_to_dict(
+                live_task,
+                self.kernel.jobs_for_task(task_id),
+                runtime_state=runtime_state,
+            )
+
+        debug: dict[str, Any] = {}
+        if isinstance(latest_context_packet, dict):
+            context_runtime_facts = latest_context_packet.get("runtime_facts")
+            context_jobs = latest_context_packet.get("jobs")
+            context_signals = latest_context_packet.get("recent_signals")
+            context_events = latest_context_packet.get("recent_events")
+            debug["latest_context"] = {
+                "job_count": len(context_jobs) if isinstance(context_jobs, list) else 0,
+                "signal_count": len(context_signals) if isinstance(context_signals, list) else 0,
+                "event_count": len(context_events) if isinstance(context_events, list) else 0,
+                "other_task_count": len(latest_context_packet.get("other_active_tasks") or []),
+                "open_decision_count": len(latest_context_packet.get("open_decisions") or []),
+                "runtime_fact_keys": sorted((context_runtime_facts or {}).keys())[:12]
+                if isinstance(context_runtime_facts, dict)
+                else [],
+            }
+        if isinstance(latest_llm_input, dict):
+            debug["latest_llm_input"] = {
+                "message_count": len(latest_llm_input.get("messages") or []),
+                "tool_count": len(latest_llm_input.get("tools") or []),
+                "attempt": int(latest_llm_input.get("attempt", 0) or 0),
+                "wake": int(latest_llm_input.get("wake", 0) or 0),
+            }
+
         return {
             "task_id": task_id,
             "summary": summary,
@@ -848,6 +900,8 @@ class RuntimeBridge(InboundHandler):
                 {"name": name, "count": count}
                 for name, count in sorted(signal_counts.items(), key=lambda item: (-item[1], item[0]))[:6]
             ],
+            "current_runtime": current_runtime,
+            "debug": debug,
         }
 
     def _build_task_triage(

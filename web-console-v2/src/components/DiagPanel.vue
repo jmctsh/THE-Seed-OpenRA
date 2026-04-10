@@ -33,6 +33,19 @@
           last={{ selectedTaskReplayBundle.last_transition.label }}
         </span>
       </div>
+      <div v-if="selectedTaskReplayBundle.current_runtime?.triage" class="replay-section">
+        <div class="replay-heading">Current Runtime</div>
+        <div class="replay-overview">{{ selectedTaskReplayBundle.current_runtime.triage.status_line }}</div>
+        <div class="triage-meta">
+          <span>state={{ selectedTaskReplayBundle.current_runtime.triage.state }}</span>
+          <span v-if="selectedTaskReplayBundle.current_runtime.triage.phase">
+            phase={{ selectedTaskReplayBundle.current_runtime.triage.phase }}
+          </span>
+          <span v-if="selectedTaskReplayBundle.current_runtime.triage.active_expert">
+            expert={{ selectedTaskReplayBundle.current_runtime.triage.active_expert }}
+          </span>
+        </div>
+      </div>
       <div v-if="selectedTaskReplayBundle.llm?.rounds || selectedTaskReplayBundle.llm?.failures" class="replay-section">
         <div class="replay-heading">LLM</div>
         <div class="triage-meta">
@@ -41,6 +54,35 @@
           <span>prompt={{ selectedTaskReplayBundle.llm.prompt_tokens }}</span>
           <span>completion={{ selectedTaskReplayBundle.llm.completion_tokens }}</span>
           <span>tool_rounds={{ selectedTaskReplayBundle.llm.tool_rounds }}</span>
+        </div>
+      </div>
+      <div v-if="selectedTaskReplayBundle.debug?.latest_context || selectedTaskReplayBundle.debug?.latest_llm_input" class="replay-section">
+        <div class="replay-heading">Debug Snapshot</div>
+        <div v-if="selectedTaskReplayBundle.debug?.latest_context" class="triage-meta">
+          <span>ctx.jobs={{ selectedTaskReplayBundle.debug.latest_context.job_count }}</span>
+          <span>ctx.signals={{ selectedTaskReplayBundle.debug.latest_context.signal_count }}</span>
+          <span>ctx.events={{ selectedTaskReplayBundle.debug.latest_context.event_count }}</span>
+          <span>ctx.other={{ selectedTaskReplayBundle.debug.latest_context.other_task_count }}</span>
+          <span>ctx.decisions={{ selectedTaskReplayBundle.debug.latest_context.open_decision_count }}</span>
+        </div>
+        <div v-if="selectedTaskReplayBundle.debug?.latest_context?.runtime_fact_keys?.length" class="replay-tags">
+          <span
+            v-for="key in selectedTaskReplayBundle.debug.latest_context.runtime_fact_keys"
+            :key="`rf-${key}`"
+            class="replay-tag"
+          >
+            {{ key }}
+          </span>
+        </div>
+        <div v-if="selectedTaskReplayBundle.debug?.latest_llm_input" class="triage-meta">
+          <span>llm.messages={{ selectedTaskReplayBundle.debug.latest_llm_input.message_count }}</span>
+          <span>llm.tools={{ selectedTaskReplayBundle.debug.latest_llm_input.tool_count }}</span>
+          <span v-if="selectedTaskReplayBundle.debug.latest_llm_input.wake">
+            wake={{ selectedTaskReplayBundle.debug.latest_llm_input.wake }}
+          </span>
+          <span v-if="selectedTaskReplayBundle.debug.latest_llm_input.attempt">
+            attempt={{ selectedTaskReplayBundle.debug.latest_llm_input.attempt }}
+          </span>
         </div>
       </div>
       <div v-if="selectedTaskReplayBundle.tools?.length" class="replay-section">
