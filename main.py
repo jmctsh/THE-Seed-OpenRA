@@ -939,7 +939,7 @@ class RuntimeBridge(InboundHandler):
             pending_question=pending_question,
             latest_warning=latest_warning.content if latest_warning is not None else None,
             primary_summary=primary_summary,
-        )
+        ).to_dict()
 
     def _world_is_stale(self) -> bool:
         refresh_health = getattr(self.world_model, "refresh_health", None)

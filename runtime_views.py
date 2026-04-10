@@ -98,3 +98,56 @@ class CapabilityStatusSnapshot:
             "prerequisite_gap_count": self.prerequisite_gap_count,
             "recent_directives": list(self.recent_directives),
         }
+
+
+@dataclass(slots=True)
+class TaskTriageSnapshot:
+    """Normalized read model for task runtime triage."""
+
+    state: str = ""
+    phase: str = ""
+    status_line: str = ""
+    waiting_reason: str = ""
+    blocking_reason: str = ""
+    active_expert: str = ""
+    active_job_id: str = ""
+    reservation_ids: list[str] = field(default_factory=list)
+    world_stale: bool = False
+    active_group_size: int = 0
+
+    @classmethod
+    def from_mapping(cls, raw: Any) -> "TaskTriageSnapshot":
+        if isinstance(raw, cls):
+            return raw
+        if not isinstance(raw, dict):
+            return cls()
+        return cls(
+            state=str(raw.get("state") or ""),
+            phase=str(raw.get("phase") or ""),
+            status_line=str(raw.get("status_line") or ""),
+            waiting_reason=str(raw.get("waiting_reason") or ""),
+            blocking_reason=str(raw.get("blocking_reason") or ""),
+            active_expert=str(raw.get("active_expert") or ""),
+            active_job_id=str(raw.get("active_job_id") or ""),
+            reservation_ids=[
+                str(item)
+                for item in list(raw.get("reservation_ids", []) or [])
+                if item is not None and str(item)
+            ],
+            world_stale=bool(raw.get("world_stale", False)),
+            active_group_size=int(raw.get("active_group_size", 0) or 0),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state,
+            "phase": self.phase,
+            "status_line": self.status_line,
+            "waiting_reason": self.waiting_reason,
+            "blocking_reason": self.blocking_reason,
+            "active_expert": self.active_expert,
+            "active_job_id": self.active_job_id,
+            "reservation_ids": list(self.reservation_ids),
+            "world_stale": self.world_stale,
+            "active_group_size": self.active_group_size,
+        }

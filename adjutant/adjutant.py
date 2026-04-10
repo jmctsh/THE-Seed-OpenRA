@@ -1007,7 +1007,7 @@ class Adjutant:
             runtime_state=runtime_state,
             world_sync=world_sync,
             unit_mix=unit_mix,
-        )
+        ).to_dict()
 
     # --- Main entry point ---
 

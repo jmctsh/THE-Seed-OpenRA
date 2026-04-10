@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from runtime_views import CapabilityStatusSnapshot
+from runtime_views import CapabilityStatusSnapshot, TaskTriageSnapshot
 
 
 _TERMINAL_STATUS_LINE = {
@@ -58,7 +58,7 @@ def build_task_triage(
     latest_warning: Optional[str] = None,
     primary_summary: str = "",
     unit_mix: Optional[list[str]] = None,
-) -> dict[str, Any]:
+) -> TaskTriageSnapshot:
     """Build a shared task triage payload from runtime state.
 
     `main.py` and `Adjutant` have different local concerns, but the runtime
@@ -112,62 +112,54 @@ def build_task_triage(
         capability_status = candidate_capability
 
     if status in _TERMINAL_STATUS_LINE:
-        return {
-            "state": "completed",
-            "phase": status,
-            "status_line": _TERMINAL_STATUS_LINE[status],
-            "waiting_reason": "",
-            "blocking_reason": "",
-            "active_expert": "",
-            "active_job_id": "",
-            "reservation_ids": reservation_ids,
-            "world_stale": bool(world_sync.get("stale")),
-            "active_group_size": active_group_size,
-        }
+        return TaskTriageSnapshot(
+            state="completed",
+            phase=status,
+            status_line=_TERMINAL_STATUS_LINE[status],
+            reservation_ids=reservation_ids,
+            world_stale=bool(world_sync.get("stale")),
+            active_group_size=active_group_size,
+        )
 
     if bool(world_sync.get("stale")):
-        return {
-            "state": "degraded",
-            "phase": "world_sync",
-            "status_line": "世界状态同步异常，等待恢复",
-            "waiting_reason": "world_stale",
-            "blocking_reason": "world_stale",
-            "active_expert": active_expert,
-            "active_job_id": active_job_id,
-            "reservation_ids": reservation_ids,
-            "world_stale": True,
-            "active_group_size": active_group_size,
-        }
+        return TaskTriageSnapshot(
+            state="degraded",
+            phase="world_sync",
+            status_line="世界状态同步异常，等待恢复",
+            waiting_reason="world_stale",
+            blocking_reason="world_stale",
+            active_expert=active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            world_stale=True,
+            active_group_size=active_group_size,
+        )
 
     if pending_question is not None:
         question = str(pending_question.get("question", "")).strip()
         question = question[:36] + "..." if len(question) > 36 else question
-        return {
-            "state": "waiting_player",
-            "phase": "question",
-            "status_line": with_unit_mix(f"等待玩家回复：{question}" if question else "等待玩家回复"),
-            "waiting_reason": "player_response",
-            "blocking_reason": "",
-            "active_expert": active_expert,
-            "active_job_id": active_job_id,
-            "reservation_ids": reservation_ids,
-            "world_stale": False,
-            "active_group_size": active_group_size,
-        }
+        return TaskTriageSnapshot(
+            state="waiting_player",
+            phase="question",
+            status_line=with_unit_mix(f"等待玩家回复：{question}" if question else "等待玩家回复"),
+            waiting_reason="player_response",
+            active_expert=active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            active_group_size=active_group_size,
+        )
 
     if latest_warning:
-        return {
-            "state": "blocked",
-            "phase": "warning",
-            "status_line": with_unit_mix(latest_warning),
-            "waiting_reason": "",
-            "blocking_reason": "task_warning",
-            "active_expert": active_expert,
-            "active_job_id": active_job_id,
-            "reservation_ids": reservation_ids,
-            "world_stale": False,
-            "active_group_size": active_group_size,
-        }
+        return TaskTriageSnapshot(
+            state="blocked",
+            phase="warning",
+            status_line=with_unit_mix(latest_warning),
+            blocking_reason="task_warning",
+            active_expert=active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            active_group_size=active_group_size,
+        )
 
     if is_capability:
         pending_request_count = capability_status.pending_request_count
@@ -201,8 +193,8 @@ def build_task_triage(
         if blocker:
             status_line += f" | blocker={capability_blocker_status_text(capability_status)}"
 
-        return {
-            "state": (
+        return TaskTriageSnapshot(
+            state=(
                 "running"
                 if phase in {"bootstrapping", "dispatch", "fulfilling", "executing"}
                 or active_job_types
@@ -211,16 +203,15 @@ def build_task_triage(
                 or reinforcement_request_count
                 else "idle"
             ),
-            "phase": phase,
-            "status_line": status_line,
-            "waiting_reason": waiting_reason,
-            "blocking_reason": blocker,
-            "active_expert": ",".join(active_job_types[:3]) if active_job_types else active_expert,
-            "active_job_id": active_job_id,
-            "reservation_ids": reservation_ids,
-            "world_stale": False,
-            "active_group_size": active_group_size,
-        }
+            phase=phase,
+            status_line=status_line,
+            waiting_reason=waiting_reason,
+            blocking_reason=blocker,
+            active_expert=",".join(active_job_types[:3]) if active_job_types else active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            active_group_size=active_group_size,
+        )
 
     if reservations:
         first = reservations[0]
@@ -231,75 +222,63 @@ def build_task_triage(
             if remaining > 0
             else f"等待能力模块交付单位：{unit_name}"
         )
-        return {
-            "state": "waiting_units",
-            "phase": "reservation",
-            "status_line": with_unit_mix(status_line),
-            "waiting_reason": "unit_reservation",
-            "blocking_reason": "",
-            "active_expert": active_expert,
-            "active_job_id": active_job_id,
-            "reservation_ids": reservation_ids,
-            "world_stale": False,
-            "active_group_size": active_group_size,
-        }
+        return TaskTriageSnapshot(
+            state="waiting_units",
+            phase="reservation",
+            status_line=with_unit_mix(status_line),
+            waiting_reason="unit_reservation",
+            active_expert=active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            active_group_size=active_group_size,
+        )
 
     if waiting_jobs:
         status_line = primary_summary or f"等待执行条件满足：{active_expert or '任务'}"
-        return {
-            "state": "waiting",
-            "phase": "job_waiting",
-            "status_line": with_unit_mix(status_line),
-            "waiting_reason": "job_waiting",
-            "blocking_reason": "",
-            "active_expert": active_expert,
-            "active_job_id": active_job_id,
-            "reservation_ids": reservation_ids,
-            "world_stale": False,
-            "active_group_size": active_group_size,
-        }
+        return TaskTriageSnapshot(
+            state="waiting",
+            phase="job_waiting",
+            status_line=with_unit_mix(status_line),
+            waiting_reason="job_waiting",
+            active_expert=active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            active_group_size=active_group_size,
+        )
 
     if running_jobs:
         status_line = primary_summary or f"运行中：{active_expert or '任务'}"
-        return {
-            "state": "running",
-            "phase": "job_running",
-            "status_line": with_unit_mix(status_line),
-            "waiting_reason": "",
-            "blocking_reason": "",
-            "active_expert": active_expert,
-            "active_job_id": active_job_id,
-            "reservation_ids": reservation_ids,
-            "world_stale": False,
-            "active_group_size": active_group_size,
-        }
+        return TaskTriageSnapshot(
+            state="running",
+            phase="job_running",
+            status_line=with_unit_mix(status_line),
+            active_expert=active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            active_group_size=active_group_size,
+        )
 
     if active_group_size > 0:
         status_line = f"执行中 | group={active_group_size}"
         if unit_mix:
             status_line += f" | {', '.join(unit_mix[:3])}"
-        return {
-            "state": "running",
-            "phase": "task_active",
-            "status_line": status_line,
-            "waiting_reason": "",
-            "blocking_reason": "",
-            "active_expert": active_expert,
-            "active_job_id": active_job_id,
-            "reservation_ids": reservation_ids,
-            "world_stale": False,
-            "active_group_size": active_group_size,
-        }
+        return TaskTriageSnapshot(
+            state="running",
+            phase="task_active",
+            status_line=status_line,
+            active_expert=active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            active_group_size=active_group_size,
+        )
 
-    return {
-        "state": "idle",
-        "phase": "task_active",
-        "status_line": with_unit_mix("等待调度"),
-        "waiting_reason": "scheduler",
-        "blocking_reason": "",
-        "active_expert": active_expert,
-        "active_job_id": active_job_id,
-        "reservation_ids": reservation_ids,
-        "world_stale": False,
-        "active_group_size": active_group_size,
-    }
+    return TaskTriageSnapshot(
+        state="idle",
+        phase="task_active",
+        status_line=with_unit_mix("等待调度"),
+        waiting_reason="scheduler",
+        active_expert=active_expert,
+        active_job_id=active_job_id,
+        reservation_ids=reservation_ids,
+        active_group_size=active_group_size,
+    )
