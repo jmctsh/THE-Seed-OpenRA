@@ -1,0 +1,44 @@
+"""Tests for structured TaskAgent policy helpers."""
+
+from __future__ import annotations
+
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from task_agent.policy import (
+    CAPABILITY_ROSTER_TEXT,
+    ORDINARY_HIDDEN_TOOL_NAMES,
+    ORDINARY_ROSTER_TEXT,
+    build_capability_system_prompt,
+    build_system_prompt,
+    capability_tools,
+    ordinary_tools,
+)
+from task_agent.tools import CAPABILITY_TOOL_NAMES, TOOL_DEFINITIONS
+
+
+def test_policy_tool_surfaces_match_existing_boundaries() -> None:
+    normal = {tool["function"]["name"] for tool in ordinary_tools(TOOL_DEFINITIONS)}
+    capability = {tool["function"]["name"] for tool in capability_tools(TOOL_DEFINITIONS, CAPABILITY_TOOL_NAMES)}
+
+    assert ORDINARY_HIDDEN_TOOL_NAMES <= {"produce_units", "set_rally_point"}
+    assert "produce_units" not in normal
+    assert "set_rally_point" not in normal
+    assert "request_units" in normal
+    assert "produce_units" in capability
+    assert "set_rally_point" in capability
+    assert "request_units" not in capability
+
+
+def test_policy_prompts_pin_demo_roster_text() -> None:
+    normal_prompt = build_system_prompt()
+    capability_prompt = build_capability_system_prompt()
+
+    assert "e1=步兵" in ORDINARY_ROSTER_TEXT
+    assert "powr" in CAPABILITY_ROSTER_TEXT
+    assert "e1=步兵" in normal_prompt
+    assert "不能自行补生产" in normal_prompt
+    assert "只在有明确需求时才行动" in capability_prompt
+    assert "不在上述 roster 内的单位/建筑" in capability_prompt
