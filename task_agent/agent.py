@@ -67,6 +67,18 @@ CAPABILITY_SYSTEM_PROMPT = build_capability_system_prompt()
 _CONTEXT_MARKER = "[CONTEXT UPDATE]"
 _MAX_TOOL_RESULT_CHARS = 2000
 _MAX_HISTORY_CONTEXT_LINES = 6
+_HISTORY_CONTEXT_PREFIXES = (
+    "[任务]",
+    "[世界]",
+    "[状态]",
+    "[阶段]",
+    "[阻塞]",
+    "[能力近期指令]",
+    "[待处理请求]",
+    "[单位预留]",
+    "[玩家消息]",
+    "[其他活跃任务]",
+)
 
 
 def _trim_conversation(
@@ -147,7 +159,22 @@ def _compact_history_context_message(message: dict[str, Any]) -> dict[str, Any]:
     if len(lines) <= 2:
         return dict(message)
     compact_lines = [_CONTEXT_MARKER]
-    compact_lines.extend(lines[2:2 + _MAX_HISTORY_CONTEXT_LINES])
+    selected: list[str] = []
+    seen_prefixes: set[str] = set()
+    for line in lines[2:]:
+        prefix = next((item for item in _HISTORY_CONTEXT_PREFIXES if line.startswith(item)), "")
+        if prefix:
+            if prefix in seen_prefixes:
+                continue
+            seen_prefixes.add(prefix)
+        if not prefix and selected:
+            continue
+        selected.append(line)
+        if len(selected) >= _MAX_HISTORY_CONTEXT_LINES:
+            break
+    if not selected:
+        selected.extend(lines[2:2 + _MAX_HISTORY_CONTEXT_LINES])
+    compact_lines.extend(selected)
     return {
         **message,
         "content": "\n".join(compact_lines),

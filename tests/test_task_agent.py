@@ -2029,6 +2029,32 @@ def test_compact_history_context_message_drops_json_header() -> None:
     print("  PASS: compact_history_context_message_drops_json_header")
 
 
+def test_compact_history_context_message_dedups_repeated_blocks() -> None:
+    msg = {
+        "role": "user",
+        "content": "\n".join(
+            [
+                _CONTEXT_MARKER,
+                '{"context_packet":{"task":{"task_id":"t1"}}}',
+                "[任务] 探索地图 | 状态:running | id:t1",
+                "[世界] 资金5000 资源0 电力100/40 | 我军3(闲置1) 敌军0 | 探索10.0%",
+                "[待处理请求]",
+                'REQ-1 #001 infantryx1 "步兵"',
+                "[待处理请求]",
+                'REQ-2 #001 infantryx1 "步兵"',
+                "[阶段] task=dispatch",
+            ]
+        ),
+    }
+
+    compact = _compact_history_context_message(msg)
+
+    assert compact["content"].count("[待处理请求]") == 1
+    assert 'REQ-2 #001 infantryx1 "步兵"' not in compact["content"]
+    assert "[阶段] task=dispatch" in compact["content"]
+    print("  PASS: compact_history_context_message_dedups_repeated_blocks")
+
+
 # --- Smart wake tests ---
 
 def test_smart_wake_skips_llm_when_no_new_info() -> None:
@@ -2404,10 +2430,11 @@ if __name__ == "__main__":
     test_truncate_tool_result_hard_truncates_large_non_list()
     test_conversation_window_bounds_message_size()
     test_compact_history_context_message_drops_json_header()
+    test_compact_history_context_message_dedups_repeated_blocks()
     test_smart_wake_skips_llm_when_no_new_info()
     test_smart_wake_runs_llm_when_signal_arrives()
     test_smart_wake_runs_llm_when_job_status_changes()
     test_smart_wake_no_skip_when_no_jobs()
     test_smart_wake_trigger_label_refined()
 
-    print(f"\nAll 60 tests passed!")
+    print(f"\nAll 61 tests passed!")
