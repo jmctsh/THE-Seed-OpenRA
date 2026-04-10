@@ -572,9 +572,10 @@ def test_complete_task_releases_resources_from_terminal_jobs() -> None:
         CombatJobConfig(target_position=(100, 100), engagement_mode=EngagementMode.HARASS),
     )
 
-    controller1 = kernel._jobs[job1.job_id]
+    controller1 = next(job for job in kernel.active_jobs() if job.job_id == job1.job_id)
     assert controller1.resources == ["actor:10"]
     controller1.status = JobStatus.SUCCEEDED
+    assert all(job.job_id != job1.job_id for job in kernel.active_jobs())
 
     assert kernel.complete_task(task1.task_id, "succeeded", "done") is True
     assert kernel.world_model.resource_bindings == {}
@@ -585,7 +586,7 @@ def test_complete_task_releases_resources_from_terminal_jobs() -> None:
         "CombatExpert",
         CombatJobConfig(target_position=(100, 100), engagement_mode=EngagementMode.HARASS),
     )
-    controller2 = kernel._jobs[job2.job_id]
+    controller2 = next(job for job in kernel.active_jobs() if job.job_id == job2.job_id)
 
     assert controller2.resources == ["actor:10"]
     print("  PASS: complete_task_releases_resources_from_terminal_jobs")
@@ -799,7 +800,7 @@ def test_actor_event_routing_broadcasts_and_notifications() -> None:
         CombatJobConfig(target_position=(100, 100), engagement_mode=EngagementMode.HARASS),
     )
 
-    controller = kernel._jobs[job.job_id]
+    controller = next(item for item in kernel.active_jobs() if item.job_id == job.job_id)
     agent = kernel.get_task_agent(task.task_id)
     assert isinstance(controller, ResourceJob)
     assert isinstance(agent, RecordingAgent)

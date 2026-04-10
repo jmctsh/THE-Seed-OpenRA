@@ -1221,6 +1221,12 @@ class Kernel:
         jobs.sort(key=lambda item: item.job_id)
         return jobs
 
+    def active_jobs(self) -> tuple[BaseJob | _ManagedJob, ...]:
+        """Return a read-only snapshot of non-terminal job controllers."""
+        jobs = [controller for controller in self._jobs.values() if not self._is_terminal_status(controller.status)]
+        jobs.sort(key=lambda item: item.job_id)
+        return tuple(jobs)
+
     def list_tasks(self) -> list[Task]:
         return sorted(self.tasks.values(), key=lambda item: item.created_at)
 

@@ -15,7 +15,7 @@ from typing import Any, Optional
 import aiohttp
 from logging_system import start_persistence_session, stop_persistence_session
 
-from models import Event, EventType
+from models import Event, EventType, TaskStatus
 from main import RuntimeBridge
 from task_agent.queue import AgentQueue
 from game_loop import GameLoop, GameLoopConfig
@@ -439,17 +439,22 @@ def test_sync_request_pushes_current_state_directly():
 
     class FakeKernel:
         def __init__(self):
-            self._task_runtimes = {}
-            self._jobs = {}
+            self._tasks = [FakeTask("t1", "建造电厂")]
 
         def list_pending_questions(self):
             return [{"message_id": "msg_1", "task_id": "t1", "options": ["是", "否"]}]
 
         def list_tasks(self):
-            return [FakeTask("t1", "建造电厂")]
+            return list(self._tasks)
 
         def jobs_for_task(self, task_id):
             return [FakeJob("j1", "EconomyExpert")] if task_id == "t1" else []
+
+        def get_task_agent(self, task_id):
+            return None
+
+        def active_jobs(self):
+            return []
 
         def list_task_messages(self):
             return []
@@ -530,16 +535,21 @@ def test_task_replay_request_returns_persisted_task_log():
 
     class FakeKernel:
         def __init__(self):
-            self._task_runtimes = {}
-            self._jobs = {}
+            self._tasks = []
 
         def list_pending_questions(self):
             return []
 
         def list_tasks(self):
-            return []
+            return list(self._tasks)
 
         def jobs_for_task(self, task_id):
+            return []
+
+        def get_task_agent(self, task_id):
+            return None
+
+        def active_jobs(self):
             return []
 
         def list_task_messages(self):
@@ -658,6 +668,110 @@ def test_task_replay_request_returns_persisted_task_log():
     print("  PASS: task_replay_request_returns_persisted_task_log")
 
 
+def test_runtime_bridge_sync_runtime_uses_public_kernel_accessors():
+    """Bridge sync should rely on public Kernel accessors, not private fields."""
+
+    class FakeTask:
+        def __init__(self, task_id: str, status=TaskStatus.RUNNING):
+            self.task_id = task_id
+            self.raw_text = "test"
+            self.kind = type("Kind", (), {"value": "managed"})()
+            self.priority = 50
+            self.status = status
+            self.timestamp = 123.0
+            self.created_at = 100.0
+
+    class FakeAgent:
+        def __init__(self):
+            self.queue = AgentQueue()
+            self.config = type("Config", (), {"review_interval": 0.25})()
+            self.is_suspended = False
+
+    class FakeJob:
+        def __init__(self, job_id: str):
+            self.job_id = job_id
+            self.task_id = "t1"
+            self.expert_type = "CombatExpert"
+            self.status = type("Status", (), {"value": "running"})()
+            self.resources = []
+            self.timestamp = 124.0
+            self.config = {}
+
+    class FakeKernel:
+        def __init__(self):
+            self.task = FakeTask("t1")
+            self.agent = FakeAgent()
+            self.job = FakeJob("j1")
+            self.tasks = [self.task]
+            self.jobs = [self.job]
+
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return list(self.tasks)
+
+        def jobs_for_task(self, task_id):
+            return [self.job] if task_id == "t1" else []
+
+        def get_task_agent(self, task_id):
+            return self.agent if task_id == "t1" else None
+
+        def active_jobs(self):
+            return list(self.jobs)
+
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+        def runtime_state(self):
+            return {}
+
+    class FakeGameLoop:
+        def __init__(self):
+            self.registered_agents: list[tuple[str, float]] = []
+            self.unregistered_agents: list[str] = []
+            self.registered_jobs: list[str] = []
+            self.unregistered_jobs: list[str] = []
+
+        def register_agent(self, task_id, queue, review_interval=10.0, *, is_suspended=None):
+            del queue, is_suspended
+            self.registered_agents.append((task_id, review_interval))
+
+        def unregister_agent(self, task_id):
+            self.unregistered_agents.append(task_id)
+
+        def register_job(self, job):
+            self.registered_jobs.append(job.job_id)
+
+        def unregister_job(self, job_id):
+            self.unregistered_jobs.append(job_id)
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    bridge.sync_runtime()
+
+    assert bridge.game_loop.registered_agents == [("t1", 0.25)]
+    assert bridge.game_loop.registered_jobs == ["j1"]
+
+    bridge.kernel.task.status = TaskStatus.SUCCEEDED
+    bridge.kernel.jobs = []
+    bridge.sync_runtime()
+
+    assert bridge.game_loop.unregistered_agents == ["t1"]
+    assert bridge.game_loop.unregistered_jobs == ["j1"]
+    print("  PASS: runtime_bridge_sync_runtime_uses_public_kernel_accessors")
+
+
 # --- T12: WS throttle tests (no network needed) ---
 
 class _TrackingWSServer(WSServer):
@@ -751,9 +865,10 @@ if __name__ == "__main__":
     test_ws_send_to_client_targets_single_client()
     test_sync_request_pushes_current_state_directly()
     test_task_replay_request_returns_persisted_task_log()
+    test_runtime_bridge_sync_runtime_uses_public_kernel_accessors()
     test_world_snapshot_throttled()
     test_task_list_throttled()
     test_world_snapshot_passes_after_interval()
     test_other_messages_not_throttled()
 
-    print(f"\nAll 15 tests passed!")
+    print(f"\nAll 16 tests passed!")

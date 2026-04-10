@@ -201,20 +201,22 @@ class RuntimeBridge(InboundHandler):
 
     def sync_runtime(self) -> None:
         active_agent_ids: set[str] = set()
-        for task_id, runtime in self.kernel._task_runtimes.items():  # type: ignore[attr-defined]
-            task = runtime.task
+        for task in self.kernel.list_tasks():
             if task.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.ABORTED, TaskStatus.PARTIAL}:
                 continue
-            active_agent_ids.add(task_id)
-            if task_id not in self._registered_agents:
-                review_interval = getattr(getattr(runtime.agent, "config", None), "review_interval", 10.0)
+            agent = self.kernel.get_task_agent(task.task_id)
+            if agent is None:
+                continue
+            active_agent_ids.add(task.task_id)
+            if task.task_id not in self._registered_agents:
+                review_interval = getattr(getattr(agent, "config", None), "review_interval", 10.0)
                 self.game_loop.register_agent(
-                    task_id,
-                    runtime.agent.queue,
+                    task.task_id,
+                    agent.queue,
                     review_interval=review_interval,
-                    is_suspended=lambda agent=runtime.agent: agent.is_suspended,
+                    is_suspended=lambda agent=agent: agent.is_suspended,
                 )
-                self._registered_agents.add(task_id)
+                self._registered_agents.add(task.task_id)
 
         for task_id in list(self._registered_agents):
             if task_id not in active_agent_ids:
@@ -222,13 +224,11 @@ class RuntimeBridge(InboundHandler):
                 self._registered_agents.discard(task_id)
 
         active_job_ids: set[str] = set()
-        for job_id, controller in self.kernel._jobs.items():  # type: ignore[attr-defined]
-            if controller.status.value in {"succeeded", "failed", "aborted"}:
-                continue
-            active_job_ids.add(job_id)
-            if job_id not in self._registered_jobs:
+        for controller in self.kernel.active_jobs():
+            active_job_ids.add(controller.job_id)
+            if controller.job_id not in self._registered_jobs:
                 self.game_loop.register_job(controller)
-                self._registered_jobs.add(job_id)
+                self._registered_jobs.add(controller.job_id)
 
         for job_id in list(self._registered_jobs):
             if job_id not in active_job_ids:
