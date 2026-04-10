@@ -21,7 +21,7 @@ from typing import Any, Optional
 
 import yaml
 
-from models import DeployJobConfig, EconomyJobConfig, ReconJobConfig
+from models import CombatJobConfig, DeployJobConfig, EconomyJobConfig, EngagementMode, ReconJobConfig
 from nlu_pipeline.rules import CommandRouter, RouteResult
 from nlu_pipeline.runtime import PortableIntentModel
 from openra_api.production_names import normalize_production_name
@@ -59,7 +59,7 @@ class RuntimeNLUDecision:
 class RuntimeNLURouter:
     """Adapter over the old tested NLU front-half for current runtime actions."""
 
-    SUPPORTED_DIRECT_INTENTS = {"deploy_mcv", "produce", "explore", "mine", "stop_attack", "query_actor"}
+    SUPPORTED_DIRECT_INTENTS = {"deploy_mcv", "produce", "explore", "mine", "stop_attack", "query_actor", "attack"}
 
     def __init__(
         self,
@@ -238,6 +238,10 @@ class RuntimeNLURouter:
                 )
             ]
         if intent == "explore":
+            # Extract scout_count from entities or "所有/全部" keywords
+            scout_count = int(entities.get("count") or 1)
+            if scout_count <= 1 and re.search(r"(所有|全部|全军|都去|都派|全体)", source_text):
+                scout_count = 10  # "all" → request many, resource manager will cap
             return [
                 DirectNLUStep(
                     intent=intent,
@@ -248,6 +252,7 @@ class RuntimeNLURouter:
                         target_owner="enemy",
                         retreat_hp_pct=0.3,
                         avoid_combat=True,
+                        scout_count=scout_count,
                     ),
                     reason="nlu_explore",
                     source_text=source_text,
@@ -311,6 +316,24 @@ class RuntimeNLURouter:
                     source_text=source_text,
                 )
             ]
+        if intent == "attack":
+            unit_count = int(entities.get("count") or 0)
+            if re.search(r"(所有|全部|全军|全体|都去|总攻)", source_text):
+                unit_count = 0  # 0 = all available — override any default count
+            # target_position (0,0) → CombatJob auto-targets nearest enemy
+            return [
+                DirectNLUStep(
+                    intent=intent,
+                    expert_type="CombatExpert",
+                    config=CombatJobConfig(
+                        target_position=(0, 0),
+                        engagement_mode=EngagementMode.ASSAULT,
+                        unit_count=unit_count,
+                    ),
+                    reason="nlu_attack",
+                    source_text=source_text,
+                )
+            ]
         return []
 
     def _allow_safe_composite_router_override(self, route_result: RouteResult, text: str) -> bool:
@@ -349,6 +372,8 @@ class RuntimeNLURouter:
             return True
         if route_intent == "stop_attack":
             return self._is_stop_attack_command(text)
+        if route_intent == "attack":
+            return self._looks_like_attack(text)
         return False
 
     def _is_blocked(self, text: str) -> bool:
@@ -412,6 +437,15 @@ class RuntimeNLURouter:
         )
 
     @staticmethod
+    def _looks_like_attack(text: str) -> bool:
+        return bool(
+            re.search(
+                r"(进攻|攻击|出击|突袭|冲锋|总攻|全军进攻|全军出击|打过去|打他|揍他|干他|集火)",
+                text,
+            )
+        )
+
+    @staticmethod
     def _looks_like_query_command(text: str) -> bool:
         return bool(
             re.search(
@@ -443,17 +477,22 @@ class RuntimeNLURouter:
             return False
         if re.search(
             r"(左边|右边|上面|下面|前面|后面|旁边|附近|周围|对面|那里|这里|那边|这边|北边|南边|东边|西边"
-            r"|怎么样|什么情况|状况|好了吗|好没|完了吗|在哪|被打|被攻击|着火|损坏|炸了|掉了|没了|丢了)",
+            r"|怎么样|什么情况|状况|好了吗|好没|完了吗|在哪|被打|被攻击|着火|损坏)",
             command,
         ):
+            return False
+        # Power/resource shortage phrases → implicit produce (e.g. "没电了", "缺电", "断电")
+        if re.search(r"(没电|缺电|断电|电力不足|电不够|停电)", command):
+            return True
+        if re.search(r"(炸了|掉了|没了|丢了)", command):
             return False
         if re.search(r"^([0-9一二三四五六七八九十两]+)(个|辆|座|架|名|只|台)?", command):
             return True
         # Only match short strings that contain a known building/unit keyword.
         # Do NOT use a catch-all regex — it misclassifies informational phrases
-        # like "断电了", "找到敌方基地" as production commands.
+        # like "找到敌方基地" as production commands.
         if re.search(
-            r"(电厂|核电|矿场|精炼|兵营|车间|战车|雷达|科技|维修|狗屋|"
+            r"(电厂|核电|大电|矿场|精炼|兵营|车间|战车|雷达|科技|维修|修理|狗屋|"
             r"磁暴|火焰|防空|机枪|碉堡|"
             r"步兵|火箭兵|工程师|军犬|掷弹|"
             r"坦克|重坦|猛犸|矿车|基地车|地雷|"

@@ -430,6 +430,7 @@ class CommandRouter:
     def _match_intent(self, command: str) -> tuple[Optional[str], float]:
         best_intent: Optional[str] = None
         best_score = 0.0
+        best_match_len = 0  # tie-break: prefer longer synonym match
 
         for intent, rule in self.command_dict.items():
             synonyms = rule.get("synonyms", [])
@@ -439,11 +440,14 @@ class CommandRouter:
                     continue
                 if s_norm in command:
                     score = 1.0
+                    match_len = len(s_norm)
                 else:
                     score = self._similarity(command, s_norm)
-                if score > best_score:
+                    match_len = 0
+                if score > best_score or (score == best_score and match_len > best_match_len):
                     best_score = score
                     best_intent = intent
+                    best_match_len = match_len
 
         return best_intent, best_score
 
@@ -537,9 +541,13 @@ class CommandRouter:
             return False
         if re.search(
             r"(左边|右边|上面|下面|前面|后面|旁边|附近|周围|对面|那里|这里|那边|这边|北边|南边|东边|西边"
-            r"|怎么样|什么情况|状况|好了吗|好没|完了吗|在哪|被打|被攻击|着火|损坏|炸了|掉了|没了|丢了)",
+            r"|怎么样|什么情况|状况|好了吗|好没|完了吗|在哪|被打|被攻击|着火|损坏)",
             command,
         ):
+            return False
+        if re.search(r"(没电|缺电|断电|电力不足|电不够|停电)", command):
+            return True
+        if re.search(r"(炸了|掉了|没了|丢了)", command):
             return False
         if re.search(r"^([0-9一二三四五六七八九十两]+)(个|辆|座|架|名|只|台)?", command):
             return True

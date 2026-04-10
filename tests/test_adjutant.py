@@ -992,6 +992,33 @@ def test_rule_routed_attack_skips_llm_and_targets_visible_enemy():
     print("  PASS: rule_routed_attack_skips_llm_and_targets_visible_enemy")
 
 
+def test_attack_feedback_when_explicit_target_not_visible():
+    class NoEnemyWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            if query_type == "enemy_actors":
+                return {"actors": [], "timestamp": time.time()}
+            return super().query(query_type, params)
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = NoEnemyWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("集火雷达站")
+        assert result["type"] == "command"
+        assert result["ok"] is False
+        assert result["routing"] == "rule"
+        assert result["reason"] == "rule_attack_missing_target"
+        assert "没有可见的雷达站目标" in result["response_text"]
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.started_jobs == []
+    print("  PASS: attack_feedback_when_explicit_target_not_visible")
+
+
 def test_unmatched_command_still_uses_llm_path():
     mock_llm = MockProvider(responses=[
         LLMResponse(text='{"type":"command","confidence":0.95}', model="mock"),

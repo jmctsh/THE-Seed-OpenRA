@@ -124,6 +124,9 @@ class MockWorldModel:
     def query(self, query_type, params=None):
         return {"data": [], "timestamp": time.time()}
 
+    def refresh_health(self):
+        return {"status": "ok", "stale": False, "consecutive_failures": 0}
+
 
 # --- 1. Reply Routing Tests ---
 
