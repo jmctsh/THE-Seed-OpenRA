@@ -319,6 +319,14 @@ def test_occupy_units_sends_precise_actor_ids() -> None:
     print("  PASS: occupy_units_sends_precise_actor_ids")
 
 
+def test_game_api_dependency_names_follow_demo_truth() -> None:
+    assert GameAPI._dependency_display_names("矿场") == ["发电厂", "建造厂"]
+    assert GameAPI._dependency_display_names("雷达站") == ["矿场", "建造厂"]
+    assert GameAPI._dependency_display_names("重型坦克") == ["维修厂", "战车工厂"]
+    assert GameAPI._dependency_display_names("猛犸坦克") == ["维修厂", "科技中心", "战车工厂"]
+    print("  PASS: game_api_dependency_names_follow_demo_truth")
+
+
 if __name__ == "__main__":
     print("Running GameAPI tests...\n")
     test_game_api_reuses_single_connection()
@@ -330,4 +338,5 @@ if __name__ == "__main__":
     test_place_building_accepts_ready_item_change()
     test_manage_production_accepts_precise_queue_targeting()
     test_occupy_units_sends_precise_actor_ids()
-    print("\nAll 9 tests passed!")
+    test_game_api_dependency_names_follow_demo_truth()
+    print("\nAll 10 tests passed!")

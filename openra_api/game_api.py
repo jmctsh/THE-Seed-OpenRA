@@ -6,7 +6,7 @@ import uuid
 import logging
 from typing import List, Optional, Tuple, Dict, Any
 from .models import *
-from .production_names import production_name_variants
+from .production_names import production_name_unit_id, production_name_variants
 
 # API版本常量
 API_VERSION = "1.0"
@@ -1124,30 +1124,14 @@ class GameAPI:
 
     # ===== 依赖关系表 =====
 
-    BUILDING_DEPENDENCIES = {
-        "电厂": [],
-        "兵营": ["电厂"],
-        "矿场": ["电厂"],
-        "车间": ["矿场"],
-        "雷达": ["矿场"],
-        "维修中心": ["车间"],
-        "核电": ["雷达"],
-        "科技中心": ["车间", "雷达"],
-        "机场": ["雷达"]
-    }
+    @staticmethod
+    def _dependency_display_names(name: str) -> list[str]:
+        from openra_state.data.dataset import demo_display_name_for, demo_prerequisites_for
 
-    UNIT_DEPENDENCIES = {
-        "步兵": ["兵营"],
-        "火箭兵": ["兵营"],
-        "工程师": ["兵营"],
-        "手雷兵": ["兵营"],
-        "矿车": ["车间"],
-        "防空车": ["车间"],
-        "装甲车": ["车间"],
-        "重坦": ["车间", "维修中心"],
-        "v2": ["车间", "雷达"],
-        "猛犸坦克": ["车间", "维修中心", "科技中心"]
-    }
+        unit_id = production_name_unit_id(name)
+        if not unit_id:
+            return []
+        return [demo_display_name_for(prereq) for prereq in demo_prerequisites_for(unit_id)]
 
     def deploy_mcv_and_wait(self, wait_time: float = 1.0) -> None:
         '''展开自己的基地车并等待一小会
@@ -1173,7 +1157,7 @@ class GameAPI:
             return True
 
         # 检查该建筑的依赖
-        deps = self.BUILDING_DEPENDENCIES.get(building_name, [])
+        deps = self._dependency_display_names(building_name)
         for dep in deps:
             if not self.ensure_building_wait_buildself(dep):
                 return False
@@ -1190,7 +1174,7 @@ class GameAPI:
             return True
 
         # 检查该建筑的依赖
-        deps = self.BUILDING_DEPENDENCIES.get(building_name, [])
+        deps = self._dependency_display_names(building_name)
         for dep in deps:
             self.ensure_building_wait_buildself(dep)
 
@@ -1210,8 +1194,7 @@ class GameAPI:
         '''
         if self.can_produce(unit_name):
             return True
-        # 根据UNIT_DEPENDENCIES找到依赖的建筑
-        needed_buildings = self.UNIT_DEPENDENCIES.get(unit_name, [])
+        needed_buildings = self._dependency_display_names(unit_name)
         for b in needed_buildings:
             self.ensure_building_wait_buildself(b)
         # 如果依赖全部OK还是生产不出来，可能是什么东西没修好，稍微等一下
