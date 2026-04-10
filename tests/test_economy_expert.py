@@ -673,6 +673,47 @@ def test_economy_job_faction_restricted_fails_immediately() -> None:
     print("  PASS: economy_job_faction_restricted_fails_immediately")
 
 
+def test_economy_job_uses_observed_player_faction_for_cannot_produce() -> None:
+    """Observed self units should override the old Soviet-only assumption."""
+    api = MockGameAPI()
+    api.can_produce_value = False
+    world = MockWorldModel()
+    world.queues["Vehicle"] = {"queue_type": "Vehicle", "items": [], "has_ready_item": False}
+    world.actors = [
+        {"actor_id": 101, "name": "1tnk", "display_name": "轻坦克", "category": "vehicle"},
+    ]
+
+    # Allied player requesting Allied-only unit -> WAIT for prerequisites, not immediate FAILED.
+    signals_allied: list = []
+    job_allied = EconomyJob(
+        job_id="j_allied_runtime",
+        task_id="t1",
+        config=make_config(unit_type="2tnk", count=1, queue_type="Vehicle"),
+        signal_callback=signals_allied.append,
+        game_api=api,
+        world_model=world,
+    )
+    job_allied.do_tick()
+    assert job_allied.status == JobStatus.WAITING, f"Allied unit on Allied player should WAIT, got {job_allied.status}"
+
+    # Allied player requesting Soviet-only unit -> immediate FAILED with Soviet-only guidance.
+    signals_soviet: list = []
+    job_soviet = EconomyJob(
+        job_id="j_soviet_runtime",
+        task_id="t2",
+        config=make_config(unit_type="3tnk", count=1, queue_type="Vehicle"),
+        signal_callback=signals_soviet.append,
+        game_api=api,
+        world_model=world,
+    )
+    job_soviet.do_tick()
+    assert job_soviet.status == JobStatus.FAILED, f"Soviet unit on Allied player should FAIL, got {job_soviet.status}"
+    blocked = [s for s in signals_soviet if s.kind == SignalKind.BLOCKED]
+    assert blocked, "Expected a BLOCKED signal before failure"
+    assert "苏军专属" in blocked[-1].summary, f"Expected Soviet faction info: {blocked[-1].summary!r}"
+    print("  PASS: economy_job_uses_observed_player_faction_for_cannot_produce")
+
+
 def test_economy_job_second_identical_building_does_not_see_first_completion() -> None:
     """Job 2 for the same building type must NOT count Job 1's completion events."""
     from unittest.mock import patch
@@ -755,5 +796,6 @@ if __name__ == "__main__":
     test_economy_job_signals_include_request_and_reservation_ids()
     test_economy_job_cannot_produce_signal_includes_prerequisite()
     test_economy_job_faction_restricted_fails_immediately()
+    test_economy_job_uses_observed_player_faction_for_cannot_produce()
     test_economy_job_second_identical_building_does_not_see_first_completion()
-    print("\nAll 18 EconomyExpert tests passed!")
+    print("\nAll 19 EconomyExpert tests passed!")

@@ -10,6 +10,7 @@ from benchmark import span as bm_span
 from models import ConstraintEnforcement, EventType, JobStatus, EconomyJobConfig, ResourceNeed, SignalKind
 from openra_api.game_api import GameAPIError
 from openra_api.production_names import normalize_production_name, production_name_matches
+from openra_state.data.dataset import demo_faction_hint_for_unit_types
 
 from .base import BaseJob, ConstraintProvider, ExecutionExpert, SignalCallback
 from .knowledge import (
@@ -150,7 +151,7 @@ class EconomyJob(BaseJob):
             # is due to missing prerequisites, not faction mismatch — don't fail early.
             faction_req = faction_restriction_for(self.config.unit_type)
             if reason == "cannot_produce" and faction_req:
-                player_faction = "soviet"  # hardcoded — game currently Soviet-only
+                player_faction = self._player_faction()
                 if faction_req != player_faction:
                     self._enter_waiting(reason)
                     self.phase = "completed"
@@ -305,7 +306,7 @@ class EconomyJob(BaseJob):
         guidance = self._guidance_for(reason)
         info_summary_map: dict[str, str] = {}
         faction_req = faction_restriction_for(self.config.unit_type)
-        player_faction = "soviet"  # hardcoded — game currently Soviet-only
+        player_faction = self._player_faction()
         if faction_req and faction_req != player_faction:
             faction_label = "苏军" if faction_req == "soviet" else "盟军"
             cannot_produce_msg = (
@@ -449,6 +450,22 @@ class EconomyJob(BaseJob):
                 if actor_id is not None:
                     matching_ids.add(int(actor_id))
         return matching_ids
+
+    def _player_faction(self) -> str:
+        """Best-effort faction inference from current self actors, fallback Soviet."""
+        try:
+            payload = self.world_model.query("my_actors")
+        except Exception:
+            return "soviet"
+        actors = payload.get("actors", []) if isinstance(payload, dict) else []
+        unit_types: list[str] = []
+        for actor in actors:
+            if not isinstance(actor, dict):
+                continue
+            normalized = normalize_production_name(actor.get("name") or actor.get("display_name") or "")
+            if normalized:
+                unit_types.append(normalized)
+        return demo_faction_hint_for_unit_types(unit_types) or "soviet"
 
     def _sync_direct_actor_completions(self) -> None:
         if self.status == JobStatus.SUCCEEDED:
