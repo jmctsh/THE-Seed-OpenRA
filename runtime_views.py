@@ -151,3 +151,14 @@ class TaskTriageSnapshot:
             "world_stale": self.world_stale,
             "active_group_size": self.active_group_size,
         }
+
+
+@dataclass(slots=True)
+class TaskTriageInputs:
+    """Shared side inputs used to synthesize task triage."""
+
+    world_sync: dict[str, Any] = field(default_factory=dict)
+    pending_question: dict[str, Any] | None = None
+    latest_warning: str = ""
+    primary_summary: str = ""
+    unit_mix: list[str] = field(default_factory=list)

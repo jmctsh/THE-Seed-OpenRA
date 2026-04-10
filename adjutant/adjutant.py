@@ -33,8 +33,8 @@ from models import (
 )
 from openra_api.models import Actor as GameActor
 from openra_api.production_names import normalize_production_name, production_name_variants
-from runtime_views import CapabilityStatusSnapshot
-from task_triage import build_task_triage, capability_blocker_status_text
+from runtime_views import CapabilityStatusSnapshot, TaskTriageInputs
+from task_triage import build_task_triage, capability_blocker_status_text, collect_task_triage_inputs
 from unit_registry import UnitRegistry, get_default_registry
 from .runtime_nlu import DirectNLUStep, RuntimeNLUDecision, RuntimeNLURouter
 
@@ -105,7 +105,9 @@ class KernelLike(Protocol):
     def start_job(self, task_id: str, expert_type: str, config: Any) -> Any: ...
     def submit_player_response(self, response: PlayerResponse, *, now: Optional[float] = None) -> dict[str, Any]: ...
     def list_pending_questions(self) -> list[dict[str, Any]]: ...
+    def list_task_messages(self, task_id: Optional[str] = None) -> list[Any]: ...
     def list_tasks(self) -> list[Any]: ...
+    def jobs_for_task(self, task_id: str) -> list[Any]: ...
     def cancel_task(self, task_id: str) -> bool: ...
     def is_direct_managed(self, task_id: str) -> bool: ...
     def inject_player_message(self, task_id: str, text: str) -> bool: ...
@@ -1016,9 +1018,7 @@ class Adjutant:
         runtime_task: dict[str, Any],
         runtime_state: dict[str, Any],
         capability_status: CapabilityStatusSnapshot | dict[str, Any],
-        world_sync: dict[str, Any],
-        *,
-        unit_mix: Optional[list[str]] = None,
+        inputs: TaskTriageInputs,
     ) -> dict[str, Any]:
         runtime_state = dict(runtime_state or {})
         capability_snapshot = CapabilityStatusSnapshot.from_mapping(capability_status)
@@ -1028,8 +1028,7 @@ class Adjutant:
             task=task,
             runtime_task=runtime_task,
             runtime_state=runtime_state,
-            world_sync=world_sync,
-            unit_mix=unit_mix,
+            inputs=inputs,
         ).to_dict()
 
     # --- Main entry point ---
@@ -2665,6 +2664,10 @@ class Adjutant:
     def _build_context(self, player_input: str) -> AdjutantContext:
         """Build the minimal Adjutant context (~500-1000 tokens)."""
         tasks = self.kernel.list_tasks()
+        pending_questions = self.kernel.list_pending_questions()
+        list_task_messages = getattr(self.kernel, "list_task_messages", None)
+        task_messages = list_task_messages() if callable(list_task_messages) else []
+        jobs_for_task = getattr(self.kernel, "jobs_for_task", None)
         runtime_state = self._runtime_state_snapshot()
         runtime_tasks = dict(runtime_state.get("active_tasks") or {})
         capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
@@ -2690,19 +2693,26 @@ class Adjutant:
                 "unit_mix": list(group_summary.get("unit_mix", []) or []),
                 "domain": self._task_domain(str(getattr(t, "raw_text", "") or "").lower()),
             }
+            jobs = jobs_for_task(t.task_id) if callable(jobs_for_task) else []
+            triage_inputs = collect_task_triage_inputs(
+                task_id=str(t.task_id or ""),
+                jobs=jobs,
+                world_sync=world_sync,
+                pending_questions=pending_questions,
+                task_messages=task_messages,
+                unit_mix=list(group_summary.get("unit_mix", []) or []),
+            )
             triage = self._derive_task_triage(
                 t,
                 runtime_task,
                 runtime_state,
                 capability_status,
-                world_sync,
-                unit_mix=list(group_summary.get("unit_mix", []) or []),
+                triage_inputs,
             )
             task_entry.update(triage)
             task_entry["status_line"] = str(triage.get("status_line") or "")
             active_tasks.append(task_entry)
 
-        pending_questions = self.kernel.list_pending_questions()
         coordinator_snapshot["task_overview"] = self._build_task_overview(active_tasks)
         coordinator_snapshot["battle_groups"] = self._build_battle_groups(active_tasks)
         coordinator_snapshot["alerts"] = self._coordinator_alerts(coordinator_snapshot)

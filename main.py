@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import faulthandler
-from dataclasses import asdict, is_dataclass
 from dataclasses import dataclass
 import importlib.util
 import logging
@@ -60,7 +59,7 @@ from models import PlayerResponse, TaskMessageType, TaskStatus
 from openra_api.game_api import GameAPI
 from queue_manager import QueueManager, QueueManagerConfig
 from task_agent import AgentConfig
-from task_triage import build_task_triage
+from task_triage import build_task_triage, collect_task_triage_inputs, describe_job
 from unit_registry import UnitRegistry, set_default_registry
 from world_model import GameAPIWorldSource, RefreshPolicy, WorldModel, WorldModelSource
 from ws_server import InboundHandler, WSServer, WSServerConfig
@@ -913,32 +912,22 @@ class RuntimeBridge(InboundHandler):
         runtime_state: dict[str, Any],
     ) -> dict[str, Any]:
         task_id = getattr(task, "task_id", "")
-        world_sync = {"stale": self._world_is_stale()}
-        pending_question = self._task_pending_question(task_id)
-        latest_warning = self._task_latest_message(task_id, TaskMessageType.TASK_WARNING)
-        active_jobs = [
-            job for job in jobs
-            if getattr(getattr(job, "status", None), "value", str(getattr(job, "status", "")))
-            not in {"succeeded", "failed", "aborted"}
-        ]
-        waiting_jobs = [
-            job for job in active_jobs
-            if getattr(getattr(job, "status", None), "value", str(getattr(job, "status", ""))) == "waiting"
-        ]
-        running_jobs = [
-            job for job in active_jobs
-            if getattr(getattr(job, "status", None), "value", str(getattr(job, "status", ""))) == "running"
-        ]
-        primary_job = running_jobs[0] if running_jobs else waiting_jobs[0] if waiting_jobs else active_jobs[0] if active_jobs else None
-        primary_summary = self._describe_job(primary_job) if primary_job is not None else ""
+        try:
+            task_messages = self.kernel.list_task_messages(task_id)
+        except TypeError:
+            task_messages = self.kernel.list_task_messages()
+        inputs = collect_task_triage_inputs(
+            task_id=str(task_id or ""),
+            jobs=jobs,
+            world_sync={"stale": self._world_is_stale()},
+            pending_questions=self.kernel.list_pending_questions(),
+            task_messages=task_messages,
+        )
         return build_task_triage(
             task=task,
             runtime_task=runtime_task,
             runtime_state=runtime_state,
-            world_sync=world_sync,
-            pending_question=pending_question,
-            latest_warning=latest_warning.content if latest_warning is not None else None,
-            primary_summary=primary_summary,
+            inputs=inputs,
         ).to_dict()
 
     def _world_is_stale(self) -> bool:
@@ -950,31 +939,6 @@ class RuntimeBridge(InboundHandler):
         except Exception:
             return False
 
-    def _task_pending_question(self, task_id: str) -> Optional[dict[str, Any]]:
-        list_pending = getattr(self.kernel, "list_pending_questions", None)
-        if not callable(list_pending):
-            return None
-        try:
-            for question in list_pending():
-                if question.get("task_id") == task_id:
-                    return question
-        except Exception:
-            return None
-        return None
-
-    def _task_latest_message(self, task_id: str, message_type: TaskMessageType) -> Optional[Any]:
-        list_messages = getattr(self.kernel, "list_task_messages", None)
-        if not callable(list_messages):
-            return None
-        try:
-            messages = list_messages(task_id)
-        except Exception:
-            return None
-        for message in reversed(messages):
-            if getattr(message, "type", None) == message_type:
-                return message
-        return None
-
     @staticmethod
     def _job_to_dict(job: Any) -> dict[str, Any]:
         return {
@@ -983,47 +947,8 @@ class RuntimeBridge(InboundHandler):
             "status": job.status.value if hasattr(job.status, "value") else str(job.status),
             "resources": list(getattr(job, "resources", []) or []),
             "timestamp": getattr(job, "timestamp", None),
-            "summary": RuntimeBridge._describe_job(job),
+            "summary": describe_job(job),
         }
-
-    @staticmethod
-    def _describe_job(job: Any) -> str:
-        config = getattr(job, "config", None)
-        if config is None:
-            return ""
-        if is_dataclass(config):
-            config_data = asdict(config)
-        elif isinstance(config, dict):
-            config_data = dict(config)
-        else:
-            return str(config)
-
-        expert_type = getattr(job, "expert_type", "")
-        if expert_type == "EconomyExpert":
-            unit_type = config_data.get("unit_type")
-            count = config_data.get("count")
-            queue_type = config_data.get("queue_type")
-            return f"{queue_type} · {unit_type} × {count}"
-        if expert_type in {"ReconExpert", "CombatExpert", "MovementExpert", "StopExpert", "DeployExpert"}:
-            parts: list[str] = []
-            if "target_position" in config_data and config_data["target_position"] is not None:
-                parts.append(f"目标 {tuple(config_data['target_position'])}")
-            if "search_region" in config_data:
-                parts.append(f"区域 {config_data['search_region']}")
-            if "target_type" in config_data:
-                parts.append(f"目标类型 {config_data['target_type']}")
-            if "engagement_mode" in config_data:
-                parts.append(f"模式 {config_data['engagement_mode']}")
-            if "move_mode" in config_data:
-                parts.append(f"模式 {config_data['move_mode']}")
-            if "actor_id" in config_data and config_data["actor_id"] is not None:
-                parts.append(f"actor {config_data['actor_id']}")
-            if "actor_ids" in config_data and config_data["actor_ids"]:
-                parts.append(f"actors {list(config_data['actor_ids'])}")
-            if expert_type == "StopExpert" and not parts:
-                parts.append("停止当前任务单位")
-            return " · ".join(parts)
-        return ", ".join(f"{key}={value}" for key, value in config_data.items())
 
 
 class ApplicationRuntime:

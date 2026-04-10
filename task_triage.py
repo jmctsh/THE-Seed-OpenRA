@@ -8,9 +8,11 @@ stories to the player.
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 from typing import Any, Optional
 
-from runtime_views import CapabilityStatusSnapshot, TaskTriageSnapshot
+from models.enums import TaskMessageType
+from runtime_views import CapabilityStatusSnapshot, TaskTriageInputs, TaskTriageSnapshot
 
 
 _TERMINAL_STATUS_LINE = {
@@ -48,11 +50,99 @@ def capability_blocker_status_text(capability_status: CapabilityStatusSnapshot |
     return blocker
 
 
+def _job_status_value(job: Any) -> str:
+    return str(getattr(getattr(job, "status", None), "value", getattr(job, "status", "")) or "")
+
+
+def describe_job(job: Any) -> str:
+    """Return the shared human-readable job summary used by UI and Adjutant."""
+    config = getattr(job, "config", None)
+    if config is None:
+        return ""
+    if is_dataclass(config):
+        config_data = asdict(config)
+    elif isinstance(config, dict):
+        config_data = dict(config)
+    else:
+        return str(config)
+
+    expert_type = getattr(job, "expert_type", "")
+    if expert_type == "EconomyExpert":
+        unit_type = config_data.get("unit_type")
+        count = config_data.get("count")
+        queue_type = config_data.get("queue_type")
+        return f"{queue_type} · {unit_type} × {count}"
+    if expert_type in {"ReconExpert", "CombatExpert", "MovementExpert", "StopExpert", "DeployExpert", "OccupyExpert"}:
+        parts: list[str] = []
+        if "target_position" in config_data and config_data["target_position"] is not None:
+            parts.append(f"目标 {tuple(config_data['target_position'])}")
+        if "search_region" in config_data:
+            parts.append(f"区域 {config_data['search_region']}")
+        if "target_type" in config_data:
+            parts.append(f"目标类型 {config_data['target_type']}")
+        if "engagement_mode" in config_data:
+            parts.append(f"模式 {config_data['engagement_mode']}")
+        if "move_mode" in config_data:
+            parts.append(f"模式 {config_data['move_mode']}")
+        if "target_actor_id" in config_data and config_data["target_actor_id"] is not None:
+            parts.append(f"目标 actor {config_data['target_actor_id']}")
+        if "actor_id" in config_data and config_data["actor_id"] is not None:
+            parts.append(f"actor {config_data['actor_id']}")
+        if "actor_ids" in config_data and config_data["actor_ids"]:
+            parts.append(f"actors {list(config_data['actor_ids'])}")
+        if expert_type == "StopExpert" and not parts:
+            parts.append("停止当前任务单位")
+        return " · ".join(parts)
+    return ", ".join(f"{key}={value}" for key, value in config_data.items())
+
+
+def collect_task_triage_inputs(
+    *,
+    task_id: str,
+    jobs: Optional[list[Any]] = None,
+    world_sync: Optional[dict[str, Any]] = None,
+    pending_questions: Optional[list[dict[str, Any]]] = None,
+    task_messages: Optional[list[Any]] = None,
+    unit_mix: Optional[list[str]] = None,
+) -> TaskTriageInputs:
+    """Collect the shared triage side inputs from live runtime artifacts."""
+    pending_question = None
+    for question in list(pending_questions or []):
+        if isinstance(question, dict) and str(question.get("task_id", "")) == str(task_id or ""):
+            pending_question = question
+            break
+
+    latest_warning = ""
+    for message in reversed(list(task_messages or [])):
+        if getattr(message, "task_id", None) != task_id:
+            continue
+        if getattr(message, "type", None) == TaskMessageType.TASK_WARNING:
+            latest_warning = str(getattr(message, "content", "") or "")
+            break
+
+    active_jobs = [
+        job for job in list(jobs or [])
+        if _job_status_value(job) not in {"succeeded", "failed", "aborted"}
+    ]
+    waiting_jobs = [job for job in active_jobs if _job_status_value(job) == "waiting"]
+    running_jobs = [job for job in active_jobs if _job_status_value(job) == "running"]
+    primary_job = running_jobs[0] if running_jobs else waiting_jobs[0] if waiting_jobs else active_jobs[0] if active_jobs else None
+
+    return TaskTriageInputs(
+        world_sync=dict(world_sync or {}),
+        pending_question=pending_question,
+        latest_warning=latest_warning,
+        primary_summary=describe_job(primary_job) if primary_job is not None else "",
+        unit_mix=list(unit_mix or []),
+    )
+
+
 def build_task_triage(
     *,
     task: Any,
     runtime_task: Optional[dict[str, Any]],
     runtime_state: dict[str, Any],
+    inputs: Optional[TaskTriageInputs] = None,
     world_sync: Optional[dict[str, Any]] = None,
     pending_question: Optional[dict[str, Any]] = None,
     latest_warning: Optional[str] = None,
@@ -68,8 +158,18 @@ def build_task_triage(
     status = str(getattr(getattr(task, "status", None), "value", getattr(task, "status", "")) or "")
     runtime_task = dict(runtime_task or {})
     runtime_state = dict(runtime_state or {})
-    world_sync = dict(world_sync or {})
-    unit_mix = list(unit_mix or [])
+    inputs = inputs or TaskTriageInputs(
+        world_sync=dict(world_sync or {}),
+        pending_question=pending_question,
+        latest_warning=str(latest_warning or ""),
+        primary_summary=str(primary_summary or ""),
+        unit_mix=list(unit_mix or []),
+    )
+    world_sync = dict(inputs.world_sync or {})
+    pending_question = inputs.pending_question
+    latest_warning = str(inputs.latest_warning or "")
+    primary_summary = str(inputs.primary_summary or "")
+    unit_mix = list(inputs.unit_mix or [])
 
     def with_unit_mix(status_line: str) -> str:
         if not unit_mix or "×" in status_line:

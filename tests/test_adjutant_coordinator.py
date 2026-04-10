@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from adjutant import Adjutant
 from llm import MockProvider
+from models import MovementJobConfig, TaskMessage, TaskMessageType
 from openra_api.models import Actor, Location
 
 
@@ -35,12 +36,22 @@ class _Kernel:
             _MockTask("t_recon", "002", "探索地图"),
             _MockTask("t_combat", "003", "攻击敌人"),
         ]
+        self._task_messages: list[TaskMessage] = []
+        self._jobs_by_task: dict[str, list[object]] = {}
 
     def list_tasks(self):
         return list(self._tasks)
 
     def list_pending_questions(self):
         return []
+
+    def list_task_messages(self, task_id=None):
+        if task_id is None:
+            return list(self._task_messages)
+        return [message for message in self._task_messages if message.task_id == task_id]
+
+    def jobs_for_task(self, task_id):
+        return list(self._jobs_by_task.get(task_id, []))
 
     @property
     def capability_task_id(self):
@@ -337,6 +348,47 @@ def test_build_context_includes_task_triage_fields() -> None:
     print("  PASS: build_context_includes_task_triage_fields")
 
 
+def test_build_context_uses_shared_triage_inputs_for_questions_and_warnings() -> None:
+    kernel = _Kernel()
+    kernel.list_pending_questions = lambda: [{
+        "message_id": "q1",
+        "task_id": "t_recon",
+        "question": "继续侦察还是回撤？",
+        "options": ["继续", "回撤"],
+        "default_option": "继续",
+        "priority": 60,
+        "asked_at": time.time(),
+        "timeout_s": 30.0,
+    }]
+    kernel._task_messages.append(
+        TaskMessage(
+            message_id="m_warn",
+            task_id="t_combat",
+            type=TaskMessageType.TASK_WARNING,
+            content="前线压力过大",
+            timestamp=time.time(),
+        )
+    )
+    kernel._jobs_by_task["t_combat"] = [
+        SimpleNamespace(
+            job_id="j_move",
+            expert_type="MovementExpert",
+            status=SimpleNamespace(value="running"),
+            config=MovementJobConfig(actor_ids=[11, 12], target_position=(30, 30)),
+        )
+    ]
+
+    context = Adjutant(llm=MockProvider(), kernel=kernel, world_model=_WorldModel())._build_context("当前情况如何")
+    by_label = {task["label"]: task for task in context.active_tasks}
+
+    assert by_label["002"]["state"] == "waiting_player"
+    assert "等待玩家回复" in by_label["002"]["status_line"]
+    assert by_label["003"]["state"] == "blocked"
+    assert by_label["003"]["blocking_reason"] == "task_warning"
+    assert "前线压力过大" in by_label["003"]["status_line"]
+    print("  PASS: build_context_uses_shared_triage_inputs_for_questions_and_warnings")
+
+
 def test_build_context_surfaces_prerequisite_gap_blocker_text() -> None:
     adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelMissingPrereq())
 
@@ -453,6 +505,7 @@ if __name__ == "__main__":
     print("Running Adjutant coordinator tests...\n")
     test_battlefield_snapshot_prefers_runtime_query()
     test_build_context_includes_task_triage_fields()
+    test_build_context_uses_shared_triage_inputs_for_questions_and_warnings()
     test_build_context_surfaces_prerequisite_gap_blocker_text()
     test_coordinator_hints_merge_capability_followup_on_prerequisite_gap()
     test_build_context_uses_capability_task_label_fallback_and_fulfilling_counts()
