@@ -673,6 +673,8 @@ def test_compute_runtime_facts_partial_base() -> None:
     assert facts["refinery_count"] == 0, facts
     assert facts["tech_level"] == 1, facts
     assert facts["can_afford_refinery"] is False, facts
+    assert facts["base_progression"]["next_unit_type"] == "proc", facts
+    assert facts["base_progression"]["buildable_now"] is True, facts
 
 
 def test_runtime_facts_buildable_requires_power_for_proc() -> None:

@@ -25,7 +25,12 @@ from openra_api.intel.names import normalize_unit_name
 from openra_api.intel.rules import DEFAULT_UNIT_CATEGORY_RULES, DEFAULT_UNIT_VALUE_WEIGHTS
 from openra_api.models import Actor, FrozenActor, Location, MapQueryResult, PlayerBaseInfo, TargetsQueryParam
 from openra_api.production_names import production_name_matches, production_name_entry, production_name_unit_id
-from openra_state.data.dataset import dataset_actor_category_for, dataset_cost_for, demo_capability_queue_types
+from openra_state.data.dataset import (
+    dataset_actor_category_for,
+    dataset_cost_for,
+    demo_capability_buildability_snapshot,
+    demo_capability_queue_types,
+)
 from runtime_views import CapabilityStatusSnapshot
 from unit_registry import UnitRegistry, get_default_registry
 
@@ -728,25 +733,28 @@ class WorldModel:
             power_plant_cost = dataset_cost_for("powr") or 0
             barracks_cost = dataset_cost_for("barr") or 0
             refinery_cost = dataset_cost_for("proc") or 0
+            buildability = demo_capability_buildability_snapshot(
+                has_construction_yard=has_construction_yard,
+                mcv_count=mcv_count,
+                power_plant_count=power_plant_count,
+                refinery_count=refinery_count,
+                barracks_count=barracks_count,
+                war_factory_count=war_factory_count,
+                radar_count=radar_count,
+                repair_facility_count=repair_facility_count,
+                tech_center_count=tech_center_count,
+                airfield_count=airfield_count,
+            )
+            buildable = dict(buildability.get("buildable") or {})
             facts.update({
                 "can_afford_power_plant": total_credits >= power_plant_cost,
                 "can_afford_barracks": total_credits >= barracks_cost,
                 "can_afford_refinery": total_credits >= refinery_cost,
+                "base_progression": dict(buildability.get("base_progression") or {}),
             })
             # Capability-facing buildability: only expose when the caller is a
             # dedicated capability planner. Ordinary task contexts should not
             # infer they can build prerequisites themselves from this field.
-            buildable = self._derive_buildable_units(
-                has_construction_yard=has_construction_yard,
-                barracks_count=barracks_count,
-                war_factory_count=war_factory_count,
-                radar_count=radar_count,
-                refinery_count=refinery_count,
-                repair_facility_count=repair_facility_count,
-                tech_center_count=tech_center_count,
-                power_plant_count=power_plant_count,
-                airfield_count=airfield_count,
-            )
             facts["buildable"] = buildable
             has_buildable_capability_action = any(
                 bool(buildable.get(queue_type))
@@ -860,59 +868,6 @@ class WorldModel:
 
         return facts
 
-    @staticmethod
-    def _derive_buildable_units(
-        *,
-        has_construction_yard: bool,
-        barracks_count: int,
-        war_factory_count: int,
-        radar_count: int,
-        refinery_count: int,
-        repair_facility_count: int = 0,
-        tech_center_count: int = 0,
-        power_plant_count: int = 0,
-        airfield_count: int = 0,
-    ) -> dict[str, list[str]]:
-        """Derive currently buildable unit codes per queue from DATASET prerequisites.
-
-        Uses the registered unit database instead of hardcoded lists, so the
-        buildable output stays in sync with actual game prerequisites.
-        """
-        from openra_state.data.dataset import demo_capability_roster, demo_prerequisites_for
-
-        # Map prerequisite building codes to whether we have them
-        owned_buildings: set[str] = set()
-        if has_construction_yard:
-            owned_buildings.add("fact")
-        if power_plant_count > 0:
-            owned_buildings.add("powr")
-        if barracks_count > 0:
-            owned_buildings.add("barr")
-        if war_factory_count > 0:
-            owned_buildings.add("weap")
-        if radar_count > 0:
-            owned_buildings.add("dome")
-        if refinery_count > 0:
-            owned_buildings.add("proc")
-        if repair_facility_count > 0:
-            owned_buildings.add("fix")
-        if tech_center_count > 0:
-            owned_buildings.add("stek")
-        if airfield_count > 0:
-            owned_buildings.add("afld")
-
-        result: dict[str, list[str]] = {}
-        for queue_type, units in demo_capability_roster().items():
-            buildable = [
-                unit_type
-                for unit_type in units
-                if set(demo_prerequisites_for(unit_type)).issubset(owned_buildings)
-            ]
-            if buildable:
-                result[queue_type] = buildable
-
-        return result
-
     def _count_self_actors(self) -> dict[str, Any]:
         """Count self actors by category/building type. Shared by runtime_facts and buildable."""
         has_construction_yard = False
@@ -978,17 +933,19 @@ class WorldModel:
     def runtime_facts_buildable(self) -> dict[str, list[str]]:
         """Return current buildable units per queue (lightweight, no task_id needed)."""
         c = self._count_self_actors()
-        return self._derive_buildable_units(
+        snapshot = demo_capability_buildability_snapshot(
             has_construction_yard=c["has_construction_yard"],
+            mcv_count=c["mcv_count"],
+            power_plant_count=c["power_plant_count"],
+            refinery_count=c["refinery_count"],
             barracks_count=c["barracks_count"],
             war_factory_count=c["war_factory_count"],
             radar_count=c["radar_count"],
-            refinery_count=c["refinery_count"],
             repair_facility_count=c["repair_facility_count"],
             tech_center_count=c["tech_center_count"],
-            power_plant_count=c["power_plant_count"],
             airfield_count=c["airfield_count"],
         )
+        return dict(snapshot.get("buildable") or {})
 
     def register_info_expert(self, expert: Any) -> None:
         """Register an Information Expert whose analyze() output is merged into runtime_facts."""

@@ -509,6 +509,71 @@ def demo_base_progression(
     }
 
 
+def demo_capability_buildability_snapshot(
+    *,
+    has_construction_yard: bool,
+    mcv_count: int,
+    power_plant_count: int,
+    refinery_count: int,
+    barracks_count: int,
+    war_factory_count: int,
+    radar_count: int,
+    repair_facility_count: int = 0,
+    tech_center_count: int = 0,
+    airfield_count: int = 0,
+) -> dict[str, Any]:
+    """Return the shared capability-facing buildability snapshot.
+
+    This is the single demo-truth projection used by runtime/context layers for:
+    - current buildable units
+    - current base progression / next minimum step
+    """
+    owned_buildings: set[str] = set()
+    if has_construction_yard:
+        owned_buildings.add("fact")
+    if power_plant_count > 0:
+        owned_buildings.add("powr")
+    if barracks_count > 0:
+        owned_buildings.add("barr")
+    if war_factory_count > 0:
+        owned_buildings.add("weap")
+    if radar_count > 0:
+        owned_buildings.add("dome")
+    if refinery_count > 0:
+        owned_buildings.add("proc")
+    if repair_facility_count > 0:
+        owned_buildings.add("fix")
+    if tech_center_count > 0:
+        owned_buildings.add("stek")
+    if airfield_count > 0:
+        owned_buildings.add("afld")
+
+    buildable: dict[str, list[str]] = {}
+    for queue_type, units in demo_capability_roster().items():
+        queue_buildable = [
+            unit_type
+            for unit_type in units
+            if set(demo_prerequisites_for(unit_type)).issubset(owned_buildings)
+        ]
+        if queue_buildable:
+            buildable[queue_type] = queue_buildable
+
+    progression = demo_base_progression(
+        has_construction_yard=has_construction_yard,
+        mcv_count=mcv_count,
+        power_plant_count=power_plant_count,
+        refinery_count=refinery_count,
+        barracks_count=barracks_count,
+        war_factory_count=war_factory_count,
+        buildable=buildable,
+    )
+    return {
+        "owned_building_flags": sorted(owned_buildings),
+        "buildable": buildable,
+        "base_progression": progression,
+    }
+
+
 def demo_mobile_scout_unit_type() -> str | None:
     """Return the demo-safe vehicle used when a cheap mobile scout is needed."""
     unit_type = _DEMO_MOBILE_SCOUT_UNIT_TYPE
