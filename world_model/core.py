@@ -33,7 +33,11 @@ from openra_state.data.dataset import (
     demo_faction_hint_for_unit_types,
     demo_capability_queue_types,
 )
-from runtime_views import CapabilityStatusSnapshot, build_runtime_state_snapshot
+from runtime_views import (
+    CapabilityStatusSnapshot,
+    build_battlefield_snapshot,
+    build_runtime_state_snapshot,
+)
 from unit_registry import UnitRegistry, get_default_registry
 
 
@@ -591,37 +595,38 @@ class WorldModel:
         if self_combat_units:
             summary_text += f"，可自由调度战斗单位{free_combat_units}/{self_combat_units}"
 
-        return {
-            "summary": summary_text,
-            "disposition": disposition,
-            "focus": focus,
-            "recommended_posture": recommended_posture,
-            "self_units": self_units,
-            "enemy_units": enemy_units,
-            "self_combat_value": round(self_score, 2),
-            "enemy_combat_value": round(enemy_score, 2),
-            "idle_self_units": int(military.get("idle_self_units", 0) or 0),
-            "self_combat_units": self_combat_units,
-            "committed_combat_units": committed_combat_units,
-            "free_combat_units": free_combat_units,
-            "low_power": low_power,
-            "queue_blocked": queue_blocked,
-            "pending_request_count": pending_requests,
-            "bootstrapping_request_count": bootstrapping_request_count,
-            "reservation_count": reservation_count,
-            "explored_pct": explored_pct,
-            "enemy_bases": enemy_bases,
-            "enemy_spotted": enemy_spotted,
-            "frozen_enemy_count": frozen_count,
-            "threat_level": threat_level,
-            "threat_direction": threat_direction,
-            "base_under_attack": base_under_attack,
-            "base_health_summary": base_health_summary,
-            "has_production": has_production,
-            "capability_status": capability.to_dict(),
-            "timestamp": self.state.timestamp,
-            "stale": self.state.stale,
-        }
+        snapshot = build_battlefield_snapshot(
+            summary=summary_text,
+            disposition=disposition,
+            focus=focus,
+            self_units=self_units,
+            enemy_units=enemy_units,
+            self_combat_value=self_score,
+            enemy_combat_value=enemy_score,
+            idle_self_units=int(military.get("idle_self_units", 0) or 0),
+            self_combat_units=self_combat_units,
+            committed_combat_units=committed_combat_units,
+            free_combat_units=free_combat_units,
+            low_power=low_power,
+            queue_blocked=queue_blocked,
+            recommended_posture=recommended_posture,
+            threat_level=threat_level,
+            threat_direction=threat_direction,
+            base_under_attack=base_under_attack,
+            base_health_summary=base_health_summary,
+            has_production=has_production,
+            explored_pct=explored_pct,
+            enemy_bases=enemy_bases,
+            enemy_spotted=enemy_spotted,
+            frozen_enemy_count=frozen_count,
+            pending_request_count=pending_requests,
+            bootstrapping_request_count=bootstrapping_request_count,
+            reservation_count=reservation_count,
+            stale=self.state.stale,
+            capability_status=capability.to_dict(),
+        ).to_dict()
+        snapshot["timestamp"] = self.state.timestamp
+        return snapshot
 
     def set_runtime_state(
         self,

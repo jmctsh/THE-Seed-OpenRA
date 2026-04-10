@@ -147,6 +147,136 @@ def build_runtime_state_snapshot(
 
 
 @dataclass(slots=True)
+class BattlefieldSnapshot:
+    """Normalized battlefield read model for coordinator/query surfaces."""
+
+    summary: str = ""
+    disposition: str = "unknown"
+    focus: str = "general"
+    self_units: int = 0
+    enemy_units: int = 0
+    self_combat_value: float = 0.0
+    enemy_combat_value: float = 0.0
+    idle_self_units: int = 0
+    self_combat_units: int = 0
+    committed_combat_units: int = 0
+    free_combat_units: int = 0
+    low_power: bool = False
+    queue_blocked: bool = False
+    recommended_posture: str = "maintain_posture"
+    threat_level: str = "unknown"
+    threat_direction: str = "unknown"
+    base_under_attack: bool = False
+    base_health_summary: str = ""
+    has_production: bool = False
+    explored_pct: float | None = None
+    enemy_bases: int = 0
+    enemy_spotted: int = 0
+    frozen_enemy_count: int = 0
+    pending_request_count: int = 0
+    bootstrapping_request_count: int = 0
+    reservation_count: int = 0
+    stale: bool = False
+    capability_status: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "summary": self.summary,
+            "disposition": self.disposition,
+            "focus": self.focus,
+            "self_units": self.self_units,
+            "enemy_units": self.enemy_units,
+            "self_combat_value": self.self_combat_value,
+            "enemy_combat_value": self.enemy_combat_value,
+            "idle_self_units": self.idle_self_units,
+            "self_combat_units": self.self_combat_units,
+            "committed_combat_units": self.committed_combat_units,
+            "free_combat_units": self.free_combat_units,
+            "low_power": self.low_power,
+            "queue_blocked": self.queue_blocked,
+            "recommended_posture": self.recommended_posture,
+            "threat_level": self.threat_level,
+            "threat_direction": self.threat_direction,
+            "base_under_attack": self.base_under_attack,
+            "base_health_summary": self.base_health_summary,
+            "has_production": self.has_production,
+            "explored_pct": self.explored_pct,
+            "enemy_bases": self.enemy_bases,
+            "enemy_spotted": self.enemy_spotted,
+            "frozen_enemy_count": self.frozen_enemy_count,
+            "pending_request_count": self.pending_request_count,
+            "bootstrapping_request_count": self.bootstrapping_request_count,
+            "reservation_count": self.reservation_count,
+            "stale": self.stale,
+            "capability_status": dict(self.capability_status),
+        }
+
+
+def build_battlefield_snapshot(
+    *,
+    summary: str,
+    disposition: str,
+    focus: str,
+    self_units: int,
+    enemy_units: int,
+    self_combat_value: float,
+    enemy_combat_value: float,
+    idle_self_units: int,
+    self_combat_units: int,
+    committed_combat_units: int,
+    free_combat_units: int,
+    low_power: bool,
+    queue_blocked: bool,
+    recommended_posture: str,
+    threat_level: str,
+    threat_direction: str,
+    base_under_attack: bool,
+    base_health_summary: str,
+    has_production: bool,
+    explored_pct: float | None,
+    enemy_bases: int,
+    enemy_spotted: int,
+    frozen_enemy_count: int,
+    pending_request_count: int,
+    bootstrapping_request_count: int,
+    reservation_count: int,
+    stale: bool,
+    capability_status: dict[str, Any],
+) -> BattlefieldSnapshot:
+    """Build the normalized battlefield snapshot used by world queries."""
+    return BattlefieldSnapshot(
+        summary=str(summary or ""),
+        disposition=str(disposition or "unknown"),
+        focus=str(focus or "general"),
+        self_units=int(self_units or 0),
+        enemy_units=int(enemy_units or 0),
+        self_combat_value=round(float(self_combat_value or 0.0), 2),
+        enemy_combat_value=round(float(enemy_combat_value or 0.0), 2),
+        idle_self_units=int(idle_self_units or 0),
+        self_combat_units=int(self_combat_units or 0),
+        committed_combat_units=int(committed_combat_units or 0),
+        free_combat_units=int(free_combat_units or 0),
+        low_power=bool(low_power),
+        queue_blocked=bool(queue_blocked),
+        recommended_posture=str(recommended_posture or "maintain_posture"),
+        threat_level=str(threat_level or "unknown"),
+        threat_direction=str(threat_direction or "unknown"),
+        base_under_attack=bool(base_under_attack),
+        base_health_summary=str(base_health_summary or ""),
+        has_production=bool(has_production),
+        explored_pct=explored_pct,
+        enemy_bases=int(enemy_bases or 0),
+        enemy_spotted=int(enemy_spotted or 0),
+        frozen_enemy_count=int(frozen_enemy_count or 0),
+        pending_request_count=int(pending_request_count or 0),
+        bootstrapping_request_count=int(bootstrapping_request_count or 0),
+        reservation_count=int(reservation_count or 0),
+        stale=bool(stale),
+        capability_status=dict(capability_status or {}),
+    )
+
+
+@dataclass(slots=True)
 class TaskTriageSnapshot:
     """Normalized read model for task runtime triage."""
 
