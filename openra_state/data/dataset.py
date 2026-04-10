@@ -311,6 +311,48 @@ def demo_capability_unit_type_for(name: str | None) -> str | None:
     return None
 
 
+def dataset_unit_type_for(name: str | None) -> str | None:
+    """Resolve an observed name to a canonical dataset unit/building id."""
+    raw = str(name or "").strip()
+    if not raw:
+        return None
+
+    key = raw.lower()
+    entry = dataset_entry(key)
+    if entry is not None:
+        return entry.id.lower()
+
+    from openra_api.production_names import production_name_unit_id
+
+    canonical = production_name_unit_id(raw)
+    if canonical:
+        return canonical
+    return None
+
+
+def dataset_actor_category_for(name: str | None) -> str | None:
+    """Return the normalized actor category used by runtime/intel layers."""
+    canonical = dataset_unit_type_for(name)
+    if not canonical:
+        return None
+    entry = dataset_entry(canonical)
+    if entry is None:
+        return None
+    unit_id = entry.id.lower()
+    if unit_id == "harv":
+        return "harvester"
+    if unit_id == "mcv":
+        return "mcv"
+    category = str(entry.category or "").lower()
+    if category in {"building", "defense"}:
+        return "building"
+    if category == "infantry":
+        return "infantry"
+    if category in {"vehicle", "aircraft", "ship"}:
+        return "vehicle"
+    return category or None
+
+
 def demo_capability_supports(name: str | None) -> bool:
     """Return True when the observed name resolves to the demo capability roster."""
     return demo_capability_unit_type_for(name) is not None

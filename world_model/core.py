@@ -25,7 +25,7 @@ from openra_api.intel.names import normalize_unit_name
 from openra_api.intel.rules import DEFAULT_UNIT_CATEGORY_RULES, DEFAULT_UNIT_VALUE_WEIGHTS
 from openra_api.models import Actor, FrozenActor, Location, MapQueryResult, PlayerBaseInfo, TargetsQueryParam
 from openra_api.production_names import production_name_matches, production_name_entry, production_name_unit_id
-from openra_state.data.dataset import demo_capability_queue_types
+from openra_state.data.dataset import dataset_actor_category_for, demo_capability_queue_types
 from runtime_views import CapabilityStatusSnapshot
 from unit_registry import UnitRegistry, get_default_registry
 
@@ -1515,6 +1515,17 @@ class WorldModel:
 
     def _actor_category(self, name: str) -> ActorCategory:
         lowered = name.lower()
+        dataset_category = dataset_actor_category_for(name)
+        if dataset_category == "mcv":
+            return ActorCategory.MCV
+        if dataset_category == "harvester":
+            return ActorCategory.HARVESTER
+        if dataset_category == "building":
+            return ActorCategory.BUILDING
+        if dataset_category == "infantry":
+            return ActorCategory.INFANTRY
+        if dataset_category == "vehicle":
+            return ActorCategory.VEHICLE
         entry = production_name_entry(name)
         if entry is not None:
             unit_id = entry.unit_id.lower()

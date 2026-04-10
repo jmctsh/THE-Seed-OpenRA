@@ -11,6 +11,7 @@ from .memory import IntelMemory
 from .model import IntelModel
 from .names import normalize_unit_name
 from openra_api.production_names import production_name_entry
+from openra_state.data.dataset import dataset_actor_category_for
 from .rules import (
     DEFAULT_HIGH_VALUE_TARGETS,
     DEFAULT_UNIT_CATEGORY_RULES,
@@ -89,9 +90,8 @@ class IntelService:
         for actor in snapshot.get("my_actors", []):
             actor_type = normalize_unit_name(getattr(actor, "type", None))
             pos = getattr(actor, "position", None)
-            entry = production_name_entry(actor_type)
-            category = (entry.category.lower() if entry else UNIT_CATEGORY_RULES.get(actor_type))
-            is_building = category in ("building", "defense")
+            category = dataset_actor_category_for(actor_type)
+            is_building = category == "building"
             if is_building and isinstance(pos, Location):
                 buildings.append(pos)
 
@@ -331,10 +331,9 @@ class IntelService:
         unknown = 0
 
         for view in views:
-            entry = production_name_entry(view.type)
-            category = entry.category.lower() if entry else UNIT_CATEGORY_RULES.get(view.type)
-            is_building = category in ("building", "defense")
-            is_unit = category in ("infantry", "vehicle", "air", "harvester", "support", "mcv", "aircraft", "ship")
+            category = dataset_actor_category_for(view.type)
+            is_building = category == "building"
+            is_unit = category in {"infantry", "vehicle", "harvester", "mcv"}
             if is_building:
                 building_counts[view.type] = building_counts.get(view.type, 0) + 1
             elif is_unit:
@@ -756,6 +755,9 @@ class IntelService:
         normalized = normalize_unit_name(unit_type)
         if not normalized:
             return "unknown"
+        dataset_category = dataset_actor_category_for(normalized)
+        if dataset_category:
+            return dataset_category
         entry = production_name_entry(normalized)
         if entry is not None:
             unit_id = entry.unit_id.lower()
