@@ -258,6 +258,8 @@ def test_bootstrap_creates_economy_job():
     # Request more tanks than available idle (2 idle, need 5)
     result = kernel.register_unit_request(task.task_id, "vehicle", 5, "high", "重坦")
     req = kernel._unit_requests[result["request_id"]]
+    cap_task_id = kernel.capability_task_id
+    assert cap_task_id is not None
     # Should have created a bootstrap job for the remaining 3
     assert req.bootstrap_job_id is not None
     assert result["request_id"] == req.request_id
@@ -267,9 +269,10 @@ def test_bootstrap_creates_economy_job():
     assert result["reservation_id"].startswith("res_")
     assert result["reservation_status"] == ReservationStatus.PARTIAL.value
     assert result["bootstrap_job_id"] == req.bootstrap_job_id
-    assert result["bootstrap_task_id"] == task.task_id
+    assert req.bootstrap_task_id == cap_task_id
+    assert result["bootstrap_task_id"] == cap_task_id
     job = kernel._jobs[req.bootstrap_job_id]
-    assert job.task_id == task.task_id
+    assert job.task_id == cap_task_id
     assert job.config.unit_type == "3tnk"
     assert job.config.count == 3
     assert job.config.queue_type == "Vehicle"

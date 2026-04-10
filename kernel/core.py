@@ -838,11 +838,10 @@ class Kernel:
         if unit_type not in queue_items:
             return  # Not producible — leave for Capability
 
-        bootstrap_task_id = req.task_id
-        if self._capability_task_id:
-            capability_task = self.tasks.get(self._capability_task_id)
-            if capability_task is not None and capability_task.status in {TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.WAITING}:
-                bootstrap_task_id = capability_task.task_id
+        bootstrap_task_id = self.ensure_capability_task()
+        capability_task = self.tasks.get(bootstrap_task_id)
+        if capability_task is None or capability_task.status not in {TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.WAITING}:
+            return
 
         # Start shared production on the capability task when available so
         # requesters remain consumers of units instead of accidental owners of
