@@ -584,6 +584,16 @@ class Adjutant:
             except Exception:
                 logger.exception("Adjutant failed to compute coordinator runtime facts")
                 runtime_facts = {}
+        ready_queue_items = []
+        for item in list(runtime_facts.get("ready_queue_items", []) or [])[:3]:
+            if not isinstance(item, dict):
+                continue
+            ready_queue_items.append({
+                "queue_type": str(item.get("queue_type", "") or ""),
+                "unit_type": str(item.get("unit_type", "") or ""),
+                "display_name": str(item.get("display_name", "") or item.get("unit_type", "") or ""),
+                "owner_actor_id": item.get("owner_actor_id"),
+            })
         base_state = {
             "has_construction_yard": runtime_facts.get("has_construction_yard", False),
             "mcv_count": runtime_facts.get("mcv_count", 0),
@@ -620,6 +630,7 @@ class Adjutant:
                 "inference_pending_count": int(capability_status.get("inference_pending_count", 0) or 0),
                 "prerequisite_gap_count": int(capability_status.get("prerequisite_gap_count", 0) or 0),
                 "recent_directives": list(capability_status.get("recent_directives", []) or []),
+                "ready_queue_items": ready_queue_items,
             },
             "info_experts": {
                 "threat_level": battlefield.get("threat_level") or info_experts.get("threat_level"),
@@ -634,6 +645,90 @@ class Adjutant:
             "active_task_count": len(runtime_state.get("active_tasks", {}) or {}),
             "reservation_count": battlefield.get("reservation_count", len(runtime_state.get("unit_reservations", []) or [])),
         }
+
+    @staticmethod
+    def _coordinator_alerts(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+        battlefield = dict(snapshot.get("battlefield") or {})
+        capability = dict(snapshot.get("capability") or {})
+        task_overview = dict(snapshot.get("task_overview") or {})
+        world_sync = dict(snapshot.get("world_sync") or {})
+        alerts: list[dict[str, Any]] = []
+
+        def add_alert(code: str, severity: str, text: str, *, target_label: str = "") -> None:
+            if not text:
+                return
+            alerts.append({
+                "code": code,
+                "severity": severity,
+                "text": text,
+                "target_label": target_label,
+            })
+
+        if world_sync.get("stale"):
+            add_alert("world_stale", "warning", "世界状态同步异常，当前判断可能滞后")
+        if battlefield.get("base_under_attack"):
+            direction = str(battlefield.get("threat_direction", "") or "")
+            suffix = f"（方向：{direction}）" if direction and direction != "unknown" else ""
+            add_alert("base_under_attack", "urgent", f"基地正受攻击{suffix}")
+        if battlefield.get("low_power"):
+            add_alert("low_power", "warning", "当前低电，部分生产与建筑能力会受影响")
+        blocker = str(capability.get("blocker", "") or "")
+        if blocker == "missing_prerequisite":
+            add_alert(
+                "capability_missing_prerequisite",
+                "warning",
+                f"能力层存在 {int(capability.get('prerequisite_gap_count', 0) or 0)} 个前置缺口",
+                target_label=str(capability.get("label", "") or ""),
+            )
+        elif blocker == "pending_requests_waiting_dispatch":
+            add_alert(
+                "capability_pending_dispatch",
+                "info",
+                f"能力层仍有 {int(capability.get('pending_request_count', 0) or 0)} 个请求待分发",
+                target_label=str(capability.get("label", "") or ""),
+            )
+        ready_items = list(capability.get("ready_queue_items", []) or [])
+        if ready_items:
+            ready_names = "、".join(str(item.get("display_name", "") or item.get("unit_type", "") or "?") for item in ready_items[:2])
+            add_alert("queue_ready_items", "warning", f"队列里有待处理成品：{ready_names}")
+        elif battlefield.get("queue_blocked"):
+            add_alert("queue_blocked", "warning", "生产队列存在阻塞")
+        reservation_wait = int(task_overview.get("reservation_wait_count", 0) or 0)
+        if reservation_wait:
+            add_alert("reservation_waiting", "info", f"{reservation_wait} 个任务正在等待补位")
+        return alerts[:5]
+
+    @staticmethod
+    def _coordinator_status_line(snapshot: dict[str, Any]) -> str:
+        alerts = list(snapshot.get("alerts", []) or [])
+        battlefield = dict(snapshot.get("battlefield") or {})
+        capability = dict(snapshot.get("capability") or {})
+        task_overview = dict(snapshot.get("task_overview") or {})
+
+        parts: list[str] = []
+        if alerts:
+            parts.append(str(alerts[0].get("text", "") or ""))
+        elif battlefield.get("summary"):
+            parts.append(str(battlefield.get("summary", "") or ""))
+
+        combat_groups = int(task_overview.get("combat_group_count", 0) or 0)
+        recon_groups = int(task_overview.get("recon_group_count", 0) or 0)
+        if combat_groups:
+            parts.append(f"作战组 {combat_groups}")
+        if recon_groups:
+            parts.append(f"侦察组 {recon_groups}")
+
+        phase = str(capability.get("phase", "") or "")
+        phase_text = {
+            "dispatch": "能力层分发中",
+            "bootstrapping": "能力层补前置中",
+            "fulfilling": "能力层补强中",
+            "executing": "能力层执行中",
+        }.get(phase, "")
+        if phase_text:
+            parts.append(phase_text)
+
+        return "；".join(part for part in parts if part)
 
     @staticmethod
     def _has_any_token(text: str, tokens: tuple[str, ...]) -> bool:
@@ -2202,13 +2297,15 @@ class Adjutant:
             active_tasks.append(task_entry)
 
         pending_questions = self.kernel.list_pending_questions()
+        coordinator_snapshot["task_overview"] = self._build_task_overview(active_tasks)
+        coordinator_snapshot["battle_groups"] = self._build_battle_groups(active_tasks)
+        coordinator_snapshot["alerts"] = self._coordinator_alerts(coordinator_snapshot)
+        coordinator_snapshot["status_line"] = self._coordinator_status_line(coordinator_snapshot)
         coordinator_hints = self._coordinator_hints(
             player_input,
             active_tasks,
             coordinator_snapshot.get("battlefield") or {},
         )
-        coordinator_snapshot["task_overview"] = self._build_task_overview(active_tasks)
-        coordinator_snapshot["battle_groups"] = self._build_battle_groups(active_tasks)
         return AdjutantContext(
             active_tasks=active_tasks,
             pending_questions=pending_questions,

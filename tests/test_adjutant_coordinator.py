@@ -155,6 +155,14 @@ class _WorldModel:
                 "base_health_summary": "stable",
                 "has_production": True,
             },
+            "ready_queue_items": [
+                {
+                    "queue_type": "Building",
+                    "unit_type": "powr",
+                    "display_name": "发电厂",
+                    "owner_actor_id": 77,
+                }
+            ],
         }
 
     def refresh_health(self):
@@ -228,6 +236,9 @@ def test_build_context_includes_task_triage_fields() -> None:
     assert context.coordinator_snapshot["task_overview"]["active_count"] == 3
     assert context.coordinator_snapshot["task_overview"]["reservation_wait_count"] == 1
     assert context.coordinator_snapshot["task_overview"]["combat_group_count"] == 1
+    assert context.coordinator_snapshot["capability"]["ready_queue_items"][0]["display_name"] == "发电厂"
+    assert any(alert["code"] == "capability_pending_dispatch" for alert in context.coordinator_snapshot["alerts"])
+    assert "能力层仍有 3 个请求待分发" in context.coordinator_snapshot["status_line"]
     battle_groups = context.coordinator_snapshot["battle_groups"]
     assert [group["label"] for group in battle_groups] == ["003", "002"]
     assert battle_groups[0]["active_expert"] == "CombatExpert"
@@ -243,6 +254,7 @@ def test_build_context_surfaces_prerequisite_gap_blocker_text() -> None:
     capability = next(task for task in context.active_tasks if task["label"] == "001")
 
     assert context.coordinator_snapshot["capability"]["prerequisite_gap_count"] == 2
+    assert any(alert["code"] == "capability_missing_prerequisite" for alert in context.coordinator_snapshot["alerts"])
     assert capability["blocking_reason"] == "missing_prerequisite"
     assert "缺少前置建筑" in capability["status_line"]
     print("  PASS: build_context_surfaces_prerequisite_gap_blocker_text")

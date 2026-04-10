@@ -251,6 +251,14 @@ class MockWorldModel:
                 "base_health_summary": "stable",
                 "has_production": True,
             },
+            "ready_queue_items": [
+                {
+                    "queue_type": "Building",
+                    "unit_type": "powr",
+                    "display_name": "发电厂",
+                    "owner_actor_id": 42,
+                }
+            ],
         }
 
     def refresh_health(self):
@@ -1402,6 +1410,9 @@ def test_build_context_includes_coordinator_snapshot_and_task_status_lines():
     assert ctx.coordinator_snapshot["task_overview"]["active_count"] == 2
     assert ctx.coordinator_snapshot["task_overview"]["running_count"] == 2
     assert ctx.coordinator_snapshot["task_overview"]["largest_group_label"] == "002"
+    assert ctx.coordinator_snapshot["capability"]["ready_queue_items"][0]["display_name"] == "发电厂"
+    assert any(alert["code"] == "queue_ready_items" for alert in ctx.coordinator_snapshot["alerts"])
+    assert "队列里有待处理成品：发电厂" in ctx.coordinator_snapshot["status_line"]
     assert ctx.coordinator_hints["suggested_disposition"] == "merge"
     assert ctx.coordinator_hints["likely_target_label"] == "001"
     active_by_label = {task["label"]: task for task in ctx.active_tasks}
