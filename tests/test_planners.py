@@ -108,7 +108,7 @@ def test_production_advisor_returns_hold_when_queue_blocked() -> None:
     print("  PASS: production_advisor_returns_hold_when_queue_blocked")
 
 
-def test_production_advisor_recommends_jeep_for_mobile_scout_need() -> None:
+def test_production_advisor_recommends_demo_mobile_scout_for_mobile_scout_need() -> None:
     planner = ProductionAdvisor()
 
     proposal = planner.plan(
@@ -126,10 +126,11 @@ def test_production_advisor_recommends_jeep_for_mobile_scout_need() -> None:
 
     recommendation = proposal["recommendation"]
     assert recommendation["action"] == "produce"
-    assert recommendation["unit_type"] == "jeep"
+    assert recommendation["unit_type"] == "ftrk"
     assert recommendation["queue_type"] == "Vehicle"
+    assert recommendation["prerequisites"] == ["weap"]
     assert recommendation["reason"] == "need_mobile_scout"
-    print("  PASS: production_advisor_recommends_jeep_for_mobile_scout_need")
+    print("  PASS: production_advisor_recommends_demo_mobile_scout_for_mobile_scout_need")
 
 
 def test_production_advisor_recommends_weap_before_mobile_scout_when_no_vehicle_gateway() -> None:
@@ -280,7 +281,7 @@ if __name__ == "__main__":
     test_production_advisor_returns_scout_first_when_no_visible_enemy()
     test_production_advisor_returns_power_tech_when_low_power()
     test_production_advisor_returns_hold_when_queue_blocked()
-    test_production_advisor_recommends_jeep_for_mobile_scout_need()
+    test_production_advisor_recommends_demo_mobile_scout_for_mobile_scout_need()
     test_production_advisor_recommends_weap_before_mobile_scout_when_no_vehicle_gateway()
     test_query_planner_reports_not_supported_for_other_planners()
     test_production_advisor_empty_base_recommends_opening()

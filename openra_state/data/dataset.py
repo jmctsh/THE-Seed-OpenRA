@@ -239,6 +239,7 @@ _DEMO_QUEUE_LABELS: dict[str, str] = {
     "Aircraft": "飞机",
 }
 _DEMO_BROAD_PHASE_ORDER: tuple[str, ...] = ("powr", "proc", "barr", "weap")
+_DEMO_MOBILE_SCOUT_UNIT_TYPE = "ftrk"
 
 
 def dataset_entry(unit_type: str) -> UnitInfo | None:
@@ -305,6 +306,14 @@ def demo_capability_roster_lines(
 def demo_capability_broad_phase_order() -> tuple[str, ...]:
     """Return the minimum broad economy/tech progression for the demo runtime."""
     return _DEMO_BROAD_PHASE_ORDER
+
+
+def demo_mobile_scout_unit_type() -> str | None:
+    """Return the demo-safe vehicle used when a cheap mobile scout is needed."""
+    unit_type = _DEMO_MOBILE_SCOUT_UNIT_TYPE
+    if unit_type in _DEMO_QUEUE_TYPE_BY_UNIT_TYPE:
+        return unit_type
+    return None
 
 
 def demo_faction_restriction_for(unit_type: str) -> str | None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from openra_state.data.dataset import demo_mobile_scout_unit_type, demo_queue_type_for
+
 from .base import PlannerExpert
 from .knowledge import (
     counter_recommendation,
@@ -142,13 +144,25 @@ class ProductionAdvisor(PlannerExpert):
             }
 
         if self._needs_mobile_scout(params, my_actors, queues):
-            knowledge = knowledge_for_target("jeep", "Vehicle")
+            unit_type = demo_mobile_scout_unit_type()
+            if unit_type is None:
+                return {
+                    "action": "hold",
+                    "unit_type": None,
+                    "queue_type": None,
+                    "count": None,
+                    "prerequisites": [],
+                    "reason": "demo_mobile_scout_not_configured",
+                    "recommended_expert": None,
+                }
+            queue_type = demo_queue_type_for(unit_type) or "Vehicle"
+            knowledge = knowledge_for_target(unit_type, queue_type)
             return {
                 "action": "produce",
-                "unit_type": "jeep",
-                "queue_type": "Vehicle",
+                "unit_type": unit_type,
+                "queue_type": queue_type,
                 "count": 1,
-                "prerequisites": [],
+                "prerequisites": [p["unit_type"] for p in tech_prerequisites_for(unit_type)],
                 "reason": "need_mobile_scout",
                 "recommended_expert": "EconomyExpert",
                 "roles": knowledge["roles"],
