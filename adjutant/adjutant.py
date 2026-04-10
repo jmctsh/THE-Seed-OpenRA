@@ -66,7 +66,7 @@ _BARE_BUILDING_NAMES = frozenset({
     "核电站", "大电", "狗屋",
 })
 
-_INFO_ECONOMY_HINTS = frozenset({"电", "矿", "资源", "经济", "生产", "建", "造", "科技", "补给", "扩张", "前置", "补链", "单位请求", "请求"})
+_INFO_ECONOMY_HINTS = frozenset({"电", "矿", "资源", "经济", "生产", "建", "造", "科技", "发展", "补给", "扩张", "前置", "补链", "单位请求", "请求"})
 _INFO_COMBAT_HINTS = frozenset({"敌", "打", "攻", "防", "战", "袭", "守", "包围", "前线", "被打", "来袭"})
 _INFO_RECON_HINTS = frozenset({"探", "侦", "看", "发现", "位置", "坐标", "左上", "右上", "左下", "右下", "地图"})
 _TASK_DOMAIN_HINTS: dict[str, frozenset[str]] = {
@@ -757,15 +757,33 @@ class Adjutant:
             if task.get("state") in {"waiting_units", "waiting", "running"}:
                 score += 2
             if task.get("is_capability") and text_domain == "economy":
-                score += 2
+                score += 4
             if int(task.get("active_group_size", 0) or 0) > 0 and text_domain in {"combat", "recon"}:
-                score += 1
+                score += 3
+            if task.get("state") == "waiting_units" and text_domain in {"combat", "recon"}:
+                score -= 1
             if score > 0:
                 scored.append((score, task))
 
         best_task: Optional[dict[str, Any]] = None
         if scored:
-            scored.sort(key=lambda item: item[0], reverse=True)
+            def _sort_key(item: tuple[int, dict[str, Any]]) -> tuple[int, int, int, int]:
+                score, task = item
+                state = str(task.get("state", "") or "")
+                state_rank = {
+                    "running": 3,
+                    "waiting_units": 2,
+                    "waiting": 1,
+                    "blocked": 0,
+                }.get(state, 0)
+                return (
+                    score,
+                    int(task.get("active_group_size", 0) or 0),
+                    state_rank,
+                    1 if task.get("is_capability") else 0,
+                )
+
+            scored.sort(key=_sort_key, reverse=True)
             best_task = scored[0][1]
 
         suggested_disposition: Optional[str] = None

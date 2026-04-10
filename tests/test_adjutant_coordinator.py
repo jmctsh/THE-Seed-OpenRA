@@ -199,6 +199,32 @@ class _WorldModelFulfilling(_WorldModel):
         return result
 
 
+class _KernelCombatPriority(_Kernel):
+    def __init__(self) -> None:
+        super().__init__()
+        self._tasks.append(_MockTask("t_combat_wait", "004", "前线压制"))
+
+
+class _WorldModelCombatPriority(_WorldModel):
+    def query(self, query_type: str, params=None):
+        result = super().query(query_type, params)
+        if query_type == "runtime_state":
+            result["active_tasks"]["t_combat_wait"] = {
+                "label": "004",
+                "raw_text": "前线压制",
+                "status": "running",
+                "is_capability": False,
+                "active_group_size": 0,
+            }
+            result["active_jobs"]["j_combat_wait"] = {
+                "task_id": "t_combat_wait",
+                "expert_type": "CombatExpert",
+                "status": "waiting",
+                "job_id": "j_combat_wait",
+            }
+        return result
+
+
 def test_battlefield_snapshot_prefers_runtime_query() -> None:
     adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModel())
 
@@ -297,6 +323,21 @@ def test_coordinator_hints_merge_capability_followup_on_fulfilling_phase() -> No
     print("  PASS: coordinator_hints_merge_capability_followup_on_fulfilling_phase")
 
 
+def test_coordinator_hints_prefer_active_combat_group_over_waiting_group() -> None:
+    adjutant = Adjutant(
+        llm=MockProvider(),
+        kernel=_KernelCombatPriority(),
+        world_model=_WorldModelCombatPriority(),
+    )
+
+    context = adjutant._build_context("继续进攻")
+
+    assert context.coordinator_hints["suggested_disposition"] == "merge"
+    assert context.coordinator_hints["likely_target_label"] == "003"
+    assert context.coordinator_hints["likely_target_domain"] == "combat"
+    print("  PASS: coordinator_hints_prefer_active_combat_group_over_waiting_group")
+
+
 if __name__ == "__main__":
     print("Running Adjutant coordinator tests...\n")
     test_battlefield_snapshot_prefers_runtime_query()
@@ -305,4 +346,5 @@ if __name__ == "__main__":
     test_coordinator_hints_merge_capability_followup_on_prerequisite_gap()
     test_build_context_uses_capability_task_label_fallback_and_fulfilling_counts()
     test_coordinator_hints_merge_capability_followup_on_fulfilling_phase()
+    test_coordinator_hints_prefer_active_combat_group_over_waiting_group()
     print("\nAll Adjutant coordinator tests passed!")
