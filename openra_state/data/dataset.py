@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Any, Dict, List
 
 
 @dataclass
@@ -420,6 +420,82 @@ def demo_capability_roster_lines(
 def demo_capability_broad_phase_order() -> tuple[str, ...]:
     """Return the minimum broad economy/tech progression for the demo runtime."""
     return _DEMO_BROAD_PHASE_ORDER
+
+
+def demo_base_progression(
+    *,
+    has_construction_yard: bool,
+    mcv_count: int,
+    power_plant_count: int,
+    refinery_count: int,
+    barracks_count: int,
+    war_factory_count: int,
+    buildable: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Return the current demo base progression/readiness snapshot.
+
+    This keeps top-level coordinator hints aligned with the same demo roster and
+    prerequisite truth used by capability buildability.
+    """
+    buildable_buildings = {
+        str(unit_type).lower()
+        for unit_type in list((buildable or {}).get("Building", []) or [])
+        if unit_type is not None
+    }
+    if not has_construction_yard:
+        if int(mcv_count or 0) > 0:
+            return {
+                "phase": "deploy_mcv",
+                "status": "基地车待展开",
+                "missing": ["construction_yard"],
+                "next_unit_type": "fact",
+                "next_queue_type": "Building",
+                "buildable_now": False,
+            }
+        return {
+            "phase": "no_build_core",
+            "status": "缺少建造核心",
+            "missing": ["construction_yard", "mcv"],
+            "next_unit_type": "",
+            "next_queue_type": "",
+            "buildable_now": False,
+        }
+
+    phase_map = {
+        "powr": "bootstrap_power",
+        "proc": "bootstrap_economy",
+        "barr": "bootstrap_production",
+        "weap": "vehicle_gateway_gap",
+    }
+    count_map = {
+        "powr": int(power_plant_count or 0),
+        "proc": int(refinery_count or 0),
+        "barr": int(barracks_count or 0),
+        "weap": int(war_factory_count or 0),
+    }
+    for unit_type in demo_capability_broad_phase_order():
+        if count_map.get(unit_type, 0) > 0:
+            continue
+        queue_type = demo_queue_type_for(unit_type) or "Building"
+        buildable_now = unit_type in buildable_buildings
+        display_name = demo_prompt_display_name_for(unit_type)
+        return {
+            "phase": phase_map.get(unit_type, "bootstrap"),
+            "status": f"下一步：{display_name}" if buildable_now else f"等待能力层补前置：{display_name}",
+            "missing": [unit_type],
+            "next_unit_type": unit_type,
+            "next_queue_type": queue_type,
+            "buildable_now": buildable_now,
+        }
+
+    return {
+        "phase": "base_online",
+        "status": "基地运转中",
+        "missing": [],
+        "next_unit_type": "",
+        "next_queue_type": "",
+        "buildable_now": False,
+    }
 
 
 def demo_mobile_scout_unit_type() -> str | None:

@@ -33,7 +33,7 @@ from models import (
 )
 from openra_api.models import Actor as GameActor
 from openra_api.production_names import normalize_production_name, production_name_variants
-from openra_state.data.dataset import demo_capability_broad_phase_order, demo_prompt_display_name_for, demo_queue_type_for
+from openra_state.data.dataset import demo_base_progression
 from runtime_views import CapabilityStatusSnapshot, TaskTriageInputs
 from task_triage import (
     build_task_triage,
@@ -751,58 +751,18 @@ class Adjutant:
 
     @staticmethod
     def _coordinator_base_readiness(base_state: dict[str, Any]) -> dict[str, Any]:
-        has_construction_yard = bool(base_state.get("has_construction_yard"))
-        mcv_count = int(base_state.get("mcv_count", 0) or 0)
-        buildable = {
-            str(queue_type): [str(unit_type) for unit_type in list(units or []) if unit_type]
-            for queue_type, units in dict(base_state.get("buildable") or {}).items()
-        }
-
-        if not has_construction_yard:
-            if mcv_count > 0:
-                return {
-                    "phase": "deploy_mcv",
-                    "status": "基地车待展开",
-                    "missing": ["construction_yard"],
-                }
-            return {
-                "phase": "no_build_core",
-                "status": "缺少建造核心",
-                "missing": ["construction_yard", "mcv"],
-            }
-
-        phase_map = {
-            "powr": "bootstrap_power",
-            "proc": "bootstrap_economy",
-            "barr": "bootstrap_production",
-            "weap": "vehicle_gateway_gap",
-        }
-        count_map = {
-            "powr": int(base_state.get("power_plant_count", 0) or 0),
-            "proc": int(base_state.get("refinery_count", 0) or 0),
-            "barr": int(base_state.get("barracks_count", 0) or 0),
-            "weap": int(base_state.get("war_factory_count", 0) or 0),
-        }
-        for unit_type in demo_capability_broad_phase_order():
-            if count_map.get(unit_type, 0) > 0:
-                continue
-            queue_type = demo_queue_type_for(unit_type) or "Building"
-            buildable_now = unit_type in set(buildable.get(queue_type, []))
-            display_name = demo_prompt_display_name_for(unit_type)
-            return {
-                "phase": phase_map.get(unit_type, "bootstrap"),
-                "status": f"下一步：{display_name}" if buildable_now else f"等待能力层补前置：{display_name}",
-                "missing": [unit_type],
-                "next_unit_type": unit_type,
-                "next_queue_type": queue_type,
-                "buildable_now": buildable_now,
-            }
-
-        return {
-            "phase": "base_online",
-            "status": "基地运转中",
-            "missing": [],
-        }
+        return demo_base_progression(
+            has_construction_yard=bool(base_state.get("has_construction_yard")),
+            mcv_count=int(base_state.get("mcv_count", 0) or 0),
+            power_plant_count=int(base_state.get("power_plant_count", 0) or 0),
+            refinery_count=int(base_state.get("refinery_count", 0) or 0),
+            barracks_count=int(base_state.get("barracks_count", 0) or 0),
+            war_factory_count=int(base_state.get("war_factory_count", 0) or 0),
+            buildable={
+                str(queue_type): [str(unit_type) for unit_type in list(units or []) if unit_type]
+                for queue_type, units in dict(base_state.get("buildable") or {}).items()
+            },
+        )
 
     @staticmethod
     def _coordinator_alerts(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
