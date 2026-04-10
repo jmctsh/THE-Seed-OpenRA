@@ -1079,6 +1079,11 @@ class Adjutant:
         return classification
 
     @staticmethod
+    def _context_battlefield_snapshot(context: AdjutantContext) -> dict[str, Any]:
+        snapshot = dict((context.coordinator_snapshot or {}).get("battlefield") or {})
+        return snapshot if snapshot else {}
+
+    @staticmethod
     def _derive_task_triage(
         task: Any,
         runtime_task: dict[str, Any],
@@ -2567,7 +2572,7 @@ class Adjutant:
         If a matching task is found, creates a supplementary command task that
         captures the player's intel. Otherwise falls back to _handle_command.
         """
-        battlefield_snapshot = self._battlefield_snapshot()
+        battlefield_snapshot = self._context_battlefield_snapshot(context) or self._battlefield_snapshot()
         best_task = self._select_info_target_task(text, classification, context, battlefield_snapshot)
 
         if best_task is not None and not self.kernel.is_direct_managed(best_task.task_id):
@@ -2602,7 +2607,7 @@ class Adjutant:
         classification: ClassificationResult,
         context: AdjutantContext,
     ) -> dict[str, Any]:
-        battlefield_snapshot = self._battlefield_snapshot()
+        battlefield_snapshot = self._context_battlefield_snapshot(context) or self._battlefield_snapshot()
         target_task = self._select_info_target_task(text, classification, context, battlefield_snapshot)
         disposition = (classification.disposition or "").lower()
 

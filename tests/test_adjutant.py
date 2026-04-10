@@ -114,6 +114,7 @@ class MockKernel:
 
 class MockWorldModel:
     def __init__(self):
+        self.query_counts: dict[str, int] = {}
         self.state = SimpleNamespace(
             actors={
                 401: Actor(actor_id=401, type="重坦", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
@@ -131,6 +132,7 @@ class MockWorldModel:
         }
 
     def query(self, query_type, params=None):
+        self.query_counts[query_type] = self.query_counts.get(query_type, 0) + 1
         if query_type == "battlefield_snapshot":
             return {
                 "summary": "我方15 / 敌方8，探索45.0%",
@@ -1909,7 +1911,8 @@ def test_info_routes_to_best_active_task_without_creating_new_task():
     second.label = "002"
     kernel._tasks.extend([first, second])
 
-    adjutant = InfoOnlyAdjutant(llm=MockProvider(), kernel=kernel, world_model=MockWorldModel())
+    world_model = MockWorldModel()
+    adjutant = InfoOnlyAdjutant(llm=MockProvider(), kernel=kernel, world_model=world_model)
 
     async def run():
         result = await adjutant.handle_player_input("左下角发现敌人基地，还有两辆坦克")
@@ -1922,6 +1925,7 @@ def test_info_routes_to_best_active_task_without_creating_new_task():
 
     assert len(kernel.created_tasks) == 0
     assert getattr(first, "_injected_messages", []) == ["左下角发现敌人基地，还有两辆坦克"]
+    assert world_model.query_counts.get("battlefield_snapshot") == 1
     print("  PASS: info_routes_to_best_active_task_without_creating_new_task")
 
 
@@ -1946,7 +1950,8 @@ def test_command_disposition_merge_injects_into_existing_task():
     task.label = "001"
     kernel._tasks.append(task)
 
-    adjutant = MergeOnlyAdjutant(llm=MockProvider(), kernel=kernel, world_model=MockWorldModel())
+    world_model = MockWorldModel()
+    adjutant = MergeOnlyAdjutant(llm=MockProvider(), kernel=kernel, world_model=world_model)
 
     async def run():
         result = await adjutant.handle_player_input("再多造两辆坦克")
@@ -1959,6 +1964,7 @@ def test_command_disposition_merge_injects_into_existing_task():
 
     assert len(kernel.created_tasks) == 0
     assert getattr(task, "_injected_messages", []) == ["再多造两辆坦克"]
+    assert world_model.query_counts.get("battlefield_snapshot") == 1
     print("  PASS: command_disposition_merge_injects_into_existing_task")
 
 
@@ -1982,7 +1988,8 @@ def test_command_without_disposition_uses_coordinator_hints():
     task.label = "001"
     kernel._tasks.append(task)
 
-    adjutant = HintOnlyAdjutant(llm=MockProvider(), kernel=kernel, world_model=MockWorldModel())
+    world_model = MockWorldModel()
+    adjutant = HintOnlyAdjutant(llm=MockProvider(), kernel=kernel, world_model=world_model)
 
     async def run():
         result = await adjutant.handle_player_input("继续探索左下角")
@@ -1995,6 +2002,7 @@ def test_command_without_disposition_uses_coordinator_hints():
 
     assert len(kernel.created_tasks) == 0
     assert getattr(task, "_injected_messages", []) == ["继续探索左下角"]
+    assert world_model.query_counts.get("battlefield_snapshot") == 1
     print("  PASS: command_without_disposition_uses_coordinator_hints")
 
 
