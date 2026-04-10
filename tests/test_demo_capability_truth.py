@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from experts.knowledge import counter_recommendation, display_name_for, knowledge_for_target, tech_prerequisites_for
 from openra_state.data.dataset import (
     demo_capability_buildable_lines,
+    demo_capability_unit_type_for,
     demo_capability_truth_for,
     demo_display_name_for,
     demo_mobile_scout_unit_type,
@@ -17,6 +18,9 @@ from openra_state.data.dataset import (
     demo_prompt_roster_lines,
     demo_queue_type_for,
     filter_demo_capability_buildable,
+    filter_demo_capability_production_queues,
+    filter_demo_capability_ready_items,
+    filter_demo_capability_reservations,
 )
 from task_agent.context import _capability_runtime_facts_view
 
@@ -27,6 +31,9 @@ def test_demo_dataset_helpers_expose_capability_truth() -> None:
     assert demo_queue_type_for("ftrk") == "Vehicle"
     assert demo_queue_type_for("yak") == "Aircraft"
     assert demo_queue_type_for("kenn") is None
+    assert demo_capability_unit_type_for("重坦") == "3tnk"
+    assert demo_capability_unit_type_for("米格战机") == "mig"
+    assert demo_capability_unit_type_for("军犬") is None
     assert demo_display_name_for("apwr") == "核电站"
     assert demo_display_name_for("harv") == "采矿车"
     assert demo_prompt_display_name_for("harv") == "矿车"
@@ -103,6 +110,55 @@ def test_filter_demo_capability_buildable_strips_non_demo_entries() -> None:
     print("  PASS: filter_demo_capability_buildable_strips_non_demo_entries")
 
 
+def test_filter_demo_capability_queue_snapshots_canonicalize_and_strip_noise() -> None:
+    queues = filter_demo_capability_production_queues(
+        {
+            "Building": [
+                {"unit_type": "发电厂", "count": 1},
+                {"unit_type": "军犬窝", "count": 1},
+            ],
+            "Vehicle": [
+                {"unit_type": "重坦", "count": 1},
+                {"unit_type": "吉普车", "count": 1},
+            ],
+            "Aircraft": [
+                {"unit_type": "米格战机", "count": 1},
+                {"unit_type": "长弓武装直升机", "count": 1},
+            ],
+        }
+    )
+
+    assert queues == {
+        "Building": [{"unit_type": "powr", "count": 1}],
+        "Vehicle": [{"unit_type": "3tnk", "count": 1}],
+        "Aircraft": [{"unit_type": "mig", "count": 1}],
+    }
+    print("  PASS: filter_demo_capability_queue_snapshots_canonicalize_and_strip_noise")
+
+
+def test_filter_demo_capability_ready_items_and_reservations_follow_truth() -> None:
+    ready_items = filter_demo_capability_ready_items(
+        [
+            {"queue_type": "Vehicle", "unit_type": "重坦", "display_name": "重型坦克", "owner_actor_id": 30},
+            {"queue_type": "Infantry", "unit_type": "工程师", "display_name": "工程师", "owner_actor_id": 31},
+        ]
+    )
+    reservations = filter_demo_capability_reservations(
+        [
+            {"reservation_id": "r1", "unit_type": "重坦", "count": 1},
+            {"reservation_id": "r2", "unit_type": "工程师", "count": 1},
+        ]
+    )
+
+    assert ready_items == [
+        {"queue_type": "Vehicle", "unit_type": "3tnk", "display_name": "重型坦克", "owner_actor_id": 30}
+    ]
+    assert reservations == [
+        {"reservation_id": "r1", "unit_type": "3tnk", "count": 1, "queue_type": "Vehicle"}
+    ]
+    print("  PASS: filter_demo_capability_ready_items_and_reservations_follow_truth")
+
+
 def test_demo_capability_buildable_lines_follow_truth_table() -> None:
     lines = demo_capability_buildable_lines(
         {
@@ -161,6 +217,8 @@ if __name__ == "__main__":
     test_demo_prompt_roster_lines_can_include_prerequisites()
     test_capability_runtime_view_derives_queue_type_from_dataset()
     test_filter_demo_capability_buildable_strips_non_demo_entries()
+    test_filter_demo_capability_queue_snapshots_canonicalize_and_strip_noise()
+    test_filter_demo_capability_ready_items_and_reservations_follow_truth()
     test_demo_capability_buildable_lines_follow_truth_table()
     test_knowledge_display_and_prerequisites_follow_dataset_truth()
     test_knowledge_downstream_unlocks_stay_within_demo_truth()

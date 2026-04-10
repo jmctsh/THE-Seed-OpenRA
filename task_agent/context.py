@@ -17,6 +17,9 @@ from openra_state.data.dataset import (
     demo_capability_queue_types,
     demo_queue_type_for,
     filter_demo_capability_buildable,
+    filter_demo_capability_production_queues,
+    filter_demo_capability_ready_items,
+    filter_demo_capability_reservations,
 )
 
 # Chinese labels for Job status values — makes completion judgment clearer for LLM.
@@ -555,8 +558,9 @@ def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
         return {}
     filtered = dict(rf)
     if "unit_reservations" in filtered and isinstance(filtered["unit_reservations"], list):
+        reservations = filter_demo_capability_reservations(filtered["unit_reservations"])
         compact_reservations: list[dict[str, Any]] = []
-        for reservation in filtered["unit_reservations"]:
+        for reservation in reservations:
             if not isinstance(reservation, dict):
                 continue
             compact_reservations.append({
@@ -578,6 +582,12 @@ def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
                 "cancelled_at": reservation.get("cancelled_at"),
             })
         filtered["unit_reservations"] = compact_reservations
+    production_queues = rf.get("production_queues", {})
+    if isinstance(production_queues, dict):
+        filtered["production_queues"] = filter_demo_capability_production_queues(production_queues)
+    ready_queue_items = rf.get("ready_queue_items", [])
+    if isinstance(ready_queue_items, list):
+        filtered["ready_queue_items"] = filter_demo_capability_ready_items(ready_queue_items)
     buildable = rf.get("buildable", {})
     if isinstance(buildable, dict):
         filtered["buildable"] = filter_demo_capability_buildable(buildable)

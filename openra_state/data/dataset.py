@@ -287,6 +287,35 @@ def demo_queue_type_for(unit_type: str) -> str | None:
     return _DEMO_QUEUE_TYPE_BY_UNIT_TYPE.get(str(unit_type).lower())
 
 
+def demo_capability_unit_type_for(name: str | None) -> str | None:
+    """Resolve an observed name to a canonical demo capability unit/building id."""
+    raw = str(name or "").strip()
+    if not raw:
+        return None
+
+    key = raw.lower()
+    if key in _DEMO_QUEUE_TYPE_BY_UNIT_TYPE:
+        return key
+
+    entry = dataset_entry(key)
+    if entry is not None and entry.id.lower() in _DEMO_QUEUE_TYPE_BY_UNIT_TYPE:
+        return entry.id.lower()
+
+    # Import lazily to avoid imposing registry/prod-name startup work on callers
+    # that only need the static dataset table.
+    from openra_api.production_names import production_name_unit_id
+
+    canonical = production_name_unit_id(raw)
+    if canonical and canonical in _DEMO_QUEUE_TYPE_BY_UNIT_TYPE:
+        return canonical
+    return None
+
+
+def demo_capability_supports(name: str | None) -> bool:
+    """Return True when the observed name resolves to the demo capability roster."""
+    return demo_capability_unit_type_for(name) is not None
+
+
 def demo_prerequisites_for(unit_type: str) -> list[str]:
     """Return normalized prerequisites for the demo capability/buildability layer."""
     entry = dataset_entry(unit_type)
@@ -418,6 +447,76 @@ def filter_demo_capability_buildable(buildable: dict[str, list[str]]) -> dict[st
         keep = [unit for unit in units if unit in allowed]
         if keep:
             filtered[queue_type] = keep
+    return filtered
+
+
+def filter_demo_capability_production_queues(
+    production_queues: dict[str, list[dict]],
+) -> dict[str, list[dict]]:
+    """Filter queued production items down to the demo capability roster.
+
+    Returned entries use canonical demo unit ids so Capability sees one stable
+    vocabulary even if the runtime queue payload uses localized names.
+    """
+    filtered: dict[str, list[dict]] = {}
+    for queue_type in _DEMO_QUEUE_ORDER:
+        items = list(production_queues.get(queue_type, []) or [])
+        if not items:
+            continue
+        keep: list[dict] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            canonical = demo_capability_unit_type_for(item.get("unit_type"))
+            if not canonical:
+                continue
+            truth = demo_capability_truth_for(canonical)
+            if truth is None or truth.queue_type != queue_type:
+                continue
+            normalized = dict(item)
+            normalized["unit_type"] = canonical
+            keep.append(normalized)
+        if keep:
+            filtered[queue_type] = keep
+    return filtered
+
+
+def filter_demo_capability_ready_items(ready_items: list[dict]) -> list[dict]:
+    """Filter ready queue items down to the demo capability roster."""
+    filtered: list[dict] = []
+    for item in ready_items or []:
+        if not isinstance(item, dict):
+            continue
+        canonical = demo_capability_unit_type_for(item.get("unit_type") or item.get("display_name"))
+        if not canonical:
+            continue
+        truth = demo_capability_truth_for(canonical)
+        queue_type = str(item.get("queue_type", "") or "")
+        if truth is None or (queue_type and truth.queue_type != queue_type):
+            continue
+        normalized = dict(item)
+        normalized["unit_type"] = canonical
+        normalized.setdefault("display_name", truth.display_name)
+        filtered.append(normalized)
+    return filtered
+
+
+def filter_demo_capability_reservations(reservations: list[dict]) -> list[dict]:
+    """Filter future-unit reservations down to the demo capability roster."""
+    filtered: list[dict] = []
+    for reservation in reservations or []:
+        if not isinstance(reservation, dict):
+            continue
+        canonical = demo_capability_unit_type_for(reservation.get("unit_type"))
+        if not canonical:
+            continue
+        truth = demo_capability_truth_for(canonical)
+        if truth is None:
+            continue
+        normalized = dict(reservation)
+        normalized["unit_type"] = canonical
+        normalized["queue_type"] = reservation.get("queue_type") or truth.queue_type
+        filtered.append(normalized)
     return filtered
 
 

@@ -210,6 +210,38 @@ def test_capability_context_has_active_production():
     assert "Kernel fast-path" in msg["content"]
 
 
+def test_capability_context_filters_non_demo_queue_noise():
+    """Capability context should hide non-demo queue/ready-item noise."""
+    rf = {
+        "production_queues": {
+            "Vehicle": [
+                {"unit_type": "重坦", "count": 1, "source": "Kernel fast-path"},
+                {"unit_type": "吉普车", "count": 1, "source": "Kernel fast-path"},
+            ],
+            "Aircraft": [
+                {"unit_type": "米格战机", "count": 1, "source": "Capability"},
+                {"unit_type": "长弓武装直升机", "count": 1, "source": "Capability"},
+            ],
+        },
+        "ready_queue_items": [
+            {"queue_type": "Vehicle", "unit_type": "重坦", "display_name": "重型坦克", "owner_actor_id": 30},
+            {"queue_type": "Infantry", "unit_type": "工程师", "display_name": "工程师", "owner_actor_id": 31},
+        ],
+        "unit_reservations": [
+            {"reservation_id": "res_ok", "request_id": "req_ok", "task_label": "003", "unit_type": "重坦", "count": 1},
+            {"reservation_id": "res_bad", "request_id": "req_bad", "task_label": "004", "unit_type": "工程师", "count": 1},
+        ],
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "3tnk" in msg["content"]
+    assert "mig" in msg["content"]
+    assert "吉普车" not in msg["content"]
+    assert "长弓武装直升机" not in msg["content"]
+    assert "工程师" not in msg["content"]
+    assert "res_bad" not in msg["content"]
+
+
 def test_capability_context_has_concise_reservations():
     """Capability context should show concise future-unit reservations."""
     rf = {
