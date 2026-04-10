@@ -903,48 +903,14 @@ class Adjutant:
         return classification
 
     @staticmethod
-    def _task_status_line(task_entry: dict[str, Any], capability_status: dict[str, Any]) -> str:
-        if task_entry.get("is_capability"):
-            active_job_types = list(capability_status.get("active_job_types", []) or [])
-            pending_request_count = int(capability_status.get("pending_request_count", 0) or 0)
-            blocking_request_count = int(capability_status.get("blocking_request_count", 0) or 0)
-            start_released_request_count = int(capability_status.get("start_released_request_count", 0) or 0)
-            reinforcement_request_count = int(capability_status.get("reinforcement_request_count", 0) or 0)
-            phase = str(capability_status.get("phase", "") or "")
-            blocker = str(capability_status.get("blocker", "") or "")
-            status = task_entry.get("status", "running")
-            parts = [f"能力任务 {status}"]
-            if phase:
-                parts.append(f"phase={phase}")
-            if active_job_types:
-                parts.append(f"job={','.join(active_job_types[:3])}")
-            if pending_request_count:
-                parts.append(f"pending={pending_request_count}")
-            if blocking_request_count:
-                parts.append(f"blocking={blocking_request_count}")
-            if start_released_request_count:
-                parts.append(f"ready={start_released_request_count}")
-            if reinforcement_request_count:
-                parts.append(f"reinforce={reinforcement_request_count}")
-            if blocker:
-                parts.append(f"blocker={blocker}")
-            return " | ".join(parts)
-        active_group_size = int(task_entry.get("active_group_size", 0) or 0)
-        status = str(task_entry.get("status", "running"))
-        unit_mix = list(task_entry.get("unit_mix", []) or [])
-        if active_group_size > 0:
-            if unit_mix:
-                return f"{status} | group={active_group_size} | {', '.join(unit_mix[:3])}"
-            return f"{status} | group={active_group_size}"
-        return status
-
-    @staticmethod
     def _derive_task_triage(
         task: Any,
         runtime_task: dict[str, Any],
         runtime_state: dict[str, Any],
         capability_status: dict[str, Any],
         world_sync: dict[str, Any],
+        *,
+        unit_mix: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         runtime_state = dict(runtime_state or {})
         if capability_status:
@@ -954,6 +920,7 @@ class Adjutant:
             runtime_task=runtime_task,
             runtime_state=runtime_state,
             world_sync=world_sync,
+            unit_mix=unit_mix,
         )
 
     # --- Main entry point ---
@@ -2368,13 +2335,16 @@ class Adjutant:
                 "unit_mix": list(group_summary.get("unit_mix", []) or []),
                 "domain": self._task_domain(str(getattr(t, "raw_text", "") or "").lower()),
             }
-            triage = self._derive_task_triage(t, runtime_task, runtime_state, capability_status, world_sync)
+            triage = self._derive_task_triage(
+                t,
+                runtime_task,
+                runtime_state,
+                capability_status,
+                world_sync,
+                unit_mix=list(group_summary.get("unit_mix", []) or []),
+            )
             task_entry.update(triage)
-            status_line = str(triage.get("status_line") or self._task_status_line(task_entry, capability_status) or "")
-            unit_mix = list(task_entry.get("unit_mix", []) or [])
-            if unit_mix and "×" not in status_line:
-                status_line = f"{status_line} | {', '.join(unit_mix[:3])}" if status_line else ", ".join(unit_mix[:3])
-            task_entry["status_line"] = status_line
+            task_entry["status_line"] = str(triage.get("status_line") or "")
             active_tasks.append(task_entry)
 
         pending_questions = self.kernel.list_pending_questions()

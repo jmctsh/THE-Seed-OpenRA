@@ -54,6 +54,7 @@ def build_task_triage(
     pending_question: Optional[dict[str, Any]] = None,
     latest_warning: Optional[str] = None,
     primary_summary: str = "",
+    unit_mix: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """Build a shared task triage payload from runtime state.
 
@@ -65,6 +66,13 @@ def build_task_triage(
     runtime_task = dict(runtime_task or {})
     runtime_state = dict(runtime_state or {})
     world_sync = dict(world_sync or {})
+    unit_mix = list(unit_mix or [])
+
+    def with_unit_mix(status_line: str) -> str:
+        if not unit_mix or "×" in status_line:
+            return status_line
+        suffix = ", ".join(unit_mix[:3])
+        return f"{status_line} | {suffix}" if status_line else suffix
 
     active_group_size = int(
         runtime_task.get("active_group_size", getattr(task, "active_group_size", 0)) or 0
@@ -144,7 +152,7 @@ def build_task_triage(
         return {
             "state": "waiting_player",
             "phase": "question",
-            "status_line": f"等待玩家回复：{question}" if question else "等待玩家回复",
+            "status_line": with_unit_mix(f"等待玩家回复：{question}" if question else "等待玩家回复"),
             "waiting_reason": "player_response",
             "blocking_reason": "",
             "active_expert": active_expert,
@@ -158,7 +166,7 @@ def build_task_triage(
         return {
             "state": "blocked",
             "phase": "warning",
-            "status_line": latest_warning,
+            "status_line": with_unit_mix(latest_warning),
             "waiting_reason": "",
             "blocking_reason": "task_warning",
             "active_expert": active_expert,
@@ -233,7 +241,7 @@ def build_task_triage(
         return {
             "state": "waiting_units",
             "phase": "reservation",
-            "status_line": status_line,
+            "status_line": with_unit_mix(status_line),
             "waiting_reason": "unit_reservation",
             "blocking_reason": "",
             "active_expert": active_expert,
@@ -248,7 +256,7 @@ def build_task_triage(
         return {
             "state": "waiting",
             "phase": "job_waiting",
-            "status_line": status_line,
+            "status_line": with_unit_mix(status_line),
             "waiting_reason": "job_waiting",
             "blocking_reason": "",
             "active_expert": active_expert,
@@ -263,7 +271,7 @@ def build_task_triage(
         return {
             "state": "running",
             "phase": "job_running",
-            "status_line": status_line,
+            "status_line": with_unit_mix(status_line),
             "waiting_reason": "",
             "blocking_reason": "",
             "active_expert": active_expert,
@@ -274,10 +282,13 @@ def build_task_triage(
         }
 
     if active_group_size > 0:
+        status_line = f"执行中 | group={active_group_size}"
+        if unit_mix:
+            status_line += f" | {', '.join(unit_mix[:3])}"
         return {
             "state": "running",
             "phase": "task_active",
-            "status_line": f"执行中 | group={active_group_size}",
+            "status_line": status_line,
             "waiting_reason": "",
             "blocking_reason": "",
             "active_expert": active_expert,
@@ -290,7 +301,7 @@ def build_task_triage(
     return {
         "state": "idle",
         "phase": "task_active",
-        "status_line": "等待调度",
+        "status_line": with_unit_mix("等待调度"),
         "waiting_reason": "scheduler",
         "blocking_reason": "",
         "active_expert": active_expert,
