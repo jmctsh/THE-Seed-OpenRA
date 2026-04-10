@@ -14,6 +14,7 @@ from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from openra_api.game_api import GameAPI, GameAPIError
+from openra_api.models import Actor
 
 
 class _PersistentJsonServer:
@@ -294,6 +295,30 @@ def test_manage_production_accepts_precise_queue_targeting() -> None:
     print("  PASS: manage_production_accepts_precise_queue_targeting")
 
 
+def test_occupy_units_sends_precise_actor_ids() -> None:
+    api = GameAPI("127.0.0.1", port=1)
+    captured = {}
+
+    def fake_send(command: str, params: dict) -> dict:
+        captured["command"] = command
+        captured["params"] = dict(params)
+        return {"status": 1, "data": None}
+
+    api._send_request = fake_send  # type: ignore[method-assign]
+    api._handle_response = lambda response, _error: response.get("data")  # type: ignore[method-assign]
+
+    api.occupy_units([Actor(actor_id=701), Actor(actor_id=702)], [Actor(actor_id=9001)])
+
+    assert captured == {
+        "command": "occupy",
+        "params": {
+            "occupiers": {"actorId": [701, 702]},
+            "targets": {"actorId": [9001]},
+        },
+    }
+    print("  PASS: occupy_units_sends_precise_actor_ids")
+
+
 if __name__ == "__main__":
     print("Running GameAPI tests...\n")
     test_game_api_reuses_single_connection()
@@ -304,4 +329,5 @@ if __name__ == "__main__":
     test_place_building_raises_when_ready_item_does_not_change()
     test_place_building_accepts_ready_item_change()
     test_manage_production_accepts_precise_queue_targeting()
-    print("\nAll 8 tests passed!")
+    test_occupy_units_sends_precise_actor_ids()
+    print("\nAll 9 tests passed!")

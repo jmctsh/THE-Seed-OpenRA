@@ -84,7 +84,32 @@ def test_occupy_job_times_out_when_target_not_captured() -> None:
     print("  PASS: occupy_job_times_out_when_target_not_captured")
 
 
+def test_occupy_job_keeps_verifying_after_resource_revoked() -> None:
+    api = FakeGameAPI()
+    world = FakeWorldModel()
+    signals = []
+    expert = OccupyExpert(game_api=api, world_model=world)
+    job = expert.create_job(
+        task_id="t1",
+        config=OccupyJobConfig(actor_ids=[701], target_actor_id=9001),
+        signal_callback=signals.append,
+    )
+    job.on_resource_granted(["actor:701"])
+
+    job.do_tick()
+    job.on_resource_revoked(["actor:701"])
+    assert job.status == JobStatus.RUNNING
+
+    world.owner = "self"
+    job.do_tick()
+
+    assert job.status == JobStatus.SUCCEEDED
+    assert signals[-1].result == "succeeded"
+    print("  PASS: occupy_job_keeps_verifying_after_resource_revoked")
+
+
 if __name__ == "__main__":
     test_occupy_job_captures_target_after_owner_switch()
     test_occupy_job_times_out_when_target_not_captured()
+    test_occupy_job_keeps_verifying_after_resource_revoked()
     print("OK: occupy expert tests passed")

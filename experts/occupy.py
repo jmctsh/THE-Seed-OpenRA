@@ -60,12 +60,43 @@ class OccupyJob(BaseJob):
             for actor_id in config.actor_ids
         ]
 
+    def on_resource_revoked(self, actor_ids: list[str]) -> None:
+        super().on_resource_revoked(actor_ids)
+        if self._issued and self.status == JobStatus.WAITING:
+            # Engineers may disappear into the target during capture. Keep polling
+            # target ownership instead of stalling in WAITING after the order was sent.
+            self.status = JobStatus.RUNNING
+
     def tick(self) -> None:
         config: OccupyJobConfig = self.config  # type: ignore[assignment]
-        if not self.resources:
+        if not self.resources and not self._issued:
+            return
+
+        result = self.world_model.query("actor_by_id", {"actor_id": config.target_actor_id})
+        actor = result.get("actor") if isinstance(result, dict) else None
+        if actor and actor.get("owner") == "self":
+            self.status = JobStatus.SUCCEEDED
+            self.emit_signal(
+                kind=SignalKind.TASK_COMPLETE,
+                summary=f"Captured target {config.target_actor_id}",
+                result="succeeded",
+                data={
+                    "target_actor_id": config.target_actor_id,
+                    "actor_ids": list(config.actor_ids),
+                },
+            )
             return
 
         if not self._issued:
+            if not actor:
+                self.status = JobStatus.FAILED
+                self.emit_signal(
+                    kind=SignalKind.TASK_COMPLETE,
+                    summary=f"Capture target {config.target_actor_id} is no longer visible",
+                    result="failed",
+                    data={"target_actor_id": config.target_actor_id, "reason": "target_not_visible"},
+                )
+                return
             occupier_ids = self._actor_ids_from_resources()
             if not occupier_ids:
                 return
@@ -85,20 +116,15 @@ class OccupyJob(BaseJob):
 
             self._issued = True
             self._issued_at = time.time()
-            return
-
-        result = self.world_model.query("actor_by_id", {"actor_id": config.target_actor_id})
-        actor = result.get("actor") if isinstance(result, dict) else None
-        if actor and actor.get("owner") == "self":
-            self.status = JobStatus.SUCCEEDED
             self.emit_signal(
-                kind=SignalKind.TASK_COMPLETE,
-                summary=f"Captured target {config.target_actor_id}",
-                result="succeeded",
-                data={
+                kind=SignalKind.PROGRESS,
+                summary=f"Capture order issued for target {config.target_actor_id}",
+                expert_state={
+                    "phase": "occupying",
                     "target_actor_id": config.target_actor_id,
-                    "actor_ids": self._actor_ids_from_resources(),
+                    "occupier_ids": occupier_ids,
                 },
+                data={"target_actor_id": config.target_actor_id, "actor_ids": occupier_ids},
             )
             return
 
