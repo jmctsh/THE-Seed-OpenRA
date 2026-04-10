@@ -222,6 +222,16 @@ class _WorldModelNoFreeCombat(_WorldModel):
         return result
 
 
+class _WorldModelWithFreeCombat(_WorldModel):
+    def query(self, query_type: str, params=None):
+        result = super().query(query_type, params)
+        if query_type == "battlefield_snapshot":
+            result["self_combat_units"] = 5
+            result["committed_combat_units"] = 3
+            result["free_combat_units"] = 2
+        return result
+
+
 class _WorldModelNoPower(_WorldModel):
     def query(self, query_type: str, params=None):
         result = super().query(query_type, params)
@@ -422,6 +432,23 @@ def test_coordinator_hints_reuse_active_group_when_no_free_combat_units() -> Non
     print("  PASS: coordinator_hints_reuse_active_group_when_no_free_combat_units")
 
 
+def test_coordinator_hints_do_not_force_merge_when_free_combat_units_exist() -> None:
+    adjutant = Adjutant(
+        llm=MockProvider(),
+        kernel=_Kernel(),
+        world_model=_WorldModelWithFreeCombat(),
+    )
+
+    context = adjutant._build_context("攻击西侧敌军")
+
+    assert context.coordinator_hints["suggested_disposition"] is None
+    assert context.coordinator_hints["likely_target_label"] == "003"
+    assert context.coordinator_hints["free_combat_units"] == 2
+    assert context.coordinator_hints["has_free_combat_capacity"] is True
+    assert context.coordinator_hints["reason"] == "free_combat_units_available"
+    print("  PASS: coordinator_hints_do_not_force_merge_when_free_combat_units_exist")
+
+
 if __name__ == "__main__":
     print("Running Adjutant coordinator tests...\n")
     test_battlefield_snapshot_prefers_runtime_query()
@@ -433,4 +460,5 @@ if __name__ == "__main__":
     test_coordinator_hints_merge_capability_followup_on_fulfilling_phase()
     test_coordinator_hints_prefer_active_combat_group_over_waiting_group()
     test_coordinator_hints_reuse_active_group_when_no_free_combat_units()
+    test_coordinator_hints_do_not_force_merge_when_free_combat_units_exist()
     print("\nAll Adjutant coordinator tests passed!")

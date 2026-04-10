@@ -929,6 +929,9 @@ class Adjutant:
             elif text_domain in {"combat", "recon"} and int(best_task.get("active_group_size", 0) or 0) > 0 and free_combat_units <= 0:
                 suggested_disposition = "merge"
                 reason = "reuse_active_group_no_free_combat"
+            elif text_domain in {"combat", "recon"} and int(best_task.get("active_group_size", 0) or 0) > 0 and free_combat_units > 0 and not is_follow_up:
+                suggested_disposition = None
+                reason = "free_combat_units_available"
             elif is_follow_up or text_domain != "general":
                 suggested_disposition = "merge"
                 reason = "followup_merge"
