@@ -30,7 +30,7 @@ from models import (
     TaskMessageType,
 )
 from openra_api.models import Actor as GameActor
-from openra_api.production_names import normalize_production_name
+from openra_api.production_names import normalize_production_name, production_name_variants
 from task_triage import build_task_triage, capability_blocker_status_text
 from unit_registry import UnitRegistry, get_default_registry
 from .runtime_nlu import DirectNLUStep, RuntimeNLUDecision, RuntimeNLURouter
@@ -1834,12 +1834,26 @@ class Adjutant:
         config: CombatJobConfig = step.config
         if config.target_position != (0, 0):
             return RuleMatchResult(expert_type=step.expert_type, config=config, reason=step.reason)
+        visible_payload = self.world_model.query("enemy_actors")
+        visible_actors = list((visible_payload or {}).get("actors", [])) if isinstance(visible_payload, dict) else []
+        explicit_target = self._match_explicit_enemy_target(step.source_text, visible_actors)
+        if explicit_target and explicit_target.get("position"):
+            pos = tuple(explicit_target.get("position", [0, 0]))
+            config = CombatJobConfig(
+                target_position=pos,
+                engagement_mode=config.engagement_mode,
+                max_chase_distance=config.max_chase_distance,
+                retreat_threshold=config.retreat_threshold,
+                target_actor_id=int(explicit_target["actor_id"]),
+                actor_ids=config.actor_ids,
+                unit_count=config.unit_count,
+            )
+            return RuleMatchResult(expert_type=step.expert_type, config=config, reason=step.reason)
         # Auto-target: find nearest enemy building, fall back to any enemy actor, then frozen
         payload = self.world_model.query("enemy_actors", {"category": "building"})
         actors = list((payload or {}).get("actors", [])) if isinstance(payload, dict) else []
         if not actors:
-            payload = self.world_model.query("enemy_actors")
-            actors = list((payload or {}).get("actors", [])) if isinstance(payload, dict) else []
+            actors = visible_actors
         # Fall back to frozen enemies (last-seen positions in fog)
         targets = [{"position": a.get("position", [0, 0])} for a in actors]
         if not targets:
@@ -1863,6 +1877,44 @@ class Adjutant:
             )
         # If no enemies found, keep (0,0) — CombatExpert will handle "no visible enemy"
         return RuleMatchResult(expert_type=step.expert_type, config=config, reason=step.reason)
+
+    @staticmethod
+    def _match_explicit_enemy_target(text: str, actors: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+        raw_text = str(text or "").strip().lower()
+        if not raw_text:
+            return None
+        best_actor: Optional[dict[str, Any]] = None
+        best_score = 0
+        for actor in actors:
+            score = Adjutant._explicit_enemy_target_score(raw_text, actor)
+            if score <= 0:
+                continue
+            actor_id = int(actor.get("actor_id") or 0)
+            if score > best_score or (score == best_score and best_actor is not None and actor_id < int(best_actor.get("actor_id") or 0)):
+                best_score = score
+                best_actor = actor
+        return best_actor
+
+    @staticmethod
+    def _explicit_enemy_target_score(text: str, actor: dict[str, Any]) -> int:
+        best = 0
+        seen: set[str] = set()
+        for raw_name in (actor.get("display_name"), actor.get("name")):
+            for variant in production_name_variants(raw_name):
+                token = str(variant or "").strip()
+                lowered = token.lower()
+                if not token or lowered in seen:
+                    continue
+                seen.add(lowered)
+                if lowered not in text:
+                    continue
+                score = len(token)
+                if any("\u4e00" <= ch <= "\u9fff" for ch in token):
+                    score += 10
+                elif len(token) >= 3:
+                    score += 3
+                best = max(best, score)
+        return best
 
     def _start_direct_job(self, raw_text: str, expert_type: str, config: Any) -> tuple[Any, Any]:
         subscriptions = _EXPERT_SUBSCRIPTIONS.get(expert_type, ["threat", "base_state"])

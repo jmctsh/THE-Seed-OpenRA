@@ -15,13 +15,15 @@ from typing import Any, Optional
 
 import logging_system
 from llm import LLMResponse, MockProvider
-from models import PlayerResponse, Task, TaskKind, TaskMessage, TaskMessageType, TaskStatus
+from models import CombatJobConfig, PlayerResponse, Task, TaskKind, TaskMessage, TaskMessageType, TaskStatus
 from openra_api.models import Actor, Location
+from models.enums import EngagementMode
 from adjutant import (
     Adjutant, AdjutantConfig, AdjutantContext, ClassificationResult, InputType,
     CLASSIFICATION_SYSTEM_PROMPT,
     NotificationManager, format_notification, notification_to_text, notification_to_dict,
 )
+from adjutant.runtime_nlu import DirectNLUStep
 
 
 # --- Mocks ---
@@ -236,6 +238,21 @@ class MockWorldModel:
                 "actors": [
                     {"actor_id": 401, "name": "步兵"},
                     {"actor_id": 403, "name": "步兵"},
+                ],
+                "timestamp": time.time(),
+            }
+        if query_type == "enemy_actors" and params == {"category": "building"}:
+            return {
+                "actors": [
+                    {"actor_id": 902, "name": "dome", "display_name": "雷达站", "position": [1200, 260]},
+                ],
+                "timestamp": time.time(),
+            }
+        if query_type == "enemy_actors":
+            return {
+                "actors": [
+                    {"actor_id": 901, "name": "harv", "display_name": "矿车", "position": [900, 100]},
+                    {"actor_id": 902, "name": "dome", "display_name": "雷达站", "position": [1200, 260]},
                 ],
                 "timestamp": time.time(),
             }
@@ -528,6 +545,31 @@ def test_runtime_nlu_stop_attack_uses_game_api_without_llm():
     assert game_api.stopped_units == [[401, 402]]
     assert len(kernel.created_tasks) == 0
     print("  PASS: runtime_nlu_stop_attack_uses_game_api_without_llm")
+
+
+def test_resolve_attack_step_prefers_explicit_visible_target_name():
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    step = DirectNLUStep(
+        intent="attack",
+        expert_type="CombatExpert",
+        config=CombatJobConfig(
+            target_position=(0, 0),
+            engagement_mode=EngagementMode.ASSAULT,
+            unit_count=0,
+        ),
+        reason="nlu_attack",
+        source_text="重坦集火敌方矿车",
+    )
+
+    match = adjutant._resolve_runtime_nlu_step(step)
+    cfg = match.config
+    assert cfg.target_actor_id == 901
+    assert cfg.target_position == (900, 100)
+    print("  PASS: resolve_attack_step_prefers_explicit_visible_target_name")
 
 
 def test_nlu_routed_deploy_uses_mcv_query():
@@ -1807,6 +1849,7 @@ if __name__ == "__main__":
     test_runtime_nlu_query_actor_returns_direct_query_response()
     test_runtime_nlu_mine_uses_game_api_without_llm()
     test_runtime_nlu_stop_attack_uses_game_api_without_llm()
+    test_resolve_attack_step_prefers_explicit_visible_target_name()
     test_nlu_routed_deploy_uses_mcv_query()
     test_nlu_routed_expand_mcv_uses_deploy_path()
     test_deploy_without_mcv_but_with_construction_yard_returns_immediate_feedback()
@@ -1854,4 +1897,4 @@ if __name__ == "__main__":
     test_command_without_disposition_uses_coordinator_hints()
     test_system_prompt_has_dialogue_context_awareness_section()
 
-    print(f"\nAll 52 tests passed!")
+    print(f"\nAll 53 tests passed!")
