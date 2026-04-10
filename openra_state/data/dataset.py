@@ -266,6 +266,29 @@ _DEMO_BASE_COUNTER_FIELD_BY_UNIT_TYPE: dict[str, str] = {
 }
 _DEMO_BROAD_PHASE_ORDER: tuple[str, ...] = ("powr", "proc", "barr", "weap")
 _DEMO_MOBILE_SCOUT_UNIT_TYPE = "ftrk"
+_DEMO_TRUTH_OVERRIDES: dict[str, DemoCapabilityTruth] = {
+    # Shared infantry are registered twice in DATASET (Allies/Soviet).  Demo truth
+    # must not inherit the last-write-wins Soviet row, otherwise Capability and
+    # faction inference treat common units as Soviet-only.
+    "e1": DemoCapabilityTruth(
+        unit_type="e1",
+        queue_type="Infantry",
+        display_name="步兵",
+        prompt_display_name="步兵",
+        prerequisites=("barr",),
+        faction=None,
+        in_demo_roster=True,
+    ),
+    "e3": DemoCapabilityTruth(
+        unit_type="e3",
+        queue_type="Infantry",
+        display_name="火箭兵",
+        prompt_display_name="火箭兵",
+        prerequisites=("barr",),
+        faction=None,
+        in_demo_roster=True,
+    ),
+}
 
 
 def dataset_entry(unit_type: str) -> UnitInfo | None:
@@ -414,6 +437,9 @@ def demo_capability_truth_for(unit_type: str) -> DemoCapabilityTruth | None:
     key = str(unit_type or "").lower()
     if not key:
         return None
+    override = _DEMO_TRUTH_OVERRIDES.get(key)
+    if override is not None:
+        return override
     entry = dataset_entry(key)
     if entry is None:
         return None
@@ -607,6 +633,9 @@ def demo_mobile_scout_unit_type() -> str | None:
 
 def demo_faction_restriction_for(unit_type: str) -> str | None:
     """Return allied/soviet restriction or None when both factions can build it."""
+    truth = demo_capability_truth_for(unit_type)
+    if truth is not None:
+        return truth.faction
     entry = dataset_entry(unit_type)
     if entry is None:
         return None

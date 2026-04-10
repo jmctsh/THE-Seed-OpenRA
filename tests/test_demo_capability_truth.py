@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from experts.knowledge import counter_recommendation, display_name_for, knowledge_for_target, tech_prerequisites_for
 from openra_state.data.dataset import (
     demo_capability_buildable_lines,
+    demo_faction_hint_for_unit_types,
     demo_capability_unit_type_for,
     demo_capability_truth_for,
     demo_display_name_for,
@@ -48,6 +49,19 @@ def test_demo_dataset_helpers_expose_capability_truth() -> None:
     assert truth.faction == "soviet"
     assert truth.in_demo_roster is True
     print("  PASS: demo_dataset_helpers_expose_capability_truth")
+
+
+def test_demo_truth_overrides_keep_shared_infantry_faction_neutral() -> None:
+    e1 = demo_capability_truth_for("e1")
+    e3 = demo_capability_truth_for("e3")
+
+    assert e1 is not None
+    assert e3 is not None
+    assert e1.faction is None
+    assert e3.faction is None
+    assert demo_faction_hint_for_unit_types(["e1", "e3"]) is None
+    assert demo_faction_hint_for_unit_types(["e1", "3tnk"]) == "soviet"
+    print("  PASS: demo_truth_overrides_keep_shared_infantry_faction_neutral")
 
 
 def test_demo_prompt_roster_lines_follow_truth_table() -> None:
@@ -213,6 +227,7 @@ def test_counter_recommendation_stays_within_demo_roster() -> None:
 if __name__ == "__main__":
     print("Running demo capability truth tests...\n")
     test_demo_dataset_helpers_expose_capability_truth()
+    test_demo_truth_overrides_keep_shared_infantry_faction_neutral()
     test_demo_prompt_roster_lines_follow_truth_table()
     test_demo_prompt_roster_lines_can_include_prerequisites()
     test_capability_runtime_view_derives_queue_type_from_dataset()
