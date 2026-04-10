@@ -110,6 +110,21 @@ class BenchmarkStore:
             results = results[:top_n]
         return results
 
+    def records_from(self, offset: int, *, limit: Optional[int] = None) -> List[BenchmarkRecord]:
+        start = max(0, int(offset))
+        with self._lock:
+            if start >= len(self._records):
+                return []
+            records = self._records[start:] if limit is None else self._records[start : start + max(0, int(limit))]
+            return list(records)
+
+    def tail(self, *, limit: int = 100) -> List[BenchmarkRecord]:
+        remaining = max(0, int(limit))
+        if remaining == 0:
+            return []
+        with self._lock:
+            return list(self._records[-remaining:])
+
     def export_json(
         self,
         path: Optional[Union[str, Path]] = None,
@@ -306,6 +321,14 @@ def records() -> List[BenchmarkRecord]:
     return list(query())
 
 
+def records_from(offset: int, *, limit: Optional[int] = None) -> List[BenchmarkRecord]:
+    return _DEFAULT_STORE.records_from(offset, limit=limit)
+
+
+def tail_records(*, limit: int = 100) -> List[BenchmarkRecord]:
+    return _DEFAULT_STORE.tail(limit=limit)
+
+
 def subscribe(callback: Callable[[BenchmarkRecord], None]) -> None:
     _DEFAULT_STORE.subscribe(callback)
 
@@ -324,8 +347,10 @@ __all__ = [
     "query",
     "record",
     "records",
+    "records_from",
     "span",
     "subscribe",
+    "tail_records",
     "timed",
     "unsubscribe",
 ]

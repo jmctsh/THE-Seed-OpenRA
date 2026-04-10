@@ -15,9 +15,11 @@ from .core import (
     query,
     read_task_replay_records,
     records,
+    records_from,
     replay,
     start_persistence_session,
     stop_persistence_session,
+    tail_records,
 )
 
 __all__ = [
@@ -34,9 +36,11 @@ __all__ = [
     "query",
     "read_task_replay_records",
     "records",
+    "records_from",
     "replay",
     "start_persistence_session",
     "stop_persistence_session",
     "summarize_benchmarks",
+    "tail_records",
     "uninstall_benchmark_logging",
 ]

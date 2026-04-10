@@ -51,9 +51,10 @@ from logging_system import (
     get_logger,
     install_benchmark_logging,
     read_task_replay_records,
-    records as log_records,
+    records_from as log_records_from,
     start_persistence_session,
     stop_persistence_session,
+    tail_records as log_tail_records,
 )
 from models import PlayerResponse, TaskMessageType, TaskStatus
 from openra_api.game_api import GameAPI
@@ -191,6 +192,7 @@ class RuntimeBridge(InboundHandler):
         self._task_message_offset = 0
         self._notification_manager: Optional[NotificationManager] = None
         self._log_offset = 0
+        self._benchmark_offset = 0
         self._recent_responses: list[dict[str, Any]] = []
         self._publish_lock = asyncio.Lock()
         self._publish_task: Optional[asyncio.Task[Any]] = None
@@ -465,8 +467,7 @@ class RuntimeBridge(InboundHandler):
 
     async def _publish_logs(self) -> None:
         assert self.ws_server is not None
-        _LEVEL_ORDER = {"DEBUG": 0, "INFO": 1, "WARN": 2, "ERROR": 3}
-        new_records = log_records()[self._log_offset :]
+        new_records = log_records_from(self._log_offset, limit=200)
         self._log_offset += len(new_records)
         for record in new_records:
             # Frontend diagnostics should see runtime debug logs too. Keep benchmark
@@ -477,10 +478,10 @@ class RuntimeBridge(InboundHandler):
 
     async def _publish_benchmarks(self) -> None:
         assert self.ws_server is not None
-        benchmark_records = [
-            record.to_dict()
-            for record in benchmark.query(slowest_first=False)
-        ]
+        benchmark_records = [record.to_dict() for record in benchmark.records_from(self._benchmark_offset, limit=200)]
+        self._benchmark_offset += len(benchmark_records)
+        if not benchmark_records:
+            return
         await self.ws_server.send_benchmark(benchmark_records)
 
     async def _broadcast_current_dashboard(self) -> None:
@@ -580,11 +581,15 @@ class RuntimeBridge(InboundHandler):
 
         history_logs = [
             record.to_dict()
-            for record in log_records()
+            for record in log_tail_records(limit=1000)
             if record.component != "benchmark"
         ][-500:]
         for entry in history_logs:
             await self.ws_server.send_to_client(client_id, "log_entry", entry)
+
+        benchmark_history = [record.to_dict() for record in benchmark.tail_records(limit=500)]
+        if benchmark_history:
+            await self.ws_server.send_to_client(client_id, "benchmark", {"records": benchmark_history})
 
         for message in self.kernel.list_task_messages()[-100:]:
             if message.type == TaskMessageType.TASK_QUESTION:

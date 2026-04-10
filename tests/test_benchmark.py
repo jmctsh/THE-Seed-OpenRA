@@ -61,3 +61,15 @@ def test_export_json_writes_records() -> None:
     assert len(written) == 1
     assert written == serialized
     assert written[0]["tag"] == "world_refresh"
+
+
+def test_records_from_and_tail_records_follow_append_order() -> None:
+    for idx in range(5):
+        with benchmark.span("tool_exec", name=f"step-{idx}"):
+            time.sleep(0.001)
+
+    sliced = benchmark.records_from(1, limit=2)
+    tail = benchmark.tail_records(limit=2)
+
+    assert [record.name for record in sliced] == ["step-1", "step-2"]
+    assert [record.name for record in tail] == ["step-3", "step-4"]

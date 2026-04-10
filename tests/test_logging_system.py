@@ -111,6 +111,19 @@ def test_log_query_and_export() -> None:
     assert written[0]["component"] == "kernel"
 
 
+def test_log_records_from_and_tail_records() -> None:
+    logger = logging_system.get_logger("kernel")
+    for idx in range(5):
+        logger.info(f"event-{idx}", event=f"e_{idx}", task_id=f"t_{idx}")
+
+    sliced = logging_system.records_from(2, limit=2)
+    tail = logging_system.tail_records(limit=2)
+
+    assert [record.message for record in sliced] == ["event-2", "event-3"]
+    assert [record.message for record in tail] == ["event-3", "event-4"]
+    assert logging_system.tail_records(component="kernel", limit=1)[0].message == "event-4"
+
+
 def test_persistent_log_session_writes_all_and_task_files() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         session_dir = logging_system.start_persistence_session(
@@ -205,6 +218,9 @@ if __name__ == "__main__":
     test_log_query_and_export()
     print("  PASS: log_query_and_export")
     setup_function()
+    test_log_records_from_and_tail_records()
+    print("  PASS: log_records_from_and_tail_records")
+    setup_function()
     test_persistent_log_session_writes_all_and_task_files()
     print("  PASS: persistent_log_session_writes_all_and_task_files")
     setup_function()
@@ -216,4 +232,4 @@ if __name__ == "__main__":
     setup_function()
     test_tool_executor_emits_structured_logs()
     print("  PASS: tool_executor_emits_structured_logs")
-    print("\nAll 6 structured logging tests passed!")
+    print("\nAll 7 structured logging tests passed!")

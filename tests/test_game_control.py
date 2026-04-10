@@ -46,6 +46,12 @@ class _BridgeKernel:
         del response, now
         return {"ok": True, "status": "delivered", "message": "已收到回复"}
 
+    def list_task_messages(self):
+        return []
+
+    def list_player_notifications(self):
+        return []
+
 
 class _BridgeWS:
     def __init__(self) -> None:
@@ -58,6 +64,23 @@ class _BridgeWS:
 
     async def send_player_notification(self, payload: dict[str, Any]) -> None:
         self.player_notifications.append(payload)
+
+
+class _BridgePublishWS:
+    def __init__(self) -> None:
+        self.is_running = True
+        self.log_entries: list[dict[str, Any]] = []
+        self.benchmarks: list[list[dict[str, Any]]] = []
+        self.client_messages: list[tuple[str, str, dict[str, Any]]] = []
+
+    async def send_log_entry(self, payload: dict[str, Any]) -> None:
+        self.log_entries.append(payload)
+
+    async def send_benchmark(self, payload: list[dict[str, Any]]) -> None:
+        self.benchmarks.append(payload)
+
+    async def send_to_client(self, client_id: str, msg_type: str, payload: dict[str, Any]) -> None:
+        self.client_messages.append((client_id, msg_type, payload))
 
 
 class _BridgeAdjutant:
@@ -312,6 +335,60 @@ def test_runtime_bridge_question_reply_success_is_visible() -> None:
     print("  PASS: runtime_bridge_question_reply_success_is_visible")
 
 
+def test_runtime_bridge_publishes_logs_and_benchmarks_incrementally() -> None:
+    import benchmark
+    import logging_system
+
+    async def run() -> None:
+        bridge = RuntimeBridge(
+            kernel=_BridgeKernel(),
+            world_model=type("WM", (), {})(),
+            game_loop=_BridgeLoop(),
+            adjutant=None,
+        )
+        ws = _BridgePublishWS()
+        bridge.attach_ws_server(ws)
+
+        logger = logging_system.get_logger("kernel")
+        logger.info("one", event="e1")
+        logger.info("two", event="e2")
+        with benchmark.span("tool_exec", name="a"):
+            pass
+        with benchmark.span("tool_exec", name="b"):
+            pass
+
+        await bridge._publish_logs()
+        await bridge._publish_benchmarks()
+
+        assert [entry["message"] for entry in ws.log_entries] == ["one", "two"]
+        assert [entry["name"] for entry in ws.benchmarks[0]] == ["a", "b"]
+
+        logger.info("three", event="e3")
+        with benchmark.span("tool_exec", name="c"):
+            pass
+
+        await bridge._publish_logs()
+        await bridge._publish_benchmarks()
+
+        assert [entry["message"] for entry in ws.log_entries] == ["one", "two", "three"]
+        assert len(ws.benchmarks) == 2
+        assert [entry["name"] for entry in ws.benchmarks[1]] == ["c"]
+
+        await bridge._replay_history("client-1")
+        replay_benchmarks = [
+            payload["records"]
+            for client_id, msg_type, payload in ws.client_messages
+            if client_id == "client-1" and msg_type == "benchmark"
+        ]
+        assert replay_benchmarks
+        assert [entry["name"] for entry in replay_benchmarks[-1]] == ["a", "b", "c"]
+
+    logging_system.clear()
+    benchmark.clear()
+    asyncio.run(run())
+    print("  PASS: runtime_bridge_publishes_logs_and_benchmarks_incrementally")
+
+
 def test_build_provider_fails_fast_when_qwen_dependency_missing() -> None:
     original_find_spec = main_module.importlib.util.find_spec
     try:
@@ -390,7 +467,8 @@ if __name__ == "__main__":
     test_parse_args_defaults_are_demo_friendly()
     test_runtime_bridge_command_feedback_uses_query_response()
     test_runtime_bridge_question_reply_success_is_visible()
+    test_runtime_bridge_publishes_logs_and_benchmarks_incrementally()
     test_build_provider_fails_fast_when_qwen_dependency_missing()
     test_build_provider_fails_fast_when_anthropic_dependency_missing()
     test_build_provider_fails_fast_when_socks_proxy_support_missing()
-    print("\nAll 10 tests passed!")
+    print("\nAll 11 tests passed!")

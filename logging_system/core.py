@@ -195,6 +195,41 @@ class LogStore:
             records = records[-limit:]
         return records
 
+    def records_from(self, offset: int, *, limit: Optional[int] = None) -> list[LogRecord]:
+        start = max(0, int(offset))
+        with self._lock:
+            if start >= len(self._records):
+                return []
+            records = self._records[start:] if limit is None else self._records[start : start + max(0, int(limit))]
+            return list(records)
+
+    def tail(
+        self,
+        *,
+        component: Optional[str] = None,
+        level: Optional[LogLevel] = None,
+        event: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[LogRecord]:
+        remaining = max(0, int(limit))
+        if remaining == 0:
+            return []
+        with self._lock:
+            source = self._records
+            results: list[LogRecord] = []
+            for record in reversed(source):
+                if component is not None and record.component != component:
+                    continue
+                if level is not None and record.level != level:
+                    continue
+                if event is not None and record.event != event:
+                    continue
+                results.append(record)
+                if len(results) >= remaining:
+                    break
+        results.reverse()
+        return results
+
     def export_json(
         self,
         path: Optional[Union[str, Path]] = None,
@@ -368,6 +403,20 @@ def clear() -> None:
 
 def records() -> list[LogRecord]:
     return list(query())
+
+
+def records_from(offset: int, *, limit: Optional[int] = None) -> list[LogRecord]:
+    return _DEFAULT_STORE.records_from(offset, limit=limit)
+
+
+def tail_records(
+    *,
+    component: Optional[str] = None,
+    level: Optional[LogLevel] = None,
+    event: Optional[str] = None,
+    limit: int = 100,
+) -> list[LogRecord]:
+    return _DEFAULT_STORE.tail(component=component, level=level, event=event, limit=limit)
 
 
 def start_persistence_session(
