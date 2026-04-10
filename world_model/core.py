@@ -705,7 +705,7 @@ class WorldModel:
         same_expert_retry_count = max(expert_attempts.values()) - 1 if expert_attempts else 0
 
         facts: dict[str, Any] = {
-            "faction": actor_counts.get("player_faction"),
+            "faction": counts.get("player_faction"),
             "world_sync_stale": self.state.stale,
             "world_sync_consecutive_failures": self._consecutive_refresh_failures,
             "world_sync_total_failures": self._total_refresh_failures,
