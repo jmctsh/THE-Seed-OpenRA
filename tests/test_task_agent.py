@@ -35,7 +35,7 @@ from task_agent import (
     build_context_packet,
     context_to_message,
 )
-from task_agent.agent import CAPABILITY_SYSTEM_PROMPT, SYSTEM_PROMPT, _trim_conversation, _dedup_signals, _truncate_tool_result, _CONTEXT_MARKER
+from task_agent.agent import CAPABILITY_SYSTEM_PROMPT, SYSTEM_PROMPT, _trim_conversation, _dedup_signals, _truncate_tool_result, _CONTEXT_MARKER, _compact_history_context_message
 
 
 # --- Helpers ---
@@ -2005,6 +2005,30 @@ def test_conversation_window_bounds_message_size() -> None:
     print("  PASS: conversation_window_bounds_message_size")
 
 
+def test_compact_history_context_message_drops_json_header() -> None:
+    """Stored history context keeps the marker but drops the bulky JSON header."""
+    msg = {
+        "role": "user",
+        "content": "\n".join(
+            [
+                _CONTEXT_MARKER,
+                '{"context_packet":{"task":{"task_id":"t1"}}}',
+                "[任务] 探索地图 | 状态:running | id:t1",
+                "[世界] 资金5000 资源0 电力100/40 | 我军3(闲置1) 敌军0 | 探索10.0%",
+                "[状态] 阵营=盟军 | has_construction_yard=True | mcv_count=1",
+            ]
+        ),
+    }
+
+    compact = _compact_history_context_message(msg)
+
+    assert compact["content"].startswith(_CONTEXT_MARKER)
+    assert '"context_packet"' not in compact["content"]
+    assert "[任务]" in compact["content"]
+    assert "[世界]" in compact["content"]
+    print("  PASS: compact_history_context_message_drops_json_header")
+
+
 # --- Smart wake tests ---
 
 def test_smart_wake_skips_llm_when_no_new_info() -> None:
@@ -2379,6 +2403,7 @@ if __name__ == "__main__":
     test_truncate_tool_result_summarises_large_data_list()
     test_truncate_tool_result_hard_truncates_large_non_list()
     test_conversation_window_bounds_message_size()
+    test_compact_history_context_message_drops_json_header()
     test_smart_wake_skips_llm_when_no_new_info()
     test_smart_wake_runs_llm_when_signal_arrives()
     test_smart_wake_runs_llm_when_job_status_changes()

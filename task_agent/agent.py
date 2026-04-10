@@ -66,6 +66,7 @@ CAPABILITY_SYSTEM_PROMPT = build_capability_system_prompt()
 
 _CONTEXT_MARKER = "[CONTEXT UPDATE]"
 _MAX_TOOL_RESULT_CHARS = 2000
+_MAX_HISTORY_CONTEXT_LINES = 6
 
 
 def _trim_conversation(
@@ -133,6 +134,24 @@ def _truncate_tool_result(result: Any) -> str:
     if len(content) > _MAX_TOOL_RESULT_CHARS:
         content = content[:_MAX_TOOL_RESULT_CHARS] + ' "[...truncated]"}'
     return content
+
+
+def _compact_history_context_message(message: dict[str, Any]) -> dict[str, Any]:
+    """Store prior context turns in compact form to bound long-task prompt growth."""
+    if message.get("role") != "user":
+        return dict(message)
+    content = str(message.get("content", "") or "")
+    if _CONTEXT_MARKER not in content:
+        return dict(message)
+    lines = [line for line in content.splitlines() if line.strip()]
+    if len(lines) <= 2:
+        return dict(message)
+    compact_lines = [_CONTEXT_MARKER]
+    compact_lines.extend(lines[2:2 + _MAX_HISTORY_CONTEXT_LINES])
+    return {
+        **message,
+        "content": "\n".join(compact_lines),
+    }
 
 
 @dataclass
@@ -842,7 +861,7 @@ class TaskAgent:
         ]
         messages.extend(_trim_conversation(self._conversation, self.config.conversation_window))
         messages.append(context_msg)
-        self._conversation.append(context_msg)
+        self._conversation.append(_compact_history_context_message(context_msg))
         return messages
 
     @staticmethod
