@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from runtime_views import CapabilityStatusSnapshot
+
 
 _TERMINAL_STATUS_LINE = {
     "succeeded": "任务已完成",
@@ -27,20 +29,21 @@ _CAPABILITY_PHASE_TEXT = {
 }
 
 
-def capability_blocker_status_text(capability_status: dict[str, Any]) -> str:
+def capability_blocker_status_text(capability_status: CapabilityStatusSnapshot | dict[str, Any]) -> str:
     """Return a short human-readable blocker string for capability status."""
-    blocker = str(capability_status.get("blocker", "") or "")
+    snapshot = CapabilityStatusSnapshot.from_mapping(capability_status)
+    blocker = snapshot.blocker
     if blocker == "request_inference_pending":
-        count = int(capability_status.get("inference_pending_count", 0) or 0)
+        count = snapshot.inference_pending_count
         return f"等待解析请求 ({count})" if count else "等待解析请求"
     if blocker == "missing_prerequisite":
-        count = int(capability_status.get("prerequisite_gap_count", 0) or 0)
+        count = snapshot.prerequisite_gap_count
         return f"缺少前置建筑 ({count})" if count else "缺少前置建筑"
     if blocker == "pending_requests_waiting_dispatch":
-        count = int(capability_status.get("dispatch_request_count", 0) or 0)
+        count = snapshot.dispatch_request_count
         return f"请求待分发 ({count})" if count else "请求待分发"
     if blocker == "bootstrap_in_progress":
-        count = int(capability_status.get("bootstrapping_request_count", 0) or 0)
+        count = snapshot.bootstrapping_request_count
         return f"前置生产中 ({count})" if count else "前置生产中"
     return blocker
 
@@ -101,22 +104,12 @@ def build_task_triage(
         if reservation.get("reservation_id")
     ]
 
-    capability_status = {}
+    capability_status = CapabilityStatusSnapshot()
     raw_capability_status = runtime_state.get("capability_status")
-    if isinstance(raw_capability_status, dict):
-        capability_task_id = str(
-            raw_capability_status.get("task_id")
-            or raw_capability_status.get("taskId")
-            or ""
-        )
-        capability_label = str(raw_capability_status.get("label") or raw_capability_status.get("task_label") or "")
-        task_label = str(getattr(task, "label", "") or runtime_task.get("label", "") or "")
-        if is_capability and (
-            not capability_task_id
-            or capability_task_id == task_id
-            or (task_label and capability_label and capability_label == task_label)
-        ):
-            capability_status = dict(raw_capability_status)
+    candidate_capability = CapabilityStatusSnapshot.from_mapping(raw_capability_status)
+    task_label = str(getattr(task, "label", "") or runtime_task.get("label", "") or "")
+    if candidate_capability.matches_task(task_id, task_label, is_capability=is_capability):
+        capability_status = candidate_capability
 
     if status in _TERMINAL_STATUS_LINE:
         return {
@@ -177,13 +170,13 @@ def build_task_triage(
         }
 
     if is_capability:
-        pending_request_count = int(capability_status.get("pending_request_count", 0) or 0)
-        blocking_request_count = int(capability_status.get("blocking_request_count", 0) or 0)
-        start_released_request_count = int(capability_status.get("start_released_request_count", 0) or 0)
-        reinforcement_request_count = int(capability_status.get("reinforcement_request_count", 0) or 0)
-        active_job_types = list(capability_status.get("active_job_types", []) or [])
-        phase = str(capability_status.get("phase", "") or ("dispatch" if active_job_types else "idle"))
-        blocker = str(capability_status.get("blocker", "") or "")
+        pending_request_count = capability_status.pending_request_count
+        blocking_request_count = capability_status.blocking_request_count
+        start_released_request_count = capability_status.start_released_request_count
+        reinforcement_request_count = capability_status.reinforcement_request_count
+        active_job_types = list(capability_status.active_job_types)
+        phase = capability_status.phase or ("dispatch" if active_job_types else "idle")
+        blocker = capability_status.blocker
         waiting_reason = blocker or (
             "start_package_released"
             if start_released_request_count

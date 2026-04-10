@@ -21,6 +21,7 @@ from openra_state.data.dataset import (
     filter_demo_capability_ready_items,
     filter_demo_capability_reservations,
 )
+from runtime_views import CapabilityStatusSnapshot
 
 # Chinese labels for Job status values — makes completion judgment clearer for LLM.
 _JOB_STATUS_ZH: dict[str, str] = {
@@ -325,8 +326,10 @@ def _build_player_messages(events: list[dict[str, Any]]) -> str:
 
 def _build_capability_directives(rf: dict[str, Any]) -> str:
     """Build a compact directive-memory block from capability runtime state."""
-    capability_status = rf.get("capability_status", {}) if isinstance(rf, dict) else {}
-    directives = list(capability_status.get("recent_directives", []) or [])
+    capability_status = CapabilityStatusSnapshot.from_mapping(
+        rf.get("capability_status", {}) if isinstance(rf, dict) else {}
+    )
+    directives = list(capability_status.recent_directives)
     if not directives:
         return ""
     parts = ["[能力近期指令]"]

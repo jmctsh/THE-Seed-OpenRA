@@ -1,0 +1,100 @@
+"""Typed runtime projection helpers shared across coordinator surfaces."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(slots=True)
+class CapabilityStatusSnapshot:
+    """Normalized read model for capability task runtime status."""
+
+    task_id: str = ""
+    task_label: str = ""
+    status: str = ""
+    phase: str = ""
+    blocker: str = ""
+    active_job_count: int = 0
+    active_job_types: list[str] = field(default_factory=list)
+    pending_request_count: int = 0
+    blocking_request_count: int = 0
+    dispatch_request_count: int = 0
+    bootstrapping_request_count: int = 0
+    start_released_request_count: int = 0
+    reinforcement_request_count: int = 0
+    inference_pending_count: int = 0
+    prerequisite_gap_count: int = 0
+    recent_directives: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_mapping(cls, raw: Any) -> "CapabilityStatusSnapshot":
+        if isinstance(raw, cls):
+            return raw
+        if not isinstance(raw, dict):
+            return cls()
+
+        def _to_int(key: str) -> int:
+            try:
+                return int(raw.get(key, 0) or 0)
+            except Exception:
+                return 0
+
+        active_job_types = [
+            str(item)
+            for item in list(raw.get("active_job_types", []) or [])
+            if item is not None and str(item)
+        ]
+        recent_directives = [
+            str(item)
+            for item in list(raw.get("recent_directives", []) or [])
+            if item is not None and str(item).strip()
+        ]
+        return cls(
+            task_id=str(raw.get("task_id") or raw.get("taskId") or ""),
+            task_label=str(raw.get("label") or raw.get("task_label") or ""),
+            status=str(raw.get("status") or ""),
+            phase=str(raw.get("phase") or ""),
+            blocker=str(raw.get("blocker") or ""),
+            active_job_count=_to_int("active_job_count"),
+            active_job_types=active_job_types,
+            pending_request_count=_to_int("pending_request_count"),
+            blocking_request_count=_to_int("blocking_request_count"),
+            dispatch_request_count=_to_int("dispatch_request_count"),
+            bootstrapping_request_count=_to_int("bootstrapping_request_count"),
+            start_released_request_count=_to_int("start_released_request_count"),
+            reinforcement_request_count=_to_int("reinforcement_request_count"),
+            inference_pending_count=_to_int("inference_pending_count"),
+            prerequisite_gap_count=_to_int("prerequisite_gap_count"),
+            recent_directives=recent_directives,
+        )
+
+    def matches_task(self, task_id: str, task_label: str, *, is_capability: bool) -> bool:
+        if not is_capability:
+            return False
+        if not self.task_id:
+            return True
+        if self.task_id == str(task_id or ""):
+            return True
+        return bool(task_label and self.task_label and self.task_label == task_label)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "task_label": self.task_label,
+            "label": self.task_label,
+            "status": self.status,
+            "phase": self.phase,
+            "blocker": self.blocker,
+            "active_job_count": self.active_job_count,
+            "active_job_types": list(self.active_job_types),
+            "pending_request_count": self.pending_request_count,
+            "blocking_request_count": self.blocking_request_count,
+            "dispatch_request_count": self.dispatch_request_count,
+            "bootstrapping_request_count": self.bootstrapping_request_count,
+            "start_released_request_count": self.start_released_request_count,
+            "reinforcement_request_count": self.reinforcement_request_count,
+            "inference_pending_count": self.inference_pending_count,
+            "prerequisite_gap_count": self.prerequisite_gap_count,
+            "recent_directives": list(self.recent_directives),
+        }

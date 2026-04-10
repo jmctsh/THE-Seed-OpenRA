@@ -32,6 +32,7 @@ from models import (
 )
 from openra_api.models import Actor as GameActor
 from openra_api.production_names import normalize_production_name, production_name_variants
+from runtime_views import CapabilityStatusSnapshot
 from task_triage import build_task_triage, capability_blocker_status_text
 from unit_registry import UnitRegistry, get_default_registry
 from .runtime_nlu import DirectNLUStep, RuntimeNLUDecision, RuntimeNLURouter
@@ -642,7 +643,7 @@ class Adjutant:
     def _coordinator_snapshot(self) -> dict[str, Any]:
         battlefield = self._format_query_snapshot(self._battlefield_snapshot())
         runtime_state = self._safe_world_query("runtime_state")
-        capability_status = dict(runtime_state.get("capability_status") or {})
+        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
         runtime_facts: dict[str, Any] = {}
         compute_runtime_facts = getattr(self.world_model, "compute_runtime_facts", None)
         if callable(compute_runtime_facts):
@@ -684,21 +685,21 @@ class Adjutant:
             "base_state": base_state,
             "base_readiness": base_readiness,
             "capability": {
-                "task_id": capability_status.get("task_id"),
-                "label": capability_status.get("label") or capability_status.get("task_label"),
-                "status": capability_status.get("status"),
-                "phase": capability_status.get("phase"),
-                "blocker": capability_status.get("blocker"),
-                "active_job_types": list(capability_status.get("active_job_types", []) or []),
-                "pending_request_count": int(capability_status.get("pending_request_count", 0) or 0),
-                "dispatch_request_count": int(capability_status.get("dispatch_request_count", 0) or 0),
-                "bootstrapping_request_count": int(capability_status.get("bootstrapping_request_count", 0) or 0),
-                "start_released_request_count": int(capability_status.get("start_released_request_count", 0) or 0),
-                "reinforcement_request_count": int(capability_status.get("reinforcement_request_count", 0) or 0),
-                "blocking_request_count": int(capability_status.get("blocking_request_count", 0) or 0),
-                "inference_pending_count": int(capability_status.get("inference_pending_count", 0) or 0),
-                "prerequisite_gap_count": int(capability_status.get("prerequisite_gap_count", 0) or 0),
-                "recent_directives": list(capability_status.get("recent_directives", []) or []),
+                "task_id": capability_status.task_id,
+                "label": capability_status.task_label,
+                "status": capability_status.status,
+                "phase": capability_status.phase,
+                "blocker": capability_status.blocker,
+                "active_job_types": list(capability_status.active_job_types),
+                "pending_request_count": capability_status.pending_request_count,
+                "dispatch_request_count": capability_status.dispatch_request_count,
+                "bootstrapping_request_count": capability_status.bootstrapping_request_count,
+                "start_released_request_count": capability_status.start_released_request_count,
+                "reinforcement_request_count": capability_status.reinforcement_request_count,
+                "blocking_request_count": capability_status.blocking_request_count,
+                "inference_pending_count": capability_status.inference_pending_count,
+                "prerequisite_gap_count": capability_status.prerequisite_gap_count,
+                "recent_directives": list(capability_status.recent_directives),
                 "ready_queue_items": ready_queue_items,
             },
             "info_experts": {
@@ -991,14 +992,15 @@ class Adjutant:
         task: Any,
         runtime_task: dict[str, Any],
         runtime_state: dict[str, Any],
-        capability_status: dict[str, Any],
+        capability_status: CapabilityStatusSnapshot | dict[str, Any],
         world_sync: dict[str, Any],
         *,
         unit_mix: Optional[list[str]] = None,
     ) -> dict[str, Any]:
         runtime_state = dict(runtime_state or {})
-        if capability_status:
-            runtime_state["capability_status"] = dict(capability_status)
+        capability_snapshot = CapabilityStatusSnapshot.from_mapping(capability_status)
+        if capability_snapshot.task_id or capability_snapshot.task_label or capability_snapshot.phase:
+            runtime_state["capability_status"] = capability_snapshot.to_dict()
         return build_task_triage(
             task=task,
             runtime_task=runtime_task,
@@ -1622,8 +1624,8 @@ class Adjutant:
         if not cap_id:
             return None
         runtime_state = self._safe_world_query("runtime_state")
-        capability_status = dict(runtime_state.get("capability_status") or {})
-        recent_directives = list(capability_status.get("recent_directives", []) or [])
+        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
+        recent_directives = list(capability_status.recent_directives)
         normalized_text = re.sub(r"\s+", "", text.strip())
         if recent_directives:
             last_directive = re.sub(r"\s+", "", str(recent_directives[-1] or "").strip())
@@ -1640,15 +1642,15 @@ class Adjutant:
         if not ok:
             return None
         runtime_state = self._safe_world_query("runtime_state")
-        capability_status = dict(runtime_state.get("capability_status") or {})
+        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
         slog.info("Merged economy command to Capability", event="capability_merge",
                   capability_task_id=cap_id, text=text)
-        phase = str(capability_status.get("phase", "") or "")
-        blocker = str(capability_status.get("blocker", "") or "")
-        blocking_request_count = int(capability_status.get("blocking_request_count", 0) or 0)
-        start_released_request_count = int(capability_status.get("start_released_request_count", 0) or 0)
-        reinforcement_request_count = int(capability_status.get("reinforcement_request_count", 0) or 0)
-        pending_request_count = int(capability_status.get("pending_request_count", 0) or 0)
+        phase = capability_status.phase
+        blocker = capability_status.blocker
+        blocking_request_count = capability_status.blocking_request_count
+        start_released_request_count = capability_status.start_released_request_count
+        reinforcement_request_count = capability_status.reinforcement_request_count
+        pending_request_count = capability_status.pending_request_count
         phase_text = {
             "bootstrapping": "正在补齐前置",
             "dispatch": "正在分发请求",
@@ -2553,7 +2555,7 @@ class Adjutant:
         tasks = self.kernel.list_tasks()
         runtime_state = self._safe_world_query("runtime_state")
         runtime_tasks = dict(runtime_state.get("active_tasks") or {})
-        capability_status = dict(runtime_state.get("capability_status") or {})
+        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
         coordinator_snapshot = self._coordinator_snapshot()
         world_sync = dict((coordinator_snapshot.get("world_sync") or {}))
         active_tasks = []
