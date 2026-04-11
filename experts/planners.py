@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from openra_state.data.dataset import demo_mobile_scout_unit_type, demo_queue_type_for
+from openra_state.data.dataset import (
+    demo_capability_unit_type_for,
+    demo_faction_hint_for_unit_types,
+    demo_mobile_scout_unit_type,
+    demo_queue_type_for,
+)
 
 from .base import PlannerExpert
 from .knowledge import (
@@ -22,6 +27,26 @@ def _actors_from_payload(payload: Any) -> list[dict[str, Any]]:
         if isinstance(actors, list):
             return [actor for actor in actors if isinstance(actor, dict)]
     return []
+
+
+def _planner_faction_hint(params: dict[str, Any], my_actors: list[dict[str, Any]]) -> str | None:
+    explicit = str(params.get("faction") or "").strip().lower()
+    if explicit:
+        return explicit
+
+    unit_types: list[str] = []
+    for actor in my_actors:
+        for raw in (
+            actor.get("unit_type"),
+            actor.get("type"),
+            actor.get("name"),
+            actor.get("display_name"),
+        ):
+            unit_type = demo_capability_unit_type_for(str(raw or ""))
+            if unit_type:
+                unit_types.append(unit_type)
+                break
+    return demo_faction_hint_for_unit_types(unit_types)
 
 
 class ProductionAdvisor(PlannerExpert):
@@ -69,9 +94,11 @@ class ProductionAdvisor(PlannerExpert):
         my_actors: list[dict[str, Any]],
         enemy_actors: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        faction = _planner_faction_hint(params, my_actors)
+
         # Empty base → recommend next opening build step regardless of enemy visibility
         if self._is_empty_base(my_actors):
-            order = opening_build_order(params.get("faction", "allied"))
+            order = opening_build_order(faction or "allied")
             if order:
                 step = order[0]
                 unit_type = step["unit_type"]
@@ -169,7 +196,7 @@ class ProductionAdvisor(PlannerExpert):
                 "downstream_unlocks": knowledge["downstream_unlocks"],
             }
 
-        counter = counter_recommendation(enemy_actors)
+        counter = counter_recommendation(enemy_actors, faction=faction)
         if counter:
             return {
                 "action": "produce",

@@ -119,18 +119,59 @@ class MockWorldModel:
 # --- Tests ---
 
 def test_handlers_register_all():
-    """TaskToolHandlers registers all LLM-facing handlers."""
+    """Ordinary managed tasks hide capability-only tool handlers."""
     kernel = MockKernel()
     wm = MockWorldModel()
     handlers = TaskToolHandlers(task=Task(task_id="t1", raw_text="test", kind=TaskKind.MANAGED, priority=50), kernel=kernel, world_model=wm)
     executor = ToolExecutor()
     handlers.register_all(executor)
 
-    # All 11 tools should have handlers
-    from task_agent.tools import get_tool_names
-    for name in get_tool_names():
+    ordinary_visible_tools = {
+        "deploy_mcv",
+        "scout_map",
+        "move_units",
+        "move_units_by_path",
+        "stop_units",
+        "repair_units",
+        "occupy_target",
+        "attack",
+        "attack_actor",
+        "patch_job",
+        "pause_job",
+        "resume_job",
+        "abort_job",
+        "complete_task",
+        "create_constraint",
+        "remove_constraint",
+        "query_world",
+        "query_planner",
+        "cancel_tasks",
+        "send_task_message",
+        "update_subscriptions",
+    }
+
+    for name in ordinary_visible_tools:
         assert name in executor._handlers, f"Missing handler: {name}"
+    assert "produce_units" not in executor._handlers
+    assert "set_rally_point" not in executor._handlers
+    assert "request_units" in executor._handlers
     print("  PASS: handlers_register_all")
+
+
+def test_capability_handlers_register_capability_only_surface():
+    """Capability tasks expose production tools and hide request_units."""
+    kernel = MockKernel()
+    wm = MockWorldModel()
+    task = Task(task_id="t_cap", raw_text="发展经济", kind=TaskKind.MANAGED, priority=50)
+    task.is_capability = True
+    handlers = TaskToolHandlers(task=task, kernel=kernel, world_model=wm)
+    executor = ToolExecutor()
+    handlers.register_all(executor)
+
+    for name in ("produce_units", "set_rally_point", "query_world", "query_planner", "update_subscriptions", "send_task_message"):
+        assert name in executor._handlers, f"Missing capability tool handler: {name}"
+    assert "request_units" not in executor._handlers
+    print("  PASS: capability_handlers_register_capability_only_surface")
 
 
 def test_start_job_handler():

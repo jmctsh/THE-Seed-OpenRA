@@ -200,7 +200,7 @@ def test_production_advisor_counter_infantry_heavy() -> None:
 
     proposal = planner.plan(
         "ProductionAdvisor",
-        {"intent": "attack"},
+        {"intent": "attack", "faction": "soviet"},
         make_world_state(
             enemy_actors=enemy,
             my_actors=[{"actor_id": 1, "name": "矿场", "display_name": "矿场", "category": "building"}],
@@ -223,7 +223,7 @@ def test_production_advisor_counter_vehicle_heavy() -> None:
 
     proposal = planner.plan(
         "ProductionAdvisor",
-        {"intent": "attack"},
+        {"intent": "attack", "faction": "soviet"},
         make_world_state(
             enemy_actors=enemy,
             my_actors=[{"actor_id": 1, "name": "矿场", "display_name": "矿场", "category": "building"}],
@@ -238,11 +238,11 @@ def test_production_advisor_counter_vehicle_heavy() -> None:
 
 
 def test_opening_build_order_allied() -> None:
-    """Allied opening order: powr → barr → proc → weap."""
+    """Demo opening order follows normalized capability broad phase."""
     order = opening_build_order("allied")
     assert len(order) == 4
     types = [step["unit_type"] for step in order]
-    assert types == ["powr", "barr", "proc", "weap"]
+    assert types == ["powr", "proc", "barr", "weap"]
     print("  PASS: opening_build_order_allied")
 
 
@@ -258,6 +258,14 @@ def test_counter_recommendation_no_enemy() -> None:
     result = counter_recommendation([])
     assert result is None
     print("  PASS: counter_recommendation_no_enemy")
+
+
+def test_counter_recommendation_requires_safe_faction_for_faction_locked_units() -> None:
+    """Faction-locked counters should not be proposed when side is unknown."""
+    vehicle_heavy = [{"actor_id": i, "category": "vehicle"} for i in range(5)] + [{"actor_id": 9, "category": "infantry"}]
+    assert counter_recommendation(vehicle_heavy) is None
+    assert counter_recommendation(vehicle_heavy, faction="soviet")["unit_type"] == "v2rl"
+    print("  PASS: counter_recommendation_requires_safe_faction_for_faction_locked_units")
 
 
 def test_placement_hint_refinery() -> None:
@@ -291,5 +299,6 @@ if __name__ == "__main__":
     test_opening_build_order_allied()
     test_tech_prerequisites_weap()
     test_counter_recommendation_no_enemy()
+    test_counter_recommendation_requires_safe_faction_for_faction_locked_units()
     test_placement_hint_refinery()
-    print("\nAll 14 Planner tests passed!")
+    print("\nAll 15 Planner tests passed!")

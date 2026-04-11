@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from openra_state.data.dataset import (
+    demo_capability_broad_phase_order,
     demo_capability_truth_for,
     demo_capability_units_for_queue,
     demo_display_name_for,
@@ -86,52 +87,58 @@ _KNOWLEDGE_ROWS: tuple[dict[str, Any], ...] = (
 
 # --- Soft strategy knowledge ---
 
-# Standard opening build sequences (power → barracks → refinery → war_factory).
-# Both factions share the same base order in RA; faction-specific divergence
-# happens post-refinery (e.g. Soviets favour flamethrower/heavy tank paths).
-# TODO: verify Soviet-specific early deviations against actual game rules.
-OPENING_BUILD_ORDER: dict[str, list[dict[str, str]]] = {
-    "allied": [
-        {"unit_type": "powr", "queue_type": "Building", "reason": "power_first"},
-        {"unit_type": "barr", "queue_type": "Building", "reason": "infantry_gateway"},
-        {"unit_type": "proc", "queue_type": "Building", "reason": "economy_foundation"},
-        {"unit_type": "weap", "queue_type": "Building", "reason": "vehicle_gateway"},
-    ],
-    "soviet": [
-        {"unit_type": "powr", "queue_type": "Building", "reason": "power_first"},
-        {"unit_type": "barr", "queue_type": "Building", "reason": "infantry_gateway"},
-        {"unit_type": "proc", "queue_type": "Building", "reason": "economy_foundation"},
-        {"unit_type": "weap", "queue_type": "Building", "reason": "vehicle_gateway"},
-    ],
+_OPENING_REASON_BY_UNIT_TYPE: dict[str, str] = {
+    "powr": "power_first",
+    "barr": "infantry_gateway",
+    "proc": "economy_foundation",
+    "weap": "vehicle_gateway",
 }
 
-# Counter-unit table: enemy category composition → recommended counter.
-# Evaluated in order; first matching rule wins.
-# TODO: verify exact counter relationships against RA balance data.
+# Counter-unit table: enemy category composition → recommended demo-safe counter.
+# Evaluated in order; first matching rule wins. Candidate ordering intentionally
+# stays within the normalized demo capability roster and respects faction truth.
 _COUNTER_TABLE: tuple[dict[str, Any], ...] = (
     {
         "enemy_category": "aircraft",
         "threshold_ratio": 0.3,
-        "counter_unit": "ftrk",
-        "counter_queue": "Vehicle",
-        "reason": "air_threat_counter_ftrk",
-        "display_name": "防空车",
+        "candidates": (
+            {
+                "unit_type": "ftrk",
+                "queue_type": "Vehicle",
+                "reason": "air_threat_counter_ftrk",
+                "display_name": "防空车",
+            },
+        ),
     },
     {
         "enemy_category": "infantry",
         "threshold_ratio": 0.6,
-        "counter_unit": "e3",
-        "counter_queue": "Infantry",
-        "reason": "infantry_heavy_counter_rocket",
-        "display_name": "火箭兵",
+        "candidates": (
+            {
+                "unit_type": "e3",
+                "queue_type": "Infantry",
+                "reason": "infantry_heavy_counter_rocket",
+                "display_name": "火箭兵",
+            },
+        ),
     },
     {
         "enemy_category": "vehicle",
         "threshold_ratio": 0.5,
-        "counter_unit": "v2rl",
-        "counter_queue": "Vehicle",
-        "reason": "vehicle_heavy_counter_v2",
-        "display_name": "V2火箭发射车",
+        "candidates": (
+            {
+                "unit_type": "v2rl",
+                "queue_type": "Vehicle",
+                "reason": "vehicle_heavy_counter_v2",
+                "display_name": "V2火箭发射车",
+            },
+            {
+                "unit_type": "3tnk",
+                "queue_type": "Vehicle",
+                "reason": "vehicle_heavy_counter_heavy_tank",
+                "display_name": "重坦",
+            },
+        ),
     },
 )
 
@@ -152,9 +159,24 @@ _PLACEMENT_HINTS: dict[str, dict[str, str]] = {
 
 
 def opening_build_order(faction: str = "allied") -> list[dict[str, str]]:
-    """Return the standard opening build sequence for the given faction."""
-    key = faction.lower()
-    return list(OPENING_BUILD_ORDER.get(key, OPENING_BUILD_ORDER["allied"]))
+    """Return the demo-normalized opening build sequence.
+
+    The capability layer currently uses a normalized demo truth table where the
+    minimum opening is shared across factions (`powr -> proc -> barr -> weap`).
+    Soft faction divergence should be modeled in planners, not by duplicating a
+    second prerequisite truth table here.
+    """
+    del faction
+    order: list[dict[str, str]] = []
+    for unit_type in demo_capability_broad_phase_order():
+        order.append(
+            {
+                "unit_type": unit_type,
+                "queue_type": "Building",
+                "reason": _OPENING_REASON_BY_UNIT_TYPE.get(unit_type, "opening_step"),
+            }
+        )
+    return order
 
 
 def tech_prerequisites_for(unit_type: str) -> list[dict[str, str]]:
@@ -196,7 +218,22 @@ def display_name_for(unit_type: str) -> str:
     return unit_type
 
 
-def counter_recommendation(enemy_actors: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _counter_candidate_allowed(unit_type: str, faction: str | None) -> bool:
+    truth = demo_capability_truth_for(unit_type)
+    if truth is None or not truth.in_demo_roster:
+        return False
+    if truth.faction is None:
+        return True
+    if not faction:
+        return False
+    return truth.faction == str(faction).lower()
+
+
+def counter_recommendation(
+    enemy_actors: list[dict[str, Any]],
+    *,
+    faction: str | None = None,
+) -> dict[str, Any] | None:
     """Recommend a counter unit based on enemy composition.
 
     Returns a recommendation dict or None if no clear counter is identified.
@@ -212,13 +249,16 @@ def counter_recommendation(enemy_actors: list[dict[str, Any]]) -> dict[str, Any]
         cat = rule["enemy_category"]
         ratio = category_counts.get(cat, 0) / total
         if ratio >= rule["threshold_ratio"]:
-            return {
-                "unit_type": rule["counter_unit"],
-                "queue_type": rule["counter_queue"],
-                "display_name": rule["display_name"],
-                "reason": rule["reason"],
-                "enemy_ratio": round(ratio, 2),
-            }
+            for candidate in rule["candidates"]:
+                if not _counter_candidate_allowed(candidate["unit_type"], faction):
+                    continue
+                return {
+                    "unit_type": candidate["unit_type"],
+                    "queue_type": candidate["queue_type"],
+                    "display_name": candidate["display_name"],
+                    "reason": candidate["reason"],
+                    "enemy_ratio": round(ratio, 2),
+                }
     return None
 
 
