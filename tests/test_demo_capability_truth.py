@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from experts.knowledge import counter_recommendation, display_name_for, knowledge_for_target, tech_prerequisites_for
+from experts.knowledge import counter_recommendation, display_name_for, has_role, knowledge_for_target, tech_prerequisites_for
 from openra_state.data.dataset import (
     DemoCapabilityTruth,
     demo_capability_buildable_lines,
@@ -105,6 +105,12 @@ def test_demo_prompt_roster_lines_can_include_prerequisites() -> None:
     assert any("proc=矿场（前置: 电厂 + 建造厂）" in line for line in lines)
     assert any("4tnk=猛犸坦克（前置: 维修厂 + 科技中心 + 战车工厂）" in line for line in lines)
     print("  PASS: demo_prompt_roster_lines_can_include_prerequisites")
+
+
+def test_has_role_accepts_unit_type_only_actor_payload() -> None:
+    assert has_role({"unit_type": "proc", "category": "building"}, "economy_anchor") is True
+    assert has_role({"unit_type": "weap", "category": "building"}, "vehicle_gateway") is True
+    print("  PASS: has_role_accepts_unit_type_only_actor_payload")
 
 
 def test_capability_runtime_view_derives_queue_type_from_dataset() -> None:
@@ -251,6 +257,20 @@ def test_counter_recommendation_stays_within_demo_roster() -> None:
     assert counter_recommendation(vehicle_heavy, faction="allied")["unit_type"] == "e3"
     assert counter_recommendation(vehicle_heavy, faction="soviet")["unit_type"] == "v2rl"
     print("  PASS: counter_recommendation_stays_within_demo_roster")
+
+
+def test_counter_recommendation_recognizes_aircraft_unit_types_even_if_category_is_vehicle() -> None:
+    air_heavy = [
+        {"actor_id": 1, "category": "vehicle", "unit_type": "mig"},
+        {"actor_id": 2, "category": "vehicle", "unit_type": "yak"},
+        {"actor_id": 3, "category": "vehicle", "unit_type": "mig"},
+        {"actor_id": 4, "category": "vehicle", "unit_type": "yak"},
+        {"actor_id": 5, "category": "infantry", "unit_type": "e1"},
+    ]
+    recommendation = counter_recommendation(air_heavy, faction="soviet")
+    assert recommendation is not None
+    assert recommendation["unit_type"] == "ftrk"
+    print("  PASS: counter_recommendation_recognizes_aircraft_unit_types_even_if_category_is_vehicle")
 
 
 if __name__ == "__main__":

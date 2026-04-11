@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from openra_state.data.dataset import (
     demo_capability_broad_phase_order,
     demo_capability_truth_for,
+    demo_capability_unit_type_for,
     demo_capability_units_for_queue,
     demo_display_name_for,
     demo_faction_restriction_for,
@@ -272,7 +273,7 @@ def counter_recommendation(
     total = len(enemy_actors)
     category_counts: dict[str, int] = {}
     for actor in enemy_actors:
-        cat = str(actor.get("category") or "unknown").lower()
+        cat = _counter_enemy_category(actor)
         category_counts[cat] = category_counts.get(cat, 0) + 1
     for rule in _COUNTER_TABLE:
         cat = rule["enemy_category"]
@@ -289,6 +290,21 @@ def counter_recommendation(
                     "enemy_ratio": round(ratio, 2),
                 }
     return None
+
+
+def _counter_enemy_category(actor: dict[str, Any]) -> str:
+    raw_category = str(actor.get("category") or "unknown").lower()
+    for raw in (
+        actor.get("unit_type"),
+        actor.get("type"),
+        actor.get("name"),
+        actor.get("display_name"),
+    ):
+        unit_type = demo_capability_unit_type_for(str(raw or ""))
+        truth = demo_capability_truth_for(unit_type) if unit_type else None
+        if truth is not None and truth.queue_type == "Aircraft":
+            return "aircraft"
+    return raw_category
 
 
 def placement_hint_for(unit_type: str) -> dict[str, str] | None:
@@ -338,7 +354,7 @@ def knowledge_for_target(unit_type: str | None, queue_type: str | None) -> dict[
 
 def has_role(actor: dict[str, Any], role: str) -> bool:
     knowledge = knowledge_for_target(
-        actor.get("name") or actor.get("display_name"),
+        actor.get("unit_type") or actor.get("type") or actor.get("name") or actor.get("display_name"),
         "Building" if actor.get("category") == "building" else None,
     )
     return role in knowledge.get("roles", [])

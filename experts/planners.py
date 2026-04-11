@@ -30,6 +30,30 @@ def _actors_from_payload(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _actor_unit_type(actor: dict[str, Any]) -> str | None:
+    for raw in (
+        actor.get("unit_type"),
+        actor.get("type"),
+        actor.get("name"),
+        actor.get("display_name"),
+    ):
+        unit_type = dataset_unit_type_for(str(raw or ""))
+        if unit_type is None:
+            unit_type = demo_capability_unit_type_for(str(raw or ""))
+        if unit_type:
+            return unit_type
+    return None
+
+
+def _owned_unit_types(actors: list[dict[str, Any]]) -> set[str]:
+    owned: set[str] = set()
+    for actor in actors:
+        unit_type = _actor_unit_type(actor)
+        if unit_type:
+            owned.add(unit_type)
+    return owned
+
+
 def _planner_faction_hint(params: dict[str, Any], my_actors: list[dict[str, Any]]) -> str | None:
     explicit = str(params.get("faction") or "").strip().lower()
     if explicit:
@@ -37,18 +61,9 @@ def _planner_faction_hint(params: dict[str, Any], my_actors: list[dict[str, Any]
 
     unit_types: list[str] = []
     for actor in my_actors:
-        for raw in (
-            actor.get("unit_type"),
-            actor.get("type"),
-            actor.get("name"),
-            actor.get("display_name"),
-        ):
-            unit_type = dataset_unit_type_for(str(raw or ""))
-            if unit_type is None:
-                unit_type = demo_capability_unit_type_for(str(raw or ""))
-            if unit_type:
-                unit_types.append(unit_type)
-                break
+        unit_type = _actor_unit_type(actor)
+        if unit_type:
+            unit_types.append(unit_type)
     return demo_faction_hint_for_unit_types(unit_types)
 
 
@@ -98,6 +113,18 @@ class ProductionAdvisor(PlannerExpert):
         enemy_actors: list[dict[str, Any]],
     ) -> dict[str, Any]:
         faction = _planner_faction_hint(params, my_actors)
+        owned_unit_types = _owned_unit_types(my_actors)
+
+        if "mcv" in owned_unit_types:
+            return {
+                "action": "hold",
+                "unit_type": None,
+                "queue_type": None,
+                "count": None,
+                "prerequisites": [],
+                "reason": "deploy_mcv_first",
+                "recommended_expert": None,
+            }
 
         # Empty base → recommend next opening build step regardless of enemy visibility
         if self._is_empty_base(my_actors):
@@ -201,6 +228,25 @@ class ProductionAdvisor(PlannerExpert):
 
         counter = counter_recommendation(enemy_actors, faction=faction)
         if counter:
+            missing_prerequisites = [
+                item["unit_type"]
+                for item in tech_prerequisites_for(counter["unit_type"])
+                if item["unit_type"] not in owned_unit_types
+            ]
+            if missing_prerequisites:
+                prerequisite = missing_prerequisites[0]
+                knowledge = knowledge_for_target(prerequisite, demo_queue_type_for(prerequisite))
+                return {
+                    "action": "tech_up",
+                    "unit_type": prerequisite,
+                    "queue_type": knowledge["queue_type"],
+                    "count": 1,
+                    "prerequisites": [p["unit_type"] for p in tech_prerequisites_for(prerequisite)],
+                    "reason": f"counter_prerequisite_{counter['unit_type']}",
+                    "recommended_expert": "EconomyExpert",
+                    "roles": knowledge["roles"],
+                    "downstream_unlocks": knowledge["downstream_unlocks"],
+                }
             return {
                 "action": "produce",
                 "unit_type": counter["unit_type"],

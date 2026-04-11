@@ -157,6 +157,26 @@ def test_production_advisor_recommends_weap_before_mobile_scout_when_no_vehicle_
     print("  PASS: production_advisor_recommends_weap_before_mobile_scout_when_no_vehicle_gateway")
 
 
+def test_production_advisor_recognizes_unit_type_only_buildings() -> None:
+    planner = ProductionAdvisor()
+
+    proposal = planner.plan(
+        "ProductionAdvisor",
+        {"intent": "recon", "need_mobile_scout": True},
+        make_world_state(
+            enemy_actors=[{"actor_id": 9}],
+            my_actors=[{"actor_id": 1, "unit_type": "proc", "category": "building"}],
+            queues={"Building": {"queue_type": "Building", "items": [], "has_ready_item": False}},
+        ),
+    )
+
+    recommendation = proposal["recommendation"]
+    assert recommendation["action"] == "tech_up"
+    assert recommendation["unit_type"] == "weap"
+    assert recommendation["reason"] == "need_vehicle_gateway"
+    print("  PASS: production_advisor_recognizes_unit_type_only_buildings")
+
+
 def test_production_advisor_empty_base_recommends_opening() -> None:
     """Empty base (no meaningful buildings) → recommend first opening build step."""
     planner = ProductionAdvisor()
@@ -176,6 +196,25 @@ def test_production_advisor_empty_base_recommends_opening() -> None:
     assert recommendation["build_order_total"] == 4
     assert recommendation["recommended_expert"] == "EconomyExpert"
     print("  PASS: production_advisor_empty_base_recommends_opening")
+
+
+def test_production_advisor_holds_when_only_mcv_is_present() -> None:
+    planner = ProductionAdvisor()
+
+    proposal = planner.plan(
+        "ProductionAdvisor",
+        {"intent": "economy"},
+        make_world_state(
+            enemy_actors=[{"actor_id": 5}],
+            my_actors=[{"actor_id": 1, "unit_type": "mcv", "category": "vehicle"}],
+            queues={},
+        ),
+    )
+
+    recommendation = proposal["recommendation"]
+    assert recommendation["action"] == "hold"
+    assert recommendation["reason"] == "deploy_mcv_first"
+    print("  PASS: production_advisor_holds_when_only_mcv_is_present")
 
 
 def test_production_advisor_empty_base_ignores_no_enemy():
@@ -205,7 +244,7 @@ def test_production_advisor_counter_infantry_heavy() -> None:
         {"intent": "attack", "faction": "soviet"},
         make_world_state(
             enemy_actors=enemy,
-            my_actors=[{"actor_id": 1, "name": "矿场", "display_name": "矿场", "category": "building"}],
+            my_actors=[{"actor_id": 1, "unit_type": "barr", "category": "building"}],
         ),
     )
 
@@ -228,7 +267,10 @@ def test_production_advisor_counter_vehicle_heavy() -> None:
         {"intent": "attack", "faction": "soviet"},
         make_world_state(
             enemy_actors=enemy,
-            my_actors=[{"actor_id": 1, "name": "矿场", "display_name": "矿场", "category": "building"}],
+            my_actors=[
+                {"actor_id": 1, "unit_type": "weap", "category": "building"},
+                {"actor_id": 2, "unit_type": "dome", "category": "building"},
+            ],
         ),
     )
 
@@ -237,6 +279,32 @@ def test_production_advisor_counter_vehicle_heavy() -> None:
     assert recommendation["unit_type"] == "v2rl"
     assert recommendation["reason"] == "vehicle_heavy_counter_v2"
     print("  PASS: production_advisor_counter_vehicle_heavy")
+
+
+def test_production_advisor_counter_vehicle_heavy_respects_missing_prerequisites() -> None:
+    planner = ProductionAdvisor()
+
+    enemy = [{"actor_id": i, "category": "vehicle"} for i in range(5)]
+    enemy += [{"actor_id": 10, "category": "infantry"}]
+
+    proposal = planner.plan(
+        "ProductionAdvisor",
+        {"intent": "attack", "faction": "soviet"},
+        make_world_state(
+            enemy_actors=enemy,
+            my_actors=[
+                {"actor_id": 1, "unit_type": "powr", "category": "building"},
+                {"actor_id": 2, "unit_type": "proc", "category": "building"},
+                {"actor_id": 3, "unit_type": "weap", "category": "building"},
+            ],
+        ),
+    )
+
+    recommendation = proposal["recommendation"]
+    assert recommendation["action"] == "tech_up"
+    assert recommendation["unit_type"] == "dome"
+    assert recommendation["reason"] == "counter_prerequisite_v2rl"
+    print("  PASS: production_advisor_counter_vehicle_heavy_respects_missing_prerequisites")
 
 
 def test_production_advisor_counter_vehicle_heavy_allied() -> None:
@@ -251,7 +319,7 @@ def test_production_advisor_counter_vehicle_heavy_allied() -> None:
         {"intent": "attack", "faction": "allied"},
         make_world_state(
             enemy_actors=enemy,
-            my_actors=[{"actor_id": 1, "name": "矿场", "display_name": "矿场", "category": "building"}],
+            my_actors=[{"actor_id": 1, "unit_type": "barr", "category": "building"}],
         ),
     )
 
@@ -290,9 +358,9 @@ def test_production_advisor_infers_allied_faction_without_explicit_param() -> No
     )
 
     recommendation = proposal["recommendation"]
-    assert recommendation["action"] == "produce"
-    assert recommendation["unit_type"] == "e3"
-    assert recommendation["reason"] == "vehicle_heavy_counter_rocket_infantry"
+    assert recommendation["action"] == "tech_up"
+    assert recommendation["unit_type"] == "barr"
+    assert recommendation["reason"] == "counter_prerequisite_e3"
     print("  PASS: production_advisor_infers_allied_faction_without_explicit_param")
 
 
