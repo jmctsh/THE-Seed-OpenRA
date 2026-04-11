@@ -115,7 +115,7 @@ class ProductionAdvisor(PlannerExpert):
         faction = _planner_faction_hint(params, my_actors)
         owned_unit_types = _owned_unit_types(my_actors)
 
-        if "mcv" in owned_unit_types:
+        if "mcv" in owned_unit_types and "fact" not in owned_unit_types:
             return {
                 "action": "hold",
                 "unit_type": None,

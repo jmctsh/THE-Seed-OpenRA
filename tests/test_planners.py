@@ -217,6 +217,33 @@ def test_production_advisor_holds_when_only_mcv_is_present() -> None:
     print("  PASS: production_advisor_holds_when_only_mcv_is_present")
 
 
+def test_production_advisor_does_not_block_on_expansion_mcv_when_base_exists() -> None:
+    planner = ProductionAdvisor()
+
+    enemy = [{"actor_id": i, "category": "vehicle"} for i in range(5)]
+    enemy += [{"actor_id": 10, "category": "infantry"}]
+
+    proposal = planner.plan(
+        "ProductionAdvisor",
+        {"intent": "attack", "faction": "soviet"},
+        make_world_state(
+            enemy_actors=enemy,
+            my_actors=[
+                {"actor_id": 1, "unit_type": "fact", "category": "building"},
+                {"actor_id": 2, "unit_type": "weap", "category": "building"},
+                {"actor_id": 3, "unit_type": "dome", "category": "building"},
+                {"actor_id": 4, "unit_type": "mcv", "category": "vehicle"},
+            ],
+        ),
+    )
+
+    recommendation = proposal["recommendation"]
+    assert recommendation["action"] != "hold"
+    assert recommendation["reason"] != "deploy_mcv_first"
+    assert recommendation["unit_type"] == "v2rl"
+    print("  PASS: production_advisor_does_not_block_on_expansion_mcv_when_base_exists")
+
+
 def test_production_advisor_empty_base_ignores_no_enemy():
     """Empty base check fires before no-visible-enemy, ensuring build order starts."""
     planner = ProductionAdvisor()
