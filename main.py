@@ -51,16 +51,19 @@ from logging_system import (
     export_json as export_log_json,
     get_logger,
     install_benchmark_logging,
-    latest_session_dir,
-    list_persistence_sessions,
-    list_session_tasks,
-    read_task_replay_records,
     start_persistence_session,
     stop_persistence_session,
 )
 from models import PlayerResponse, TaskStatus
 from openra_api.game_api import GameAPI
 from queue_manager import QueueManager, QueueManagerConfig
+from session_browser import (
+    build_session_catalog_payload,
+    build_session_task_catalog_payload,
+    build_task_replay_payload,
+    default_session_dir,
+    resolve_session_dir,
+)
 from task_agent import AgentConfig
 from task_replay import build_live_task_replay_bundle
 from task_triage import build_live_task_payload
@@ -364,7 +367,7 @@ class RuntimeBridge(InboundHandler):
         """Client connected/reconnected — push full state immediately."""
         self.sync_runtime()
         await self._publisher.send_current_dashboard_to_client(client_id)
-        selected_session_dir = self._default_log_session_dir()
+        selected_session_dir = default_session_dir(self.log_session_root)
         await self._send_session_catalog_to_client(client_id, selected_session_dir=selected_session_dir)
         await self._send_session_tasks_to_client(client_id, session_dir=selected_session_dir)
         await self._publisher.replay_history(client_id)
@@ -396,7 +399,9 @@ class RuntimeBridge(InboundHandler):
         await self.publish_dashboard()
 
     async def on_session_select(self, session_dir: str, client_id: str) -> None:
-        selected_session_dir = self._resolve_log_session_dir(session_dir) or self._default_log_session_dir()
+        selected_session_dir = resolve_session_dir(self.log_session_root, session_dir) or default_session_dir(
+            self.log_session_root
+        )
         await self._send_session_catalog_to_client(client_id, selected_session_dir=selected_session_dir)
         await self._send_session_tasks_to_client(client_id, session_dir=selected_session_dir)
 
@@ -408,25 +413,15 @@ class RuntimeBridge(InboundHandler):
     ) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
             return
-        resolved_session_dir = self._resolve_log_session_dir(session_dir) or self._default_log_session_dir()
-        entries = read_task_replay_records(
-            task_id,
-            session_dir=resolved_session_dir,
-            latest_base_dir=self.log_session_root,
-        )
-        raw_entries = entries[-TASK_REPLAY_RAW_ENTRY_LIMIT:]
-        log_path = str(resolved_session_dir / "tasks" / f"{task_id}.jsonl") if resolved_session_dir else None
         runtime_state = self.kernel.runtime_state()
         await self._publisher.send_task_replay_to_client(
             client_id,
-            {
-                "task_id": task_id,
-                "session_dir": str(resolved_session_dir) if resolved_session_dir else None,
-                "log_path": log_path,
-                "entry_count": len(entries),
-                "raw_entry_count": len(raw_entries),
-                "raw_entries_truncated": len(raw_entries) < len(entries),
-                "bundle": build_live_task_replay_bundle(
+            build_task_replay_payload(
+                task_id,
+                requested_session_dir=session_dir,
+                log_session_root=self.log_session_root,
+                raw_entry_limit=TASK_REPLAY_RAW_ENTRY_LIMIT,
+                bundle_builder=lambda entries, _resolved_session_dir: build_live_task_replay_bundle(
                     task_id,
                     entries,
                     runtime_state=runtime_state,
@@ -435,8 +430,7 @@ class RuntimeBridge(InboundHandler):
                     task_payload_builder=self._task_to_dict,
                     compute_runtime_facts=getattr(self.world_model, "compute_runtime_facts", None),
                 ),
-                "entries": raw_entries,
-            },
+            ),
         )
 
     def _task_to_dict(
@@ -459,32 +453,18 @@ class RuntimeBridge(InboundHandler):
             return
         await self.runtime.restart_game(save_path=save_path)
 
-    def _default_log_session_dir(self) -> Optional[Path]:
-        return current_session_dir() or latest_session_dir(self.log_session_root)
-
-    def _resolve_log_session_dir(self, session_dir: Optional[str]) -> Optional[Path]:
-        if not session_dir:
-            return None
-        candidate = Path(session_dir)
-        if not candidate.is_absolute():
-            candidate = (Path(self.log_session_root) / candidate).resolve()
-        else:
-            candidate = candidate.resolve()
-        return candidate if candidate.exists() else None
-
     async def _send_session_catalog_to_client(
         self,
         client_id: str,
         *,
         selected_session_dir: Optional[Path],
     ) -> None:
-        sessions = list_persistence_sessions(self.log_session_root, limit=30)
         await self._publisher.send_session_catalog_to_client(
             client_id,
-            {
-                "sessions": sessions,
-                "selected_session_dir": str(selected_session_dir) if selected_session_dir is not None else None,
-            },
+            build_session_catalog_payload(
+                self.log_session_root,
+                selected_session_dir=selected_session_dir,
+            ),
         )
 
     async def _send_session_tasks_to_client(
@@ -493,14 +473,12 @@ class RuntimeBridge(InboundHandler):
         *,
         session_dir: Optional[Path],
     ) -> None:
-        resolved = session_dir or self._default_log_session_dir()
-        tasks = list_session_tasks(resolved, limit=300) if resolved is not None else []
         await self._publisher.send_session_task_catalog_to_client(
             client_id,
-            {
-                "session_dir": str(resolved) if resolved is not None else None,
-                "tasks": tasks,
-            },
+            build_session_task_catalog_payload(
+                self.log_session_root,
+                session_dir=session_dir,
+            ),
         )
 
     def _build_dashboard_payload(self) -> dict[str, Any]:
