@@ -17,7 +17,7 @@ import benchmark
 import logging_system
 from logging_system import start_persistence_session, stop_persistence_session
 
-from models import Event, EventType, TaskStatus
+from models import Event, EventType, TaskMessage, TaskMessageType, TaskStatus
 from main import RuntimeBridge
 from task_replay import build_task_replay_bundle
 from task_agent.queue import AgentQueue
@@ -972,6 +972,98 @@ def test_runtime_bridge_replay_history_sends_replace_benchmark_snapshot():
     assert benchmark_msgs[0][1]["data"]["replace"] is True
     assert len(benchmark_msgs[0][1]["data"]["records"]) == 2
     print("  PASS: runtime_bridge_replay_history_sends_replace_benchmark_snapshot")
+
+
+def test_runtime_bridge_replay_history_preserves_task_message_type():
+    class FakeKernel:
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return []
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self):
+            return [
+                TaskMessage(
+                    message_id="m_info",
+                    task_id="t1",
+                    type=TaskMessageType.TASK_INFO,
+                    content="正在补前置",
+                    timestamp=10.0,
+                ),
+                TaskMessage(
+                    message_id="m_question",
+                    task_id="t1",
+                    type=TaskMessageType.TASK_QUESTION,
+                    content="是否继续？",
+                    options=["是", "否"],
+                    timestamp=11.0,
+                ),
+            ]
+
+        def list_player_notifications(self):
+            return [{"type": "info", "content": "普通通知", "timestamp": 12.0}]
+
+        def runtime_state(self):
+            return {}
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[tuple[str, dict[str, Any]]] = []
+
+        async def send_to_client(self, client_id, msg_type, data):
+            self.sent.append((msg_type, {"client_id": client_id, "data": data}))
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    ws = FakeWS()
+    bridge.attach_ws_server(ws)
+
+    asyncio.run(bridge._replay_history("client_msg"))
+
+    task_messages = [item for item in ws.sent if item[0] == "task_message"]
+    notifications = [item for item in ws.sent if item[0] == "player_notification"]
+
+    assert len(task_messages) == 1
+    assert task_messages[0][1]["client_id"] == "client_msg"
+    assert task_messages[0][1]["data"]["type"] == "task_info"
+    assert task_messages[0][1]["data"]["content"] == "正在补前置"
+    assert len(notifications) == 1
+    assert notifications[0][1]["data"]["content"] == "普通通知"
+    assert all(item[1]["data"].get("message_id") != "m_question" for item in ws.sent)
+    print("  PASS: runtime_bridge_replay_history_preserves_task_message_type")
 
 
 def test_task_replay_request_returns_persisted_task_log():

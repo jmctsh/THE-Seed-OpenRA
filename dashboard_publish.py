@@ -100,19 +100,7 @@ class DashboardPublisher:
         new_messages = task_messages[self.task_message_offset :]
         self.task_message_offset = len(task_messages)
         for message in new_messages:
-            payload: dict[str, Any] = {
-                "type": message.type.value,
-                "content": message.content,
-                "task_id": message.task_id,
-                "message_id": message.message_id,
-                "timestamp": message.timestamp,
-            }
-            if message.options is not None:
-                payload["options"] = message.options
-            if message.timeout_s is not None:
-                payload["timeout_s"] = message.timeout_s
-            if message.default_option is not None:
-                payload["default_option"] = message.default_option
+            payload = self._task_message_payload(message)
             await self.ws_server.send_task_message(payload)
             if self.adjutant is None:
                 continue
@@ -253,22 +241,10 @@ class DashboardPublisher:
         for message in self.kernel.list_task_messages()[-100:]:
             if message.type == TaskMessageType.TASK_QUESTION:
                 continue
-            icon = {
-                TaskMessageType.TASK_INFO: "ℹ",
-                TaskMessageType.TASK_WARNING: "⚠",
-                TaskMessageType.TASK_COMPLETE_REPORT: "✓",
-            }.get(message.type, "ℹ")
             await self.ws_server.send_to_client(
                 client_id,
-                "player_notification",
-                {
-                    "type": message.type.value,
-                    "content": message.content,
-                    "icon": icon,
-                    "task_id": message.task_id,
-                    "message_id": message.message_id,
-                    "timestamp": message.timestamp,
-                },
+                "task_message",
+                self._task_message_payload(message),
             )
 
         for notification in self.kernel.list_player_notifications()[-100:]:
@@ -276,3 +252,19 @@ class DashboardPublisher:
 
         for response in self.recent_responses[-100:]:
             await self.ws_server.send_to_client(client_id, "query_response", response)
+
+    def _task_message_payload(self, message: Any) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "type": message.type.value,
+            "content": message.content,
+            "task_id": message.task_id,
+            "message_id": message.message_id,
+            "timestamp": message.timestamp,
+        }
+        if message.options is not None:
+            payload["options"] = message.options
+        if message.timeout_s is not None:
+            payload["timeout_s"] = message.timeout_s
+        if message.default_option is not None:
+            payload["default_option"] = message.default_option
+        return payload
