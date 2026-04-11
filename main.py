@@ -64,7 +64,7 @@ from openra_api.game_api import GameAPI
 from queue_manager import QueueManager, QueueManagerConfig
 from task_agent import AgentConfig
 from task_replay import build_task_replay_bundle as build_task_replay_bundle_payload
-from task_triage import build_task_triage_from_artifacts, describe_job
+from task_triage import task_to_dict
 from unit_registry import UnitRegistry, set_default_registry
 from world_model import GameAPIWorldSource, RefreshPolicy, WorldModel, WorldModelSource
 from ws_server import InboundHandler, WSServer, WSServerConfig
@@ -673,27 +673,21 @@ class RuntimeBridge(InboundHandler):
         runtime_state: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         task_jobs = jobs or []
-        _sess = current_session_dir()
-        task_id = task.task_id
-        log_path = str(_sess / "tasks" / f"{task_id}.jsonl") if _sess else None
         runtime_state = runtime_state or self.kernel.runtime_state()
-        runtime_tasks = runtime_state.get("active_tasks") if isinstance(runtime_state, dict) else {}
-        runtime_task = runtime_tasks.get(task_id) if isinstance(runtime_tasks, dict) else None
-        return {
-            "task_id": task_id,
-            "raw_text": task.raw_text,
-            "kind": task.kind.value,
-            "priority": task.priority,
-            "status": task.status.value,
-            "timestamp": task.timestamp,
-            "created_at": task.created_at,
-            "label": getattr(task, "label", ""),
-            "is_capability": getattr(task, "is_capability", False),
-            "log_path": log_path,
-            "jobs": [RuntimeBridge._job_to_dict(job) for job in task_jobs],
-            "job_count": len(task_jobs),
-            "triage": self._build_task_triage(task, task_jobs, runtime_task=runtime_task, runtime_state=runtime_state),
-        }
+        task_id = getattr(task, "task_id", "")
+        try:
+            task_messages = self.kernel.list_task_messages(task_id)
+        except TypeError:
+            task_messages = self.kernel.list_task_messages()
+        return task_to_dict(
+            task,
+            task_jobs,
+            runtime_state=runtime_state,
+            pending_questions=self.kernel.list_pending_questions(),
+            task_messages=task_messages,
+            world_stale=self._world_is_stale(),
+            log_session_dir=current_session_dir(),
+        )
 
     def _build_dashboard_payload(self) -> dict[str, Any]:
         pending_questions = self.kernel.list_pending_questions()
@@ -755,30 +749,6 @@ class RuntimeBridge(InboundHandler):
             live_runtime_facts=live_runtime_facts,
         )
 
-    def _build_task_triage(
-        self,
-        task: Any,
-        jobs: list[Any],
-        *,
-        runtime_task: Optional[dict[str, Any]],
-        runtime_state: dict[str, Any],
-    ) -> dict[str, Any]:
-        task_id = getattr(task, "task_id", "")
-        try:
-            task_messages = self.kernel.list_task_messages(task_id)
-        except TypeError:
-            task_messages = self.kernel.list_task_messages()
-        return build_task_triage_from_artifacts(
-            task=task,
-            runtime_task=runtime_task,
-            runtime_state=runtime_state,
-            task_id=str(task_id or ""),
-            jobs=jobs,
-            world_sync={"stale": self._world_is_stale()},
-            pending_questions=self.kernel.list_pending_questions(),
-            task_messages=task_messages,
-        ).to_dict()
-
     def _world_is_stale(self) -> bool:
         refresh_health = getattr(self.world_model, "refresh_health", None)
         if not callable(refresh_health):
@@ -787,17 +757,6 @@ class RuntimeBridge(InboundHandler):
             return bool(refresh_health().get("stale", False))
         except Exception:
             return False
-
-    @staticmethod
-    def _job_to_dict(job: Any) -> dict[str, Any]:
-        return {
-            "job_id": job.job_id,
-            "expert_type": job.expert_type,
-            "status": job.status.value if hasattr(job.status, "value") else str(job.status),
-            "resources": list(getattr(job, "resources", []) or []),
-            "timestamp": getattr(job, "timestamp", None),
-            "summary": describe_job(job),
-        }
 
 
 class ApplicationRuntime:

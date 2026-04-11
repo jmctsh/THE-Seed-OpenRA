@@ -9,6 +9,7 @@ stories to the player.
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 from models.enums import TaskMessageType
@@ -216,6 +217,60 @@ def build_task_triage_from_artifacts(
         runtime_state=runtime_state,
         inputs=inputs,
     )
+
+
+def job_to_dict(job: Any) -> dict[str, Any]:
+    """Job controller -> dashboard dict."""
+    return {
+        "job_id": job.job_id,
+        "expert_type": job.expert_type,
+        "status": job.status.value if hasattr(job.status, "value") else str(job.status),
+        "resources": list(getattr(job, "resources", []) or []),
+        "timestamp": getattr(job, "timestamp", None),
+        "summary": describe_job(job),
+    }
+
+
+def task_to_dict(
+    task: Any,
+    jobs: list[Any],
+    *,
+    runtime_state: dict[str, Any],
+    pending_questions: list[Any],
+    task_messages: list[Any],
+    world_stale: bool,
+    log_session_dir: Optional[Path] = None,
+) -> dict[str, Any]:
+    """Task + jobs -> dashboard dict with shared triage."""
+    task_id = getattr(task, "task_id", "")
+    runtime_tasks = runtime_state.get("active_tasks") if isinstance(runtime_state, dict) else {}
+    runtime_task = runtime_tasks.get(task_id) if isinstance(runtime_tasks, dict) else None
+    log_path = str(log_session_dir / "tasks" / f"{task_id}.jsonl") if log_session_dir else None
+    triage = build_task_triage_from_artifacts(
+        task=task,
+        runtime_task=runtime_task,
+        runtime_state=runtime_state,
+        task_id=str(task_id or ""),
+        jobs=jobs,
+        world_sync={"stale": world_stale},
+        pending_questions=pending_questions,
+        task_messages=task_messages,
+    ).to_dict()
+    return {
+        "task_id": task_id,
+        "raw_text": task.raw_text,
+        "kind": task.kind.value,
+        "priority": task.priority,
+        "status": task.status.value,
+        "timestamp": task.timestamp,
+        "created_at": task.created_at,
+        "label": getattr(task, "label", ""),
+        "is_capability": getattr(task, "is_capability", False),
+        "log_path": log_path,
+        "jobs": [job_to_dict(job) for job in jobs],
+        "job_count": len(jobs),
+        "triage": triage,
+    }
 
 
 def build_task_triage(
