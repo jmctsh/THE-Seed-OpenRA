@@ -105,6 +105,57 @@ _CN_NAME_TO_UNIT_ID = {
     for unit_id, cn_name in CN_NAME_MAP.items()
 }
 
+# Shared runtime hint tables used by routing / reservation code.
+_HINT_TO_UNIT: dict[str, tuple[str, str]] = {
+    # (unit_type, queue_type)
+    "重坦": ("3tnk", "Vehicle"), "重型坦克": ("3tnk", "Vehicle"), "坦克": ("3tnk", "Vehicle"),
+    "天启": ("4tnk", "Vehicle"), "天启坦克": ("4tnk", "Vehicle"),
+    "磁暴": ("ttnk", "Vehicle"), "磁暴坦克": ("ttnk", "Vehicle"),
+    "火箭车": ("v2rl", "Vehicle"), "V2": ("v2rl", "Vehicle"), "v2rl": ("v2rl", "Vehicle"),
+    "矿车": ("harv", "Vehicle"), "采矿车": ("harv", "Vehicle"),
+    "地雷": ("mnly", "Vehicle"),
+    "步兵": ("e1", "Infantry"), "步枪兵": ("e1", "Infantry"),
+    "火箭兵": ("e3", "Infantry"), "火箭步兵": ("e3", "Infantry"),
+    "工程师": ("e6", "Infantry"),
+    "狗": ("dog", "Infantry"), "军犬": ("dog", "Infantry"),
+    "电厂": ("powr", "Building"), "发电厂": ("powr", "Building"),
+    "兵营": ("barr", "Building"),
+    "矿场": ("proc", "Building"), "精炼厂": ("proc", "Building"),
+    "战车工厂": ("weap", "Building"), "坦克厂": ("weap", "Building"),
+    "雷达": ("dome", "Building"), "雷达站": ("dome", "Building"),
+}
+
+_UNIT_TYPE_TO_QUEUE: dict[str, str] = {}
+for _unit_type, _queue_type in _HINT_TO_UNIT.values():
+    _UNIT_TYPE_TO_QUEUE.setdefault(_unit_type, _queue_type)
+
+_CATEGORY_DEFAULTS: dict[str, tuple[str, str]] = {
+    "infantry": ("e1", "Infantry"),
+    "vehicle": ("3tnk", "Vehicle"),
+    "building": ("powr", "Building"),
+}
+
+_CATEGORY_TO_ACTOR_CATEGORY: dict[str, str] = {
+    "infantry": "infantry",
+    "vehicle": "vehicle",
+    "building": "building",
+}
+
+_UNIT_TO_QUEUE_TYPE: dict[str, str] = {
+    # buildings
+    "powr": "Building", "apwr": "Building", "proc": "Building", "barr": "Building",
+    "weap": "Building", "dome": "Building", "fix": "Building", "kenn": "Building",
+    "silo": "Building",
+    # infantry
+    "e1": "Infantry", "e2": "Infantry", "e3": "Infantry", "e6": "Infantry", "dog": "Infantry",
+    # vehicles
+    "ftrk": "Vehicle", "v2rl": "Vehicle", "3tnk": "Vehicle", "4tnk": "Vehicle",
+    "harv": "Vehicle", "mcv": "Vehicle", "mnly": "Vehicle", "ttnk": "Vehicle",
+    "jeep": "Vehicle", "2tnk": "Vehicle",
+    # aircraft
+    "mig": "Aircraft", "yak": "Aircraft",
+}
+
 DATASET: Dict[str, UnitInfo] = {}
 
 
