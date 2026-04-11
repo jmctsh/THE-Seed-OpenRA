@@ -64,10 +64,17 @@ class LiveTestRunner:
         self._receiver_task: Optional[asyncio.Task[Any]] = None
         self._query_responses: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._task_list: list[dict[str, Any]] = []
+        self._task_index: dict[str, dict[str, Any]] = {}
         self._pending_questions: list[dict[str, Any]] = []
         self._world_snapshot: dict[str, Any] = {}
         self._notifications: deque[dict[str, Any]] = deque(maxlen=20)
         self._logs: deque[dict[str, Any]] = deque(maxlen=50)
+        self._task_messages: deque[dict[str, Any]] = deque(maxlen=50)
+        self._benchmarks: deque[dict[str, Any]] = deque(maxlen=20)
+        self._errors: deque[dict[str, Any]] = deque(maxlen=20)
+        self._session_catalog: dict[str, Any] = {}
+        self._session_task_catalog: dict[str, Any] = {}
+        self._task_replays: dict[str, dict[str, Any]] = {}
 
     async def connect(self) -> None:
         self.ws = await websockets.connect(
@@ -77,7 +84,10 @@ class LiveTestRunner:
         )
         self._receiver_task = asyncio.create_task(self._recv_loop())
         await self._send({"type": "sync_request"})
-        await self.wait_for_ws_state(lambda: bool(self._world_snapshot) or bool(self._task_list), timeout=5.0)
+        await self.wait_for_ws_state(
+            lambda: bool(self._world_snapshot) or bool(self._task_list) or bool(self._session_catalog),
+            timeout=5.0,
+        )
 
     async def close(self) -> None:
         if self._receiver_task is not None:
@@ -97,27 +107,100 @@ class LiveTestRunner:
                 msg = json.loads(raw)
             except json.JSONDecodeError:
                 continue
-            msg_type = msg.get("type")
-            data = msg.get("data", {})
-            if msg_type == "query_response":
-                await self._query_responses.put(msg)
-            elif msg_type == "task_list":
-                self._task_list = list(data.get("tasks", []))
+            self._handle_message(msg)
+
+    def _apply_task_list(self, tasks: list[dict[str, Any]]) -> None:
+        normalized: list[dict[str, Any]] = []
+        index: dict[str, dict[str, Any]] = {}
+        for item in list(tasks or []):
+            if not isinstance(item, dict):
+                continue
+            task = dict(item)
+            task_id = str(task.get("task_id") or "")
+            if not task_id:
+                continue
+            normalized.append(task)
+            index[task_id] = task
+        self._task_list = normalized
+        self._task_index = index
+
+    def _apply_task_update(self, update: dict[str, Any]) -> None:
+        if not isinstance(update, dict):
+            return
+        task_id = str(update.get("task_id") or "")
+        if not task_id:
+            return
+        merged = dict(self._task_index.get(task_id) or {})
+        merged.update(dict(update))
+        self._task_index[task_id] = merged
+        for index, existing in enumerate(self._task_list):
+            if str(existing.get("task_id") or "") == task_id:
+                self._task_list[index] = merged
+                break
+        else:
+            self._task_list.append(merged)
+
+    def _handle_message(self, msg: dict[str, Any]) -> None:
+        msg_type = msg.get("type")
+        data = msg.get("data", {})
+        if msg_type == "query_response":
+            self._query_responses.put_nowait(dict(msg))
+        elif msg_type == "task_list":
+            self._apply_task_list(list(data.get("tasks", [])))
+            self._pending_questions = list(data.get("pending_questions", []))
+        elif msg_type == "task_update":
+            self._apply_task_update(dict(data))
+        elif msg_type == "world_snapshot":
+            self._world_snapshot = dict(data)
+            if data.get("pending_questions") is not None:
                 self._pending_questions = list(data.get("pending_questions", []))
-            elif msg_type == "world_snapshot":
-                self._world_snapshot = dict(data)
-                if data.get("pending_questions") is not None:
-                    self._pending_questions = list(data.get("pending_questions", []))
-            elif msg_type == "player_notification":
-                self._notifications.append(msg)
-            elif msg_type == "log_entry":
-                self._logs.append(msg)
+        elif msg_type == "player_notification":
+            self._notifications.append(dict(msg))
+        elif msg_type == "log_entry":
+            self._logs.append(dict(msg))
+        elif msg_type == "task_message":
+            self._task_messages.append(dict(data))
+        elif msg_type == "benchmark":
+            self._benchmarks.append(dict(data))
+        elif msg_type == "session_catalog":
+            self._session_catalog = dict(data)
+        elif msg_type == "session_task_catalog":
+            self._session_task_catalog = dict(data)
+        elif msg_type == "task_replay":
+            replay = dict(data)
+            task_id = str(replay.get("task_id") or "")
+            if task_id:
+                self._task_replays[task_id] = replay
+        elif msg_type == "error":
+            self._errors.append(dict(msg))
 
     async def _send(self, payload: dict[str, Any]) -> None:
         assert self.ws is not None
         outgoing = dict(payload)
         outgoing.setdefault("timestamp", time.time())
         await self.ws.send(json.dumps(outgoing, ensure_ascii=False))
+
+    async def request_task_replay(
+        self,
+        task_id: str,
+        *,
+        include_entries: bool = False,
+        session_dir: str | None = None,
+        timeout: float = 5.0,
+    ) -> Optional[dict[str, Any]]:
+        self._task_replays.pop(task_id, None)
+        payload: dict[str, Any] = {
+            "type": "task_replay_request",
+            "task_id": task_id,
+            "include_entries": include_entries,
+        }
+        if session_dir:
+            payload["session_dir"] = session_dir
+        await self._send(payload)
+        ok = await self.wait_for_ws_state(lambda: task_id in self._task_replays, timeout=timeout)
+        if not ok:
+            return None
+        return dict(self._task_replays.get(task_id) or {})
 
     async def send_command(self, text: str, timeout: float = 30.0) -> str:
         while not self._query_responses.empty():
@@ -185,6 +268,25 @@ class LiveTestRunner:
     def latest_world_snapshot(self) -> dict[str, Any]:
         return dict(self._world_snapshot)
 
+    def latest_session_catalog(self) -> dict[str, Any]:
+        return dict(self._session_catalog)
+
+    def latest_session_task_catalog(self) -> dict[str, Any]:
+        return dict(self._session_task_catalog)
+
+    def latest_benchmarks(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in list(self._benchmarks)]
+
+    def latest_errors(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in list(self._errors)]
+
+    def latest_task_messages(self) -> list[dict[str, Any]]:
+        return [dict(item) for item in list(self._task_messages)]
+
+    def latest_task_replay(self, task_id: str) -> Optional[dict[str, Any]]:
+        replay = self._task_replays.get(task_id)
+        return dict(replay) if isinstance(replay, dict) else None
+
     @staticmethod
     def extract_task_id(reply: str) -> Optional[str]:
         match = re.search(r"\b(t_[0-9a-f]+)\b", reply)
@@ -193,10 +295,8 @@ class LiveTestRunner:
         return None
 
     def get_task(self, task_id: str) -> Optional[dict[str, Any]]:
-        for task in self._task_list:
-            if task.get("task_id") == task_id:
-                return task
-        return None
+        task = self._task_index.get(task_id)
+        return dict(task) if isinstance(task, dict) else None
 
     async def wait_for_task_status(
         self,
@@ -235,7 +335,12 @@ class LiveTestRunner:
     def recent_debug_context(self) -> str:
         notifications = [item.get("data", {}).get("content", "") for item in list(self._notifications)[-3:]]
         logs = [item.get("data", {}).get("message", "") for item in list(self._logs)[-5:]]
-        return f"notifications={notifications} logs={logs}"
+        errors = [str(item.get("message") or "") for item in list(self._errors)[-3:]]
+        task_messages = [str(item.get("content") or "") for item in list(self._task_messages)[-3:]]
+        return (
+            f"notifications={notifications} logs={logs} "
+            f"errors={errors} task_messages={task_messages}"
+        )
 
 
 class LiveTestSuite:
