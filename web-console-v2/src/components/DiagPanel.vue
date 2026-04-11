@@ -258,7 +258,7 @@ import {
 const props = defineProps({ on: Function, send: Function })
 
 const BENCHMARK_LIMIT = 20
-const PREFETCH_TASK_REPLAY_LIMIT = 8
+const EXPANDED_TRACE_LIMIT = 1000
 const COMPONENT_FILTERS = ['ALL', 'adjutant', 'task_agent', 'kernel', 'expert', 'world_model', 'game_loop']
 const LEVEL_ORDER = { DEBUG: 0, INFO: 1, WARN: 2, WARNING: 2, ERROR: 3 }
 
@@ -297,7 +297,7 @@ const filteredTraceEntries = computed(() => {
         : traceEntries.value.filter((entry) => entry.taskId === selectedTaskId.value)
     )
   if (selectedTaskId.value !== 'ALL' && replayExpanded[selectedTaskId.value]) {
-    return items
+    return items.slice(-EXPANDED_TRACE_LIMIT)
   }
   return items.slice(-200)
 })
@@ -451,8 +451,18 @@ function ensureReplayRequested(taskId) {
 }
 
 function prefetchRecentReplays(tasks) {
-  for (const task of (tasks || []).slice(0, PREFETCH_TASK_REPLAY_LIMIT)) {
-    ensureReplayRequested(task?.task_id)
+  const candidates = []
+  if (selectedTaskId.value && selectedTaskId.value !== 'ALL') {
+    candidates.push(selectedTaskId.value)
+  }
+  const ordered = tasks || []
+  const firstTask = ordered[0]?.task_id
+  if (firstTask) candidates.push(firstTask)
+  const firstActiveTask = ordered.find((task) => !['succeeded', 'failed', 'aborted', 'partial'].includes(task?.status))?.task_id
+  if (firstActiveTask) candidates.push(firstActiveTask)
+
+  for (const taskId of [...new Set(candidates)]) {
+    ensureReplayRequested(taskId)
   }
 }
 

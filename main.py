@@ -1029,7 +1029,7 @@ class RuntimeBridge(InboundHandler):
                 "result": preview["result"],
             }
             for preview in previews
-        ]
+        ][-500:]
 
         summary = "任务记录已加载"
         for entry in reversed(entries):
