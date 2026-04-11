@@ -603,19 +603,5 @@ def test_blocking_queue_manager_does_not_starve_adjutant_llm():
 # --- Run all tests ---
 
 if __name__ == "__main__":
-    print("Running GameLoop tests...\n")
-
-    test_loop_starts_and_stops()
-    test_events_routed_to_kernel()
-    test_job_tick_scheduling()
-    test_register_unregister_job()
-    test_terminated_jobs_skipped()
-    test_dashboard_callback()
-    test_configurable_tick_rate()
-    test_worldmodel_stale_pauses_jobs_notifies_and_recovers()
-    test_job_exception_emits_failed_signal()
-    test_job_terminal_status_immediately_wakes_agent()
-    test_blocking_world_refresh_does_not_starve_adjutant_llm()
-    test_blocking_queue_manager_does_not_starve_adjutant_llm()
-
-    print(f"\nAll 12 tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

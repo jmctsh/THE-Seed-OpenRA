@@ -404,16 +404,5 @@ def test_game_api_dependency_names_follow_demo_truth() -> None:
 
 
 if __name__ == "__main__":
-    print("Running GameAPI tests...\n")
-    test_game_api_reuses_single_connection()
-    test_game_api_reconnects_after_server_side_close()
-    test_game_api_serializes_concurrent_requests()
-    test_game_api_normalizes_camel_case_can_produce_aliases()
-    test_game_api_normalizes_camel_case_produce_aliases()
-    test_place_building_raises_when_ready_item_does_not_change()
-    test_place_building_accepts_ready_item_change()
-    test_manage_production_accepts_precise_queue_targeting()
-    test_query_actor_parses_power_state_flags()
-    test_occupy_units_sends_precise_actor_ids()
-    test_game_api_dependency_names_follow_demo_truth()
-    print("\nAll 11 tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

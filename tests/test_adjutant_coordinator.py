@@ -771,23 +771,5 @@ def test_coordinator_hints_do_not_force_merge_when_free_combat_units_exist() -> 
 
 
 if __name__ == "__main__":
-    print("Running Adjutant coordinator tests...\n")
-    test_battlefield_snapshot_prefers_runtime_query()
-    test_battlefield_snapshot_runtime_query_is_normalized()
-    test_battlefield_snapshot_fallback_reuses_runtime_state_and_facts()
-    test_build_context_includes_task_triage_fields()
-    test_build_context_prefers_runtime_domain_over_generic_task_text()
-    test_build_context_collects_coordinator_inputs_once()
-    test_build_context_prefers_kernel_runtime_state_over_world_query()
-    test_build_context_uses_shared_triage_inputs_for_questions_and_warnings()
-    test_build_context_surfaces_prerequisite_gap_blocker_text()
-    test_coordinator_hints_merge_capability_followup_on_prerequisite_gap()
-    test_build_context_uses_capability_task_label_fallback_and_fulfilling_counts()
-    test_coordinator_snapshot_surfaces_base_readiness_when_no_alerts()
-    test_coordinator_snapshot_prefers_runtime_base_progression_when_present()
-    test_coordinator_hints_merge_capability_followup_on_fulfilling_phase()
-    test_coordinator_hints_use_runtime_domain_when_task_text_is_generic()
-    test_coordinator_hints_prefer_active_combat_group_over_waiting_group()
-    test_coordinator_hints_reuse_active_group_when_no_free_combat_units()
-    test_coordinator_hints_do_not_force_merge_when_free_combat_units_exist()
-    print("\nAll Adjutant coordinator tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

@@ -779,23 +779,5 @@ def test_economy_job_second_identical_building_does_not_see_first_completion() -
 
 
 if __name__ == "__main__":
-    print("Running EconomyExpert tests...\n")
-    test_economy_expert_creates_queue_job()
-    test_economy_job_emits_progress_and_finishes()
-    test_economy_job_waits_on_low_power_and_recovers()
-    test_economy_job_waits_when_queue_missing()
-    test_economy_job_can_build_power_while_low_power()
-    test_economy_job_matches_aliases_in_queue_and_completion_events()
-    test_economy_job_auto_places_ready_buildings_and_blocks_foreign_ready_items()
-    test_economy_job_counts_preexisting_ready_building_toward_completion()
-    test_economy_job_waits_when_ready_building_cannot_be_placed()
-    test_economy_job_enables_auto_place_for_buildings()
-    test_economy_job_counts_direct_auto_placed_buildings_without_queue_done_event()
-    test_economy_job_completes_before_low_power_after_building_lands()
-    test_economy_job_abort_best_effort_clears_matching_shared_queue_items()
-    test_economy_job_signals_include_request_and_reservation_ids()
-    test_economy_job_cannot_produce_signal_includes_prerequisite()
-    test_economy_job_faction_restricted_fails_immediately()
-    test_economy_job_uses_observed_player_faction_for_cannot_produce()
-    test_economy_job_second_identical_building_does_not_see_first_completion()
-    print("\nAll 19 EconomyExpert tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

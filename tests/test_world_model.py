@@ -1358,4 +1358,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

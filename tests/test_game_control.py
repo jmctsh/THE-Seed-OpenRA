@@ -860,19 +860,5 @@ def test_build_provider_fails_fast_when_socks_proxy_support_missing() -> None:
 
 
 if __name__ == "__main__":
-    print("Running game control tests...\n")
-    test_start_game_passes_baseline_save()
-    test_wait_for_api_polls_until_ready()
-    test_cli_restart_forwards_save_path()
-    test_application_runtime_restart_game()
-    test_runtime_defaults_are_demo_friendly()
-    test_parse_args_defaults_are_demo_friendly()
-    test_runtime_bridge_command_feedback_uses_query_response()
-    test_runtime_bridge_question_reply_success_is_visible()
-    test_runtime_bridge_publishes_logs_and_benchmarks_incrementally()
-    test_runtime_bridge_session_clear_resets_benchmark_publish_state()
-    test_runtime_bridge_replay_history_sends_full_benchmark_snapshot()
-    test_build_provider_fails_fast_when_qwen_dependency_missing()
-    test_build_provider_fails_fast_when_anthropic_dependency_missing()
-    test_build_provider_fails_fast_when_socks_proxy_support_missing()
-    print("\nAll 13 tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

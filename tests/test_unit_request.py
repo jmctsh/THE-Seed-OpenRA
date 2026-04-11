@@ -1114,46 +1114,5 @@ def test_task_agent_suspend_skips_wake():
 # =====================================================================
 
 if __name__ == "__main__":
-    if hasattr(benchmark, "init"):
-        benchmark.init()
-    else:
-        benchmark.clear()
-    if hasattr(logging_system, "init"):
-        logging_system.init()
-
-    test_infer_unit_type_hint_match()
-    test_infer_unit_type_category_default()
-    test_infer_unit_type_aircraft_returns_none()
-    test_idle_match_fulfilled()
-    test_idle_match_partial()
-    test_idle_match_none_available()
-    test_idle_match_infantry()
-    test_idle_match_hint_preference()
-    test_bootstrap_creates_economy_job()
-    test_bootstrap_skipped_when_not_producible()
-    test_bootstrap_notifies_capability()
-    test_fulfill_assigns_new_idle_units()
-    test_fulfill_priority_ordering()
-    test_agent_suspended_on_waiting_request()
-    test_agent_not_suspended_on_fulfilled()
-    test_nonblocking_request_does_not_suspend_agent()
-    test_agent_woken_after_fulfillment()
-    test_agent_woken_when_min_start_package_reached_before_full_count()
-    test_agent_woken_after_fulfillment_tracks_task_actor_group()
-    test_agent_woken_after_fulfillment_releases_request_binding()
-    test_cancel_task_cancels_pending_requests()
-    test_cancel_unit_request()
-    test_register_unit_request_creates_reservation_for_inferred_unit()
-    test_idle_match_updates_reservation_assignment_state()
-    test_cancel_unit_request_cancels_reservation()
-    test_waiting_request_result_exposes_bootstrap_contract()
-    test_cancel_unit_request_aborts_bootstrap_job()
-    test_sync_unfulfilled_requests_includes_reservation_metadata()
-    test_runtime_state_exposes_active_unit_reservations()
-    test_list_unit_requests_filter()
-    test_unfulfilled_notifies_capability()
-    test_unit_request_dataclass()
-    test_unit_reservation_dataclass()
-    test_event_types_exist()
-    test_task_agent_suspend_skips_wake()
-    print("All unit request tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

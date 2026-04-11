@@ -344,20 +344,5 @@ def test_query_planner_reports_not_supported_for_other_planners() -> None:
 
 
 if __name__ == "__main__":
-    print("Running Planner tests...\n")
-    test_production_advisor_returns_scout_first_when_no_visible_enemy()
-    test_production_advisor_returns_power_tech_when_low_power()
-    test_production_advisor_returns_hold_when_queue_blocked()
-    test_production_advisor_recommends_demo_mobile_scout_for_mobile_scout_need()
-    test_production_advisor_recommends_weap_before_mobile_scout_when_no_vehicle_gateway()
-    test_query_planner_reports_not_supported_for_other_planners()
-    test_production_advisor_empty_base_recommends_opening()
-    test_production_advisor_empty_base_ignores_no_enemy()
-    test_production_advisor_counter_infantry_heavy()
-    test_production_advisor_counter_vehicle_heavy()
-    test_opening_build_order_allied()
-    test_tech_prerequisites_weap()
-    test_counter_recommendation_no_enemy()
-    test_counter_recommendation_requires_safe_faction_for_faction_locked_units()
-    test_placement_hint_refinery()
-    print("\nAll 15 Planner tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

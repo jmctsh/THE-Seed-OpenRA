@@ -254,17 +254,5 @@ def test_counter_recommendation_stays_within_demo_roster() -> None:
 
 
 if __name__ == "__main__":
-    print("Running demo capability truth tests...\n")
-    test_demo_dataset_helpers_expose_capability_truth()
-    test_demo_truth_overrides_keep_shared_infantry_faction_neutral()
-    test_demo_prompt_roster_lines_follow_truth_table()
-    test_demo_prompt_roster_lines_can_include_prerequisites()
-    test_capability_runtime_view_derives_queue_type_from_dataset()
-    test_filter_demo_capability_buildable_strips_non_demo_entries()
-    test_filter_demo_capability_queue_snapshots_canonicalize_and_strip_noise()
-    test_filter_demo_capability_ready_items_and_reservations_follow_truth()
-    test_demo_capability_buildable_lines_follow_truth_table()
-    test_knowledge_display_and_prerequisites_follow_dataset_truth()
-    test_knowledge_downstream_unlocks_stay_within_demo_truth()
-    test_counter_recommendation_stays_within_demo_roster()
-    print("\nAll demo capability truth tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

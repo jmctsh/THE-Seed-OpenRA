@@ -2371,38 +2371,5 @@ def test_send_to_client_drops_stalled_client_after_timeout():
 # --- Run all tests ---
 
 if __name__ == "__main__":
-    print("Running WS + review_interval tests...\n")
-
-    # 1.8
-    test_review_interval_triggers_wake()
-    test_register_unregister_agent()
-    test_multiple_agents_different_intervals()
-    test_suspended_agent_skips_periodic_review()
-
-    # 1.6
-    test_ws_server_start_stop()
-    test_ws_client_connect_and_inbound()
-    test_ws_rejects_invalid_inbound_payloads()
-    test_ws_broadcast_outbound()
-    test_ws_multi_client()
-    test_ws_query_response_envelope()
-    test_ws_send_to_client_targets_single_client()
-    test_sync_request_pushes_current_state_directly()
-    test_runtime_bridge_publish_logs_batches_incrementally()
-    test_runtime_bridge_task_update_fingerprint_tracks_active_group_size()
-    test_runtime_bridge_publish_benchmarks_sends_full_snapshot_only_when_changed()
-    test_runtime_bridge_replay_history_sends_replace_benchmark_snapshot()
-    test_task_replay_request_returns_persisted_task_log()
-    test_session_select_returns_catalog_and_task_catalog()
-    test_session_clear_rotates_persisted_log_session()
-    test_task_replay_bundle_prefers_live_runtime_status_line_for_active_tasks()
-    test_runtime_bridge_sync_runtime_uses_public_kernel_accessors()
-    test_world_snapshot_throttled()
-    test_task_list_throttled()
-    test_world_snapshot_passes_after_interval()
-    test_other_messages_not_throttled()
-    test_broadcast_fanout_is_concurrent()
-    test_broadcast_drops_stalled_client_after_timeout()
-    test_send_to_client_drops_stalled_client_after_timeout()
-
-    print("\nAll WS + review_interval tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

@@ -563,22 +563,5 @@ def test_end_to_end_agent_with_handlers():
 # --- Run all tests ---
 
 if __name__ == "__main__":
-    print("Running TaskToolHandlers tests...\n")
-
-    test_handlers_register_all()
-    test_start_job_handler()
-    test_patch_pause_resume_abort_handlers()
-    test_complete_task_handler()
-    test_query_world_handler()
-    test_attack_actor_handler_creates_precise_combat_job()
-    test_occupy_target_handler_creates_precise_occupy_job()
-    test_query_planner_handler_routes_to_production_advisor()
-    test_cancel_tasks_handler()
-    test_all_responses_have_timestamp()
-    test_constraint_handlers_side_effects()
-    test_move_handler_reuses_active_actor_group_when_safe()
-    test_stop_handler_reuses_active_actor_group_when_safe()
-    test_attack_handler_does_not_autofill_when_actor_job_running()
-    test_end_to_end_agent_with_handlers()
-
-    print(f"\nAll 14 tests passed!")
+    import pytest
+    raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))
