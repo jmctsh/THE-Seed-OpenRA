@@ -193,3 +193,70 @@ def build_capability_status_snapshot(
         insufficient_funds_count=insufficient_funds_count,
         recent_directives=[str(text) for text in recent_directives if str(text or "")],
     )
+
+
+def build_world_runtime_state(
+    *,
+    tasks: Iterable[Task],
+    controllers: Iterable[Any],
+    constraints: Iterable[Any],
+    resource_bindings: dict[str, str],
+    active_actor_ids_for: Callable[[str], list[int]],
+    unit_requests: Iterable[UnitRequest],
+    reservation_for_request: Callable[[UnitRequest], Any],
+    request_reservation_id: Callable[[str], str],
+    production_readiness_for: Callable[[str, str | None], dict[str, Any]],
+    capability_task: Optional[Task],
+    capability_task_id: Optional[str],
+    capability_recent_inputs: Iterable[dict[str, Any]],
+    unit_reservations: Iterable[Any],
+    build_unfulfilled_request_payloads: Callable[..., list[dict[str, Any]]],
+    build_active_reservation_payloads: Callable[..., list[dict[str, Any]]],
+    requests_by_id: dict[str, UnitRequest],
+) -> dict[str, Any]:
+    """Build the aggregate runtime payload exported into the world model."""
+    controllers_list = list(controllers)
+    unfulfilled = build_unfulfilled_request_payloads(
+        unit_requests,
+        reservation_for_request=reservation_for_request,
+        request_reservation_id=request_reservation_id,
+        production_readiness_for=production_readiness_for,
+    )
+
+    capability_status = CapabilityStatusSnapshot()
+    if capability_task_id:
+        capability_status = build_capability_status_snapshot(
+            capability_task=capability_task,
+            capability_jobs=(
+                controller
+                for controller in controllers_list
+                if capability_task is not None and controller.task_id == capability_task.task_id
+            ),
+            capability_requests=unit_requests,
+            unfulfilled_requests=unfulfilled,
+            recent_directives=[
+                item.get("text", "")
+                for item in capability_recent_inputs
+                if item.get("text")
+            ],
+        )
+
+    active_reservations = build_active_reservation_payloads(
+        unit_reservations,
+        requests_by_id=requests_by_id,
+        production_readiness_for=production_readiness_for,
+    )
+
+    return {
+        "active_tasks": build_active_tasks_projection(
+            tasks=tasks,
+            active_actor_ids_for=active_actor_ids_for,
+        ),
+        "active_jobs": build_active_jobs_projection(controllers_list),
+        "resource_bindings": dict(resource_bindings),
+        "constraints": list(constraints),
+        "job_stats_by_task": build_job_stats_by_task(controllers_list),
+        "unfulfilled_requests": unfulfilled,
+        "capability_status": capability_status.to_dict(),
+        "unit_reservations": active_reservations,
+    }

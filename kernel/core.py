@@ -78,10 +78,7 @@ from .unit_request_lifecycle import (
     task_has_blocking_wait,
 )
 from .runtime_projection import (
-    build_active_jobs_projection,
-    build_active_tasks_projection,
-    build_capability_status_snapshot,
-    build_job_stats_by_task,
+    build_world_runtime_state,
 )
 from .task_coordination import (
     build_other_active_tasks,
@@ -115,7 +112,6 @@ from .session_reset import (
 )
 from .signal_delivery import route_expert_signal
 from .task_questions import PendingQuestionStore
-from runtime_views import CapabilityStatusSnapshot
 from task_agent import AgentConfig, TaskAgent, TaskToolHandlers, ToolExecutor, WorldSummary
 from world_model import WorldModel
 
@@ -1289,58 +1285,37 @@ class Kernel:
         )
 
     def _sync_world_runtime(self) -> None:
-        job_stats = build_job_stats_by_task(self._jobs.values())
-        unfulfilled = build_unfulfilled_request_payloads(
-            self._unit_requests.values(),
+        runtime_state = build_world_runtime_state(
+            tasks=self.tasks.values(),
+            controllers=self._jobs.values(),
+            constraints=self._constraints.values(),
+            resource_bindings=self.world_model.resource_bindings,
+            active_actor_ids_for=self.task_active_actor_ids,
+            unit_requests=self._unit_requests.values(),
             reservation_for_request=self._reservation_for_request,
             request_reservation_id=lambda request_id: self._request_reservations.get(request_id) or "",
             production_readiness_for=lambda unit_type, queue_type: self.world_model.production_readiness_for(
                 unit_type,
                 queue_type=queue_type,
             ),
+            capability_task=(
+                self.tasks.get(self._capability_task_id)
+                if self._capability_task_id
+                else None
+            ),
+            capability_task_id=self._capability_task_id,
+            capability_recent_inputs=self._capability_recent_inputs,
+            unit_reservations=self._unit_reservations.values(),
+            build_unfulfilled_request_payloads=build_unfulfilled_request_payloads,
+            build_active_reservation_payloads=build_active_reservation_payloads,
+            requests_by_id=self._unit_requests,
         )
+        unfulfilled = runtime_state["unfulfilled_requests"]
         if unfulfilled:
             slog.info("Syncing unfulfilled requests", event="sync_unfulfilled",
                       count=len(unfulfilled),
                       requests=[r["request_id"] for r in unfulfilled])
-
-        capability_status = CapabilityStatusSnapshot()
-        if self._capability_task_id:
-            capability_task = self.tasks.get(self._capability_task_id)
-            capability_status = build_capability_status_snapshot(
-                capability_task=capability_task,
-                capability_jobs=(
-                    controller
-                    for controller in self._jobs.values()
-                    if capability_task is not None and controller.task_id == capability_task.task_id
-                ),
-                capability_requests=self._unit_requests.values(),
-                unfulfilled_requests=unfulfilled,
-                recent_directives=[item.get("text", "") for item in self._capability_recent_inputs if item.get("text")],
-            )
-
-        active_reservations = build_active_reservation_payloads(
-            self._unit_reservations.values(),
-            requests_by_id=self._unit_requests,
-            production_readiness_for=lambda unit_type, queue_type: self.world_model.production_readiness_for(
-                unit_type,
-                queue_type=queue_type,
-            ),
-        )
-
-        self.world_model.set_runtime_state(
-            active_tasks=build_active_tasks_projection(
-                tasks=self.tasks.values(),
-                active_actor_ids_for=self.task_active_actor_ids,
-            ),
-            active_jobs=build_active_jobs_projection(self._jobs.values()),
-            resource_bindings=dict(self.world_model.resource_bindings),
-            constraints=list(self._constraints.values()),
-            job_stats_by_task=job_stats,
-            unfulfilled_requests=unfulfilled,
-            capability_status=capability_status.to_dict(),
-            unit_reservations=active_reservations,
-        )
+        self.world_model.set_runtime_state(**runtime_state)
 
     def _set_task_actor_group(self, task_id: str, actor_ids: list[int]) -> None:
         set_task_actor_group(

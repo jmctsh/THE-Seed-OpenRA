@@ -13,8 +13,9 @@ from kernel.runtime_projection import (
     build_active_tasks_projection,
     build_capability_status_snapshot,
     build_job_stats_by_task,
+    build_world_runtime_state,
 )
-from models import JobStatus, Task, TaskKind, TaskStatus, UnitRequest
+from models import JobStatus, ReservationStatus, Task, TaskKind, TaskStatus, UnitRequest, UnitReservation
 
 
 class _Controller:
@@ -237,3 +238,87 @@ def test_runtime_projection_helpers_build_active_rows_and_job_stats() -> None:
         },
     }
     print("  PASS: runtime_projection_helpers_build_active_rows_and_job_stats")
+
+
+def test_build_world_runtime_state_aggregates_runtime_payloads() -> None:
+    capability_task = Task(
+        task_id="t_cap",
+        raw_text="发展经济",
+        kind=TaskKind.MANAGED,
+        priority=80,
+        status=TaskStatus.RUNNING,
+        label="000",
+        is_capability=True,
+    )
+    active_task = Task(
+        task_id="t_active",
+        raw_text="补步兵",
+        kind=TaskKind.MANAGED,
+        priority=60,
+        status=TaskStatus.RUNNING,
+        label="001",
+    )
+    request = UnitRequest(
+        request_id="req_1",
+        task_id="t_active",
+        task_label="001",
+        task_summary="补步兵",
+        category="infantry",
+        count=2,
+        urgency="high",
+        hint="步兵",
+    )
+    reservation = UnitReservation(
+        reservation_id="res_1",
+        request_id="req_1",
+        task_id="t_active",
+        task_label="001",
+        task_summary="补步兵",
+        category="infantry",
+        unit_type="e1",
+        count=2,
+        status=ReservationStatus.PENDING,
+    )
+    controllers = [
+        _Controller("t_cap", "EconomyExpert", JobStatus.RUNNING, job_id="job_cap"),
+        _Controller("t_active", "ReconExpert", JobStatus.RUNNING, job_id="job_req"),
+    ]
+
+    runtime_state = build_world_runtime_state(
+        tasks=[capability_task, active_task],
+        controllers=controllers,
+        constraints=[],
+        resource_bindings={"queue:Infantry": "job_cap"},
+        active_actor_ids_for=lambda task_id: [11] if task_id == "t_active" else [],
+        unit_requests=[request],
+        reservation_for_request=lambda req: reservation if req.request_id == "req_1" else None,
+        request_reservation_id=lambda request_id: "res_1" if request_id == "req_1" else "",
+        production_readiness_for=lambda unit_type, queue_type: {"can_issue_now": True},
+        capability_task=capability_task,
+        capability_task_id="t_cap",
+        capability_recent_inputs=[{"text": "补步兵"}],
+        unit_reservations=[reservation],
+        build_unfulfilled_request_payloads=lambda requests, **_: [
+            {
+                "request_id": next(iter(requests)).request_id,
+                "reason": "waiting_dispatch",
+            }
+        ],
+        build_active_reservation_payloads=lambda reservations, **_: [
+            {
+                "reservation_id": next(iter(reservations)).reservation_id,
+                "reason": "waiting_dispatch",
+            }
+        ],
+        requests_by_id={"req_1": request},
+    )
+
+    assert runtime_state["resource_bindings"] == {"queue:Infantry": "job_cap"}
+    assert runtime_state["job_stats_by_task"]["t_cap"]["expert_attempts"] == {"EconomyExpert": 1}
+    assert runtime_state["active_tasks"]["t_active"]["active_actor_ids"] == [11]
+    assert runtime_state["active_jobs"]["job_req"]["expert_type"] == "ReconExpert"
+    assert runtime_state["unfulfilled_requests"] == [{"request_id": "req_1", "reason": "waiting_dispatch"}]
+    assert runtime_state["unit_reservations"] == [{"reservation_id": "res_1", "reason": "waiting_dispatch"}]
+    assert runtime_state["capability_status"]["task_id"] == "t_cap"
+    assert runtime_state["capability_status"]["dispatch_request_count"] == 1
+    print("  PASS: build_world_runtime_state_aggregates_runtime_payloads")
