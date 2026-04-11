@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping, MutableSet
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Optional, Protocol
 
-from models import EconomyJobConfig, UnitReservation, UnitRequest
+from logging_system import get_logger
+from models import EconomyJobConfig, JobStatus, TaskStatus, UnitReservation, UnitRequest
 from models.enums import ReservationStatus
+
+slog = get_logger("kernel")
+
+
+class ControllerLike(Protocol):
+    job_id: str
+    task_id: str
+    expert_type: str
+    status: JobStatus
+    resources: list[str]
+
+    def patch(self, params: dict[str, Any]) -> None:
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,3 +166,144 @@ def compute_bootstrap_reconcile_target(
         produced_count=produced_count,
         clear_job=(new_target == 0 and issued_count == 0),
     )
+
+
+def reconcile_request_bootstrap(
+    req: UnitRequest,
+    *,
+    reservation_for_request: Callable[[UnitRequest], Optional[UnitReservation]],
+    jobs: Mapping[str, ControllerLike],
+    is_terminal_status: Callable[[JobStatus], bool],
+    clear_request_bootstrap_refs: Callable[[UnitRequest, Optional[UnitReservation]], None],
+    release_job_resources: Callable[[ControllerLike], None],
+    resource_loss_notified: MutableSet[str],
+    now: Callable[[], float],
+) -> None:
+    """Shrink or clear bootstrap production after new idle assignments."""
+    reservation = reservation_for_request(req)
+    bootstrap_job_id = active_bootstrap_job_id(req, reservation)
+    if not bootstrap_job_id:
+        return
+    controller = jobs.get(bootstrap_job_id)
+    if controller is None or is_terminal_status(controller.status):
+        clear_request_bootstrap_refs(req, reservation)
+        return
+    reconcile_target = compute_bootstrap_reconcile_target(req, controller)
+    if reconcile_target is None:
+        return
+
+    if reconcile_target.clear_job:
+        if controller.resources:
+            release_job_resources(controller)
+        controller.resources = []
+        controller.status = JobStatus.ABORTED
+        resource_loss_notified.discard(bootstrap_job_id)
+        clear_request_bootstrap_refs(req, reservation)
+        slog.info(
+            "Bootstrap job cleared after idle fulfillment",
+            event="bootstrap_reconciled",
+            request_id=req.request_id,
+            reservation_id=reservation.reservation_id if reservation is not None else "",
+            job_id=bootstrap_job_id,
+            desired_remaining=reconcile_target.desired_remaining,
+            previous_target=reconcile_target.current_target,
+            new_target=0,
+            mode="clear",
+        )
+        return
+
+    controller.patch({"count": reconcile_target.new_target})
+    if reservation is not None:
+        reservation.updated_at = now()
+    slog.info(
+        "Bootstrap job reconciled after idle fulfillment",
+        event="bootstrap_reconciled",
+        request_id=req.request_id,
+        reservation_id=reservation.reservation_id if reservation is not None else "",
+        job_id=bootstrap_job_id,
+        desired_remaining=reconcile_target.desired_remaining,
+        previous_target=reconcile_target.current_target,
+        new_target=reconcile_target.new_target,
+        issued_count=reconcile_target.issued_count,
+        produced_count=reconcile_target.produced_count,
+        mode="shrink",
+    )
+
+
+def bootstrap_production_for_request(
+    req: UnitRequest,
+    *,
+    infer_unit_type: Callable[[str, str], tuple[Optional[str], Optional[str]]],
+    production_readiness_for: Callable[[str, str], dict[str, Any]],
+    ensure_reservation_for_request: Callable[[UnitRequest, str], UnitReservation],
+    ensure_capability_task: Callable[[], Optional[str]],
+    tasks: Mapping[str, Any],
+    start_job: Callable[[str, str, EconomyJobConfig], Any],
+    inject_player_message: Callable[[str, str], bool],
+    now: Callable[[], float],
+) -> BootstrapStartOutcome:
+    """Start shared bootstrap production for an unfulfilled request."""
+    decision = decide_bootstrap_start(
+        req,
+        infer_unit_type=infer_unit_type,
+        production_readiness_for=production_readiness_for,
+    )
+    if decision.remaining <= 0:
+        return BootstrapStartOutcome(decision=decision, started=False)
+    if decision.unit_type is None or decision.queue_type is None:
+        return BootstrapStartOutcome(decision=decision, started=False)
+    unit_type = decision.unit_type
+    queue_type = decision.queue_type
+    reservation = ensure_reservation_for_request(req, unit_type)
+    reservation.updated_at = now()
+    if not decision.can_issue_now:
+        return BootstrapStartOutcome(decision=decision, started=False)
+
+    bootstrap_task_id = ensure_capability_task()
+    capability_task = tasks.get(bootstrap_task_id)
+    if capability_task is None or capability_task.status not in {
+        TaskStatus.PENDING,
+        TaskStatus.RUNNING,
+        TaskStatus.WAITING,
+    }:
+        return BootstrapStartOutcome(decision=decision, started=False)
+
+    config = build_bootstrap_config(
+        req,
+        unit_type=unit_type,
+        queue_type=queue_type,
+        reservation_id=reservation.reservation_id,
+    )
+    try:
+        job = start_job(bootstrap_task_id, "EconomyExpert", config)
+        record_bootstrap_started(
+            req,
+            reservation,
+            job_id=job.job_id,
+            task_id=bootstrap_task_id,
+            now=now,
+        )
+        slog.info(
+            "Bootstrap production for request",
+            event="bootstrap_production",
+            request_id=req.request_id,
+            unit_type=unit_type,
+            count=decision.remaining,
+            job_id=job.job_id,
+            bootstrap_task_id=bootstrap_task_id,
+        )
+    except Exception as exc:
+        slog.warning(
+            "Bootstrap production failed",
+            event="bootstrap_production_failed",
+            request_id=req.request_id,
+            error=str(exc),
+        )
+        return BootstrapStartOutcome(decision=decision, started=False)
+
+    if bootstrap_task_id:
+        inject_player_message(
+            bootstrap_task_id,
+            build_bootstrap_player_message(req, unit_type=unit_type),
+        )
+    return BootstrapStartOutcome(decision=decision, started=True)

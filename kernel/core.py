@@ -57,12 +57,9 @@ from .unit_request_bookkeeping import (
 )
 from .unit_request_bootstrap import (
     active_bootstrap_job_id,
-    build_bootstrap_config,
-    build_bootstrap_player_message,
+    bootstrap_production_for_request,
     BootstrapStartOutcome,
-    compute_bootstrap_reconcile_target,
-    decide_bootstrap_start,
-    record_bootstrap_started,
+    reconcile_request_bootstrap,
 )
 from .unit_request_matching import (
     hint_match_score,
@@ -565,58 +562,15 @@ class Kernel:
         )
 
     def _reconcile_request_bootstrap(self, req: UnitRequest) -> None:
-        """Shrink or clear internal bootstrap production after new idle assignments.
-
-        This keeps future-unit ownership closer to reality when a request that already
-        started fast-path bootstrap later picks up live idle actors.
-        """
-        reservation = self._reservation_for_request(req)
-        bootstrap_job_id = active_bootstrap_job_id(req, reservation)
-        if not bootstrap_job_id:
-            return
-        controller = self._jobs.get(bootstrap_job_id)
-        if controller is None or self._is_terminal_status(controller.status):
-            self._clear_request_bootstrap_refs(req, reservation)
-            return
-        reconcile_target = compute_bootstrap_reconcile_target(req, controller)
-        if reconcile_target is None:
-            return
-
-        if reconcile_target.clear_job:
-            if controller.resources:
-                self._release_job_resources(controller)
-            controller.resources = []
-            controller.status = JobStatus.ABORTED
-            self._resource_loss_notified.discard(bootstrap_job_id)
-            self._clear_request_bootstrap_refs(req, reservation)
-            slog.info(
-                "Bootstrap job cleared after idle fulfillment",
-                event="bootstrap_reconciled",
-                request_id=req.request_id,
-                reservation_id=reservation.reservation_id if reservation is not None else "",
-                job_id=bootstrap_job_id,
-                desired_remaining=reconcile_target.desired_remaining,
-                previous_target=reconcile_target.current_target,
-                new_target=0,
-                mode="clear",
-            )
-            return
-
-        controller.patch({"count": reconcile_target.new_target})
-        if reservation is not None:
-            reservation.updated_at = _now()
-        slog.info(
-            "Bootstrap job reconciled after idle fulfillment",
-            event="bootstrap_reconciled",
-            request_id=req.request_id,
-            reservation_id=reservation.reservation_id if reservation is not None else "",
-            job_id=bootstrap_job_id,
-            desired_remaining=reconcile_target.desired_remaining,
-            previous_target=reconcile_target.current_target,
-            new_target=reconcile_target.new_target,
-            issued_count=reconcile_target.issued_count,
-            produced_count=reconcile_target.produced_count,
-            mode="shrink",
+        reconcile_request_bootstrap(
+            req,
+            reservation_for_request=self._reservation_for_request,
+            jobs=self._jobs,
+            is_terminal_status=self._is_terminal_status,
+            clear_request_bootstrap_refs=self._clear_request_bootstrap_refs,
+            release_job_resources=self._release_job_resources,
+            resource_loss_notified=self._resource_loss_notified,
+            now=_now,
         )
 
     def _try_fulfill_from_idle(self, req: UnitRequest) -> bool:
@@ -696,64 +650,20 @@ class Kernel:
         )
 
     def _bootstrap_production_for_request(self, req: UnitRequest) -> BootstrapStartOutcome:
-        """Start a direct EconomyJob for remaining unfulfilled count."""
-        decision = decide_bootstrap_start(
+        return bootstrap_production_for_request(
             req,
             infer_unit_type=infer_unit_type_for_request,
             production_readiness_for=lambda unit_type, queue_type: self.world_model.production_readiness_for(
                 unit_type,
                 queue_type=queue_type,
             ),
+            ensure_reservation_for_request=self._ensure_reservation_for_request,
+            ensure_capability_task=self.ensure_capability_task,
+            tasks=self.tasks,
+            start_job=self.start_job,
+            inject_player_message=self.inject_player_message,
+            now=_now,
         )
-        if decision.remaining <= 0:
-            return BootstrapStartOutcome(decision=decision, started=False)
-        if decision.unit_type is None or decision.queue_type is None:
-            return BootstrapStartOutcome(decision=decision, started=False)
-        unit_type = decision.unit_type
-        queue_type = decision.queue_type
-        reservation = self._ensure_reservation_for_request(req, unit_type)
-        reservation.updated_at = _now()
-        if not decision.can_issue_now:
-            return BootstrapStartOutcome(decision=decision, started=False)
-
-        bootstrap_task_id = self.ensure_capability_task()
-        capability_task = self.tasks.get(bootstrap_task_id)
-        if capability_task is None or capability_task.status not in {TaskStatus.PENDING, TaskStatus.RUNNING, TaskStatus.WAITING}:
-            return BootstrapStartOutcome(decision=decision, started=False)
-
-        # Start shared production on the capability task when available so
-        # requesters remain consumers of units instead of accidental owners of
-        # EconomyExpert jobs.
-        config = build_bootstrap_config(
-            req,
-            unit_type=unit_type,
-            queue_type=queue_type,
-            reservation_id=reservation.reservation_id,
-        )
-        try:
-            job = self.start_job(bootstrap_task_id, "EconomyExpert", config)
-            record_bootstrap_started(
-                req,
-                reservation,
-                job_id=job.job_id,
-                task_id=bootstrap_task_id,
-                now=_now,
-            )
-            slog.info("Bootstrap production for request", event="bootstrap_production",
-                      request_id=req.request_id, unit_type=unit_type, count=decision.remaining,
-                      job_id=job.job_id, bootstrap_task_id=bootstrap_task_id)
-        except Exception as exc:
-            slog.warning("Bootstrap production failed", event="bootstrap_production_failed",
-                         request_id=req.request_id, error=str(exc))
-            return BootstrapStartOutcome(decision=decision, started=False)
-
-        # Notify Capability of the fast-path production
-        if self._capability_task_id:
-            self.inject_player_message(
-                self._capability_task_id,
-                build_bootstrap_player_message(req, unit_type=unit_type),
-            )
-        return BootstrapStartOutcome(decision=decision, started=True)
 
     def _notify_capability_unfulfilled(self, req: UnitRequest) -> None:
         """Push UNIT_REQUEST_UNFULFILLED event to wake Capability."""
