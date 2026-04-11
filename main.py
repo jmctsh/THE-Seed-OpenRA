@@ -63,7 +63,7 @@ from openra_api.game_api import GameAPI
 from queue_manager import QueueManager, QueueManagerConfig
 from task_agent import AgentConfig
 from task_replay import build_live_task_replay_bundle
-from task_triage import task_to_dict
+from task_triage import build_live_task_payload
 from unit_registry import UnitRegistry, set_default_registry
 from world_model import GameAPIWorldSource, RefreshPolicy, WorldModel, WorldModelSource
 from ws_server import InboundHandler, WSServer, WSServerConfig
@@ -193,6 +193,22 @@ class RuntimeBridge(InboundHandler):
         self._registered_agents: set[str] = set()
         self._registered_jobs: set[str] = set()
         self.log_session_root = "Logs/runtime"
+
+        def _task_payload_builder(task: Any, jobs: Optional[list[Any]] = None, **kwargs: Any) -> dict[str, Any]:
+            runtime_state = kwargs.get("runtime_state")
+            if runtime_state is None:
+                runtime_state = self.kernel.runtime_state()
+            return build_live_task_payload(
+                task,
+                jobs or [],
+                runtime_state=runtime_state,
+                list_pending_questions=self.kernel.list_pending_questions,
+                list_task_messages=self.kernel.list_task_messages,
+                world_stale=self._world_is_stale(),
+                log_session_dir=current_session_dir(),
+            )
+
+        self._task_payload_builder = _task_payload_builder
         self._publisher = DashboardPublisher(
             kernel=self.kernel,
             task_message_callback=self._handle_published_task_message,
@@ -423,6 +439,19 @@ class RuntimeBridge(InboundHandler):
             },
         )
 
+    def _task_to_dict(
+        self,
+        task: Any,
+        jobs: Optional[list[Any]] = None,
+        *,
+        runtime_state: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
+        return self._task_payload_builder(
+            task,
+            jobs,
+            runtime_state=runtime_state,
+        )
+
     async def on_game_restart(self, save_path: Optional[str], client_id: str) -> None:
         del client_id
         if self.runtime is None:
@@ -476,30 +505,6 @@ class RuntimeBridge(InboundHandler):
                 "session_dir": str(resolved) if resolved is not None else None,
                 "tasks": tasks,
             },
-        )
-
-    def _task_to_dict(
-        self,
-        task: Any,
-        jobs: Optional[list[Any]] = None,
-        *,
-        runtime_state: Optional[dict[str, Any]] = None,
-    ) -> dict[str, Any]:
-        task_jobs = jobs or []
-        runtime_state = runtime_state or self.kernel.runtime_state()
-        task_id = getattr(task, "task_id", "")
-        try:
-            task_messages = self.kernel.list_task_messages(task_id)
-        except TypeError:
-            task_messages = self.kernel.list_task_messages()
-        return task_to_dict(
-            task,
-            task_jobs,
-            runtime_state=runtime_state,
-            pending_questions=self.kernel.list_pending_questions(),
-            task_messages=task_messages,
-            world_stale=self._world_is_stale(),
-            log_session_dir=current_session_dir(),
         )
 
     def _build_dashboard_payload(self) -> dict[str, Any]:

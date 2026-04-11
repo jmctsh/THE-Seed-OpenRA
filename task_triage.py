@@ -8,6 +8,7 @@ stories to the player.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Optional
@@ -247,6 +248,34 @@ def task_to_dict(
         "job_count": len(jobs),
         "triage": triage,
     }
+
+
+def build_live_task_payload(
+    task: Any,
+    jobs: list[Any],
+    *,
+    runtime_state: Optional[dict[str, Any]],
+    list_pending_questions: Callable[[], list[Any]],
+    list_task_messages: Callable[..., list[Any]],
+    world_stale: bool,
+    log_session_dir: Optional[Path] = None,
+) -> dict[str, Any]:
+    """Build a dashboard/task payload from live runtime providers."""
+    runtime_state = runtime_state or {}
+    task_id = getattr(task, "task_id", "")
+    try:
+        task_messages = list_task_messages(task_id)
+    except TypeError:
+        task_messages = list_task_messages()
+    return task_to_dict(
+        task,
+        jobs,
+        runtime_state=runtime_state,
+        pending_questions=list_pending_questions(),
+        task_messages=task_messages,
+        world_stale=world_stale,
+        log_session_dir=log_session_dir,
+    )
 
 
 def build_task_triage(

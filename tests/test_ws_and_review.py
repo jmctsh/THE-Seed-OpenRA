@@ -20,6 +20,7 @@ from logging_system import start_persistence_session, stop_persistence_session
 from models import Event, EventType, TaskMessage, TaskMessageType, TaskStatus
 from main import RuntimeBridge, TASK_REPLAY_RAW_ENTRY_LIMIT
 from task_replay import build_live_task_replay_bundle, build_task_replay_bundle
+from task_triage import build_live_task_payload
 from task_agent.queue import AgentQueue
 from game_loop import GameLoop, GameLoopConfig
 from ws_server import WSServer, WSServerConfig
@@ -1767,6 +1768,49 @@ def test_task_replay_bundle_prefers_live_runtime_status_line_for_active_tasks():
     assert bundle["status_line"] == "等待能力层补前置：电厂"
     assert bundle["timeline"][0]["label"] == "task_created"
     print("  PASS: task_replay_bundle_prefers_live_runtime_status_line_for_active_tasks")
+
+
+def test_build_live_task_payload_uses_task_specific_message_lookup():
+    class FakeTask:
+        task_id = "t_demo"
+        raw_text = "test"
+        kind = type("Kind", (), {"value": "managed"})()
+        priority = 50
+        status = type("Status", (), {"value": "running"})()
+        timestamp = 123.0
+        created_at = 120.0
+        label = "001"
+        is_capability = False
+
+    class FakeMessage:
+        def __init__(self, task_id: str, content: str):
+            self.task_id = task_id
+            self.content = content
+            self.type = TaskMessageType.TASK_WARNING
+
+    calls: list[tuple[str, ...]] = []
+
+    def list_pending_questions():
+        return []
+
+    def list_task_messages(task_id: str):
+        calls.append((task_id,))
+        return [FakeMessage(task_id, "warn")]
+
+    payload = build_live_task_payload(
+        FakeTask(),
+        [],
+        runtime_state={},
+        list_pending_questions=list_pending_questions,
+        list_task_messages=list_task_messages,
+        world_stale=False,
+        log_session_dir=None,
+    )
+
+    assert calls == [("t_demo",)]
+    assert payload["task_id"] == "t_demo"
+    assert payload["triage"]["status_line"]
+    print("  PASS: build_live_task_payload_uses_task_specific_message_lookup")
 
 
 def test_task_replay_bundle_counts_tools_once_and_keeps_separated_blockers():
