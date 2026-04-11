@@ -189,6 +189,11 @@ class NormalizedActor:
     can_attack: bool = False
     can_harvest: bool = False
     weapon_range: int = 0
+    is_disabled: bool = False
+    is_powered_down: bool = False
+    has_low_power: bool = False
+    has_power_outage: bool = False
+    disabled_reason: str = ""
     timestamp: float = field(default_factory=_now)
 
 

@@ -15,7 +15,7 @@ from typing import Optional
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from openra_api.game_api import GameAPI, GameAPIError
-from openra_api.models import Actor
+from openra_api.models import Actor, TargetsQueryParam
 
 
 class _PersistentJsonServer:
@@ -305,6 +305,49 @@ def test_manage_production_accepts_precise_queue_targeting() -> None:
     print("  PASS: manage_production_accepts_precise_queue_targeting")
 
 
+def test_query_actor_parses_power_state_flags() -> None:
+    api = GameAPI("127.0.0.1", port=1)
+
+    def fake_send(command: str, params: dict) -> dict:
+        assert command == "query_actor"
+        return {
+            "status": 1,
+            "data": {
+                "actors": [
+                    {
+                        "id": 101,
+                        "type": "雷达站",
+                        "faction": "自己",
+                        "hp": 500,
+                        "maxHp": 500,
+                        "activity": "Idle",
+                        "order": "Stop",
+                        "isDisabled": True,
+                        "isPoweredDown": False,
+                        "hasLowPower": True,
+                        "hasPowerOutage": False,
+                        "disabledReason": "lowpower",
+                        "position": {"x": 12, "y": 34},
+                    }
+                ]
+            },
+        }
+
+    api._send_request = fake_send  # type: ignore[method-assign]
+    api._handle_response = lambda response, _error: response["data"]  # type: ignore[method-assign]
+
+    actors = api.query_actor(TargetsQueryParam())
+    assert len(actors) == 1
+    actor = actors[0]
+    assert actor.actor_id == 101
+    assert actor.is_disabled is True
+    assert actor.is_powered_down is False
+    assert actor.has_low_power is True
+    assert actor.has_power_outage is False
+    assert actor.disabled_reason == "lowpower"
+    print("  PASS: query_actor_parses_power_state_flags")
+
+
 def test_occupy_units_sends_precise_actor_ids() -> None:
     api = GameAPI("127.0.0.1", port=1)
     captured = {}
@@ -347,6 +390,7 @@ if __name__ == "__main__":
     test_place_building_raises_when_ready_item_does_not_change()
     test_place_building_accepts_ready_item_change()
     test_manage_production_accepts_precise_queue_targeting()
+    test_query_actor_parses_power_state_flags()
     test_occupy_units_sends_precise_actor_ids()
     test_game_api_dependency_names_follow_demo_truth()
-    print("\nAll 10 tests passed!")
+    print("\nAll 11 tests passed!")

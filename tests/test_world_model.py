@@ -1055,6 +1055,70 @@ def test_runtime_facts_feasibility_derive_from_buildable_truth() -> None:
     assert facts["feasibility"]["produce_units"] is True, facts
 
 
+def test_world_summary_and_runtime_facts_expose_structure_power_states() -> None:
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(
+                actor_id=1,
+                type="雷达站",
+                faction="自己",
+                position=Location(10, 10),
+                hppercent=100,
+                activity="Idle",
+                is_disabled=True,
+                has_low_power=True,
+                disabled_reason="lowpower",
+            ),
+            Actor(
+                actor_id=2,
+                type="防空炮",
+                faction="自己",
+                position=Location(12, 10),
+                hppercent=100,
+                activity="Idle",
+                is_disabled=True,
+                is_powered_down=True,
+                disabled_reason="powerdown",
+            ),
+            Actor(
+                actor_id=3,
+                type="电厂",
+                faction="自己",
+                position=Location(14, 10),
+                hppercent=100,
+                activity="Idle",
+            ),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=600, Resources=0, Power=20, PowerDrained=80, PowerProvided=60),
+        map_info=make_map(0.3, 0.1),
+        queues={},
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+
+    summary = wm.world_summary()
+    facts = wm.compute_runtime_facts("t_cap")
+    actors = wm.query("actors")["actors"]
+
+    assert summary["economy"]["disabled_structure_count"] == 2, summary
+    assert summary["economy"]["powered_down_structure_count"] == 1, summary
+    assert summary["economy"]["low_power_disabled_structure_count"] == 1, summary
+    assert summary["economy"]["disabled_structures"] == ["雷达站(lowpower)", "防空炮(powerdown)"], summary
+
+    assert facts["disabled_structure_count"] == 2, facts
+    assert facts["powered_down_structure_count"] == 1, facts
+    assert facts["low_power_disabled_structure_count"] == 1, facts
+    assert facts["disabled_structures"] == ["雷达站(lowpower)", "防空炮(powerdown)"], facts
+
+    by_id = {int(actor["actor_id"]): actor for actor in actors}
+    assert by_id[1]["is_disabled"] is True
+    assert by_id[1]["has_low_power"] is True
+    assert by_id[1]["disabled_reason"] == "lowpower"
+    assert by_id[2]["is_powered_down"] is True
+    assert by_id[2]["disabled_reason"] == "powerdown"
+
+
 def main() -> None:
     test_refresh_layers_and_summary()
     test_layered_refresh_respects_intervals()
@@ -1080,6 +1144,7 @@ def main() -> None:
     test_compute_runtime_facts_ordinary_view_omits_buildability()
     test_runtime_facts_injected_in_context_packet()
     test_runtime_facts_exposes_ready_queue_items_and_capability_context_renders_them()
+    test_world_summary_and_runtime_facts_expose_structure_power_states()
     print("OK: WorldModel tests passed")
 
 

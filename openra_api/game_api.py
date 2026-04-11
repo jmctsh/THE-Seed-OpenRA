@@ -598,6 +598,31 @@ class GameAPI:
         except Exception as e:
             raise GameAPIError("FORM_GROUP_ERROR", "编组时发生错误: {0}".format(str(e)))
 
+    def _hydrate_actor(self, data: dict, actor: Actor | None = None) -> Actor:
+        try:
+            hydrated = actor or Actor(data["id"])
+            position = Location(
+                data["position"]["x"],
+                data["position"]["y"]
+            )
+            hp_percent = data["hp"] * 100 // data["maxHp"] if data["maxHp"] > 0 else -1
+            hydrated.update_details(
+                data["type"],
+                data["faction"],
+                position,
+                hp_percent,
+                data.get("activity"),
+                data.get("order"),
+                data.get("isDisabled", False),
+                data.get("isPoweredDown", False),
+                data.get("hasLowPower", False),
+                data.get("hasPowerOutage", False),
+                data.get("disabledReason"),
+            )
+            return hydrated
+        except KeyError as e:
+            raise GameAPIError("INVALID_ACTOR_DATA", "Actor数据格式无效: {0}".format(str(e)))
+
     def query_actor(self, query_params: TargetsQueryParam) -> List[Actor]:
         try:
             response = self._send_request('query_actor', {
@@ -609,24 +634,8 @@ class GameAPI:
             actors_data = result.get("actors", [])
 
             for data in actors_data:
-                try:
-                    actor = Actor(data["id"])
-                    position = Location(
-                        data["position"]["x"],
-                        data["position"]["y"]
-                    )
-                    hp_percent = data["hp"] * 100 // data["maxHp"] if data["maxHp"] > 0 else -1
-                    actor.update_details(
-                        data["type"],
-                        data["faction"],
-                        position,
-                        hp_percent,
-                        data.get("activity"),
-                        data.get("order"),
-                    )
-                    actors.append(actor)
-                except KeyError as e:
-                    raise GameAPIError("INVALID_ACTOR_DATA", "Actor数据格式无效: {0}".format(str(e)))
+                actor = self._hydrate_actor(data)
+                actors.append(actor)
 
             return actors
 
@@ -659,24 +668,8 @@ class GameAPI:
             frozen_actors_data = result.get("frozenActors", [])
 
             for data in actors_data:
-                try:
-                    actor = Actor(data["id"])
-                    position = Location(
-                        data["position"]["x"],
-                        data["position"]["y"]
-                    )
-                    hp_percent = data["hp"] * 100 // data["maxHp"] if data["maxHp"] > 0 else -1
-                    actor.update_details(
-                        data["type"],
-                        data["faction"],
-                        position,
-                        hp_percent,
-                        data.get("activity"),
-                        data.get("order"),
-                    )
-                    actors.append(actor)
-                except KeyError as e:
-                    raise GameAPIError("INVALID_ACTOR_DATA", "Actor数据格式无效: {0}".format(str(e)))
+                actor = self._hydrate_actor(data)
+                actors.append(actor)
 
             for data in frozen_actors_data:
                 try:
@@ -767,19 +760,7 @@ class GameAPI:
 
             try:
                 actor_data = result["actors"][0]
-                position = Location(
-                    actor_data["position"]["x"],
-                    actor_data["position"]["y"]
-                )
-                hp_percent = actor_data["hp"] * 100 // actor_data["maxHp"] if actor_data["maxHp"] > 0 else -1
-                actor.update_details(
-                    actor_data["type"],
-                    actor_data["faction"],
-                    position,
-                    hp_percent,
-                    actor_data.get("activity"),
-                    actor_data.get("order"),
-                )
+                self._hydrate_actor(actor_data, actor)
                 return True
             except (IndexError, KeyError) as e:
                 return False

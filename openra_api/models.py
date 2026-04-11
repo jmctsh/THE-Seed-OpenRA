@@ -66,6 +66,11 @@ class Actor:
     # 由 query_actor 返回的调试信息（由 C# 侧 ServerCommands.cs 填充）
     activity: Optional[str] = None
     order: Optional[str] = None
+    is_disabled: bool = False
+    is_powered_down: bool = False
+    has_low_power: bool = False
+    has_power_outage: bool = False
+    disabled_reason: Optional[str] = None
 
     @property
     def id(self) -> int:
@@ -89,6 +94,11 @@ class Actor:
         hppercent: int,
         activity: Optional[str] = None,
         order: Optional[str] = None,
+        is_disabled: bool = False,
+        is_powered_down: bool = False,
+        has_low_power: bool = False,
+        has_power_outage: bool = False,
+        disabled_reason: Optional[str] = None,
     ):
         # 更新单位的详细信息。
         self.type = type
@@ -97,6 +107,11 @@ class Actor:
         self.hppercent = hppercent
         self.activity = activity
         self.order = order
+        self.is_disabled = bool(is_disabled)
+        self.is_powered_down = bool(is_powered_down)
+        self.has_low_power = bool(has_low_power)
+        self.has_power_outage = bool(has_power_outage)
+        self.disabled_reason = disabled_reason
 
 @dataclass
 class FrozenActor:

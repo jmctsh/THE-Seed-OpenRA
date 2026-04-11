@@ -70,7 +70,16 @@ class _WorldModel:
 
     def world_summary(self):
         return {
-            "economy": {"cash": 5000, "low_power": False, "queue_blocked": False},
+            "economy": {
+                "cash": 5000,
+                "low_power": False,
+                "queue_blocked": False,
+                "disabled_structure_count": 1,
+                "powered_down_structure_count": 0,
+                "low_power_disabled_structure_count": 1,
+                "power_outage_structure_count": 0,
+                "disabled_structures": ["雷达站(lowpower)"],
+            },
             "military": {"self_units": 8, "enemy_units": 5},
             "map": {"explored_pct": 0.42},
             "known_enemy": {"bases": 1, "units_spotted": 5},
@@ -90,6 +99,11 @@ class _WorldModel:
                 "idle_self_units": 2,
                 "low_power": False,
                 "queue_blocked": False,
+                "disabled_structure_count": 1,
+                "powered_down_structure_count": 0,
+                "low_power_disabled_structure_count": 1,
+                "power_outage_structure_count": 0,
+                "disabled_structures": ["雷达站(lowpower)"],
                 "recommended_posture": "satisfy_requests",
                 "threat_level": "medium",
                 "threat_direction": "west",
@@ -352,6 +366,8 @@ def test_battlefield_snapshot_prefers_runtime_query() -> None:
     assert snapshot["recommended_posture"] == "satisfy_requests"
     assert snapshot["threat_level"] == "medium"
     assert snapshot["reservation_count"] == 1
+    assert snapshot["disabled_structure_count"] == 1
+    assert snapshot["disabled_structures"] == ["雷达站(lowpower)"]
     print("  PASS: battlefield_snapshot_prefers_runtime_query")
 
 
@@ -367,6 +383,8 @@ def test_battlefield_snapshot_fallback_reuses_runtime_state_and_facts() -> None:
     assert snapshot["self_combat_units"] == 3
     assert snapshot["committed_combat_units"] == 3
     assert snapshot["free_combat_units"] == 0
+    assert snapshot["disabled_structure_count"] == 1
+    assert snapshot["disabled_structures"] == ["雷达站(lowpower)"]
     print("  PASS: battlefield_snapshot_fallback_reuses_runtime_state_and_facts")
 
 

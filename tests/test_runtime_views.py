@@ -71,6 +71,11 @@ def test_build_battlefield_snapshot_normalizes_numeric_fields() -> None:
         queue_blocked=True,
         queue_blocked_reason="ready_not_placed",
         queue_blocked_queue_types=["Building"],
+        disabled_structure_count=2,
+        powered_down_structure_count=1,
+        low_power_disabled_structure_count=1,
+        power_outage_structure_count=0,
+        disabled_structures=["雷达站(lowpower)", "防空炮(powerdown)"],
         recommended_posture="unblock_queue",
         threat_level="medium",
         threat_direction="west",
@@ -93,6 +98,8 @@ def test_build_battlefield_snapshot_normalizes_numeric_fields() -> None:
     assert snapshot["queue_blocked"] is True
     assert snapshot["queue_blocked_reason"] == "ready_not_placed"
     assert snapshot["queue_blocked_queue_types"] == ["Building"]
+    assert snapshot["disabled_structure_count"] == 2
+    assert snapshot["disabled_structures"] == ["雷达站(lowpower)", "防空炮(powerdown)"]
     assert snapshot["recommended_posture"] == "unblock_queue"
     assert snapshot["capability_status"]["task_id"] == "t_cap"
     print("  PASS: build_battlefield_snapshot_normalizes_numeric_fields")

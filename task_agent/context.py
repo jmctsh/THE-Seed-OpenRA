@@ -223,7 +223,9 @@ def _compact_economy(eco: dict[str, Any]) -> str:
     pwr = eco.get("power_provided", 0)
     drain = eco.get("power_drained", 0)
     low = " ⚡低电力" if eco.get("low_power") else ""
-    return f"资金{cash} 资源{res} 电力{pwr}/{drain}{low}"
+    disabled_count = int(eco.get("disabled_structure_count", 0) or 0)
+    disabled = f" 离线建筑{disabled_count}" if disabled_count else ""
+    return f"资金{cash} 资源{res} 电力{pwr}/{drain}{low}{disabled}"
 
 
 def _compact_military(mil: dict[str, Any]) -> str:
@@ -258,6 +260,16 @@ def _compact_runtime_facts(rf: dict[str, Any]) -> str:
             parts.append(f"{key}={rf[key]}")
     if rf.get("active_actor_ids"):
         parts.append(f"active_actor_ids={rf['active_actor_ids']}")
+    if "disabled_structure_count" in rf:
+        parts.append(f"disabled_structure_count={rf['disabled_structure_count']}")
+    if "powered_down_structure_count" in rf:
+        parts.append(f"powered_down_structure_count={rf['powered_down_structure_count']}")
+    if "low_power_disabled_structure_count" in rf:
+        parts.append(f"low_power_disabled_structure_count={rf['low_power_disabled_structure_count']}")
+    if "power_outage_structure_count" in rf:
+        parts.append(f"power_outage_structure_count={rf['power_outage_structure_count']}")
+    if rf.get("disabled_structures"):
+        parts.append(f"disabled_structures={rf['disabled_structures']}")
     # Affordability
     afford = [k.replace("can_afford_", "") for k in rf if k.startswith("can_afford_") and rf[k]]
     if afford:

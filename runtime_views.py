@@ -180,6 +180,11 @@ class BattlefieldSnapshot:
     queue_blocked: bool = False
     queue_blocked_reason: str = ""
     queue_blocked_queue_types: list[str] = field(default_factory=list)
+    disabled_structure_count: int = 0
+    powered_down_structure_count: int = 0
+    low_power_disabled_structure_count: int = 0
+    power_outage_structure_count: int = 0
+    disabled_structures: list[str] = field(default_factory=list)
     recommended_posture: str = "maintain_posture"
     threat_level: str = "unknown"
     threat_direction: str = "unknown"
@@ -213,6 +218,11 @@ class BattlefieldSnapshot:
             "queue_blocked": self.queue_blocked,
             "queue_blocked_reason": self.queue_blocked_reason,
             "queue_blocked_queue_types": list(self.queue_blocked_queue_types),
+            "disabled_structure_count": self.disabled_structure_count,
+            "powered_down_structure_count": self.powered_down_structure_count,
+            "low_power_disabled_structure_count": self.low_power_disabled_structure_count,
+            "power_outage_structure_count": self.power_outage_structure_count,
+            "disabled_structures": list(self.disabled_structures),
             "recommended_posture": self.recommended_posture,
             "threat_level": self.threat_level,
             "threat_direction": self.threat_direction,
@@ -248,6 +258,11 @@ def build_battlefield_snapshot(
     queue_blocked: bool,
     queue_blocked_reason: str = "",
     queue_blocked_queue_types: list[str] | None = None,
+    disabled_structure_count: int = 0,
+    powered_down_structure_count: int = 0,
+    low_power_disabled_structure_count: int = 0,
+    power_outage_structure_count: int = 0,
+    disabled_structures: list[str] | None = None,
     recommended_posture: str,
     threat_level: str,
     threat_direction: str,
@@ -281,6 +296,11 @@ def build_battlefield_snapshot(
         queue_blocked=bool(queue_blocked),
         queue_blocked_reason=str(queue_blocked_reason or ""),
         queue_blocked_queue_types=[str(item) for item in list(queue_blocked_queue_types or []) if item],
+        disabled_structure_count=int(disabled_structure_count or 0),
+        powered_down_structure_count=int(powered_down_structure_count or 0),
+        low_power_disabled_structure_count=int(low_power_disabled_structure_count or 0),
+        power_outage_structure_count=int(power_outage_structure_count or 0),
+        disabled_structures=[str(item) for item in list(disabled_structures or []) if item],
         recommended_posture=str(recommended_posture or "maintain_posture"),
         threat_level=str(threat_level or "unknown"),
         threat_direction=str(threat_direction or "unknown"),

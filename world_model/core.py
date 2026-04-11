@@ -427,6 +427,7 @@ class WorldModel:
 
     def world_summary(self) -> dict[str, Any]:
         queue_block_state = self._queue_block_state()
+        structure_power_state = self._self_structure_power_state()
         self_combat = sum(
             actor.combat_value
             for actor in self.state.actors.values()
@@ -444,6 +445,11 @@ class WorldModel:
                 "queue_blocked_reason": queue_block_state.get("reason", ""),
                 "queue_blocked_reasons": list(queue_block_state.get("reasons", [])),
                 "queue_blocked_queue_types": list(queue_block_state.get("queue_types", [])),
+                "disabled_structure_count": structure_power_state["disabled_structure_count"],
+                "powered_down_structure_count": structure_power_state["powered_down_structure_count"],
+                "low_power_disabled_structure_count": structure_power_state["low_power_disabled_structure_count"],
+                "power_outage_structure_count": structure_power_state["power_outage_structure_count"],
+                "disabled_structures": list(structure_power_state["disabled_structures"]),
             },
             "military": {
                 "self_units": len(self.state.self_ids),
@@ -521,6 +527,11 @@ class WorldModel:
         queue_blocked = bool(economy.get("queue_blocked"))
         queue_blocked_reason = str(economy.get("queue_blocked_reason", "") or "")
         queue_blocked_queue_types = [str(item) for item in list(economy.get("queue_blocked_queue_types", []) or []) if item]
+        disabled_structure_count = int(economy.get("disabled_structure_count", 0) or 0)
+        powered_down_structure_count = int(economy.get("powered_down_structure_count", 0) or 0)
+        low_power_disabled_structure_count = int(economy.get("low_power_disabled_structure_count", 0) or 0)
+        power_outage_structure_count = int(economy.get("power_outage_structure_count", 0) or 0)
+        disabled_structures = [str(item) for item in list(economy.get("disabled_structures", []) or []) if item]
         pending_requests = capability.pending_request_count
         bootstrapping_request_count = capability.bootstrapping_request_count
         reservation_count = len(self._unit_reservations)
@@ -589,6 +600,8 @@ class WorldModel:
             summary_text += "，低电"
         if queue_blocked:
             summary_text += "，队列阻塞"
+        if disabled_structure_count:
+            summary_text += f"，离线建筑{disabled_structure_count}"
         if pending_requests:
             summary_text += f"，待处理请求{pending_requests}"
         if reservation_count:
@@ -612,6 +625,11 @@ class WorldModel:
             queue_blocked=queue_blocked,
             queue_blocked_reason=queue_blocked_reason,
             queue_blocked_queue_types=queue_blocked_queue_types,
+            disabled_structure_count=disabled_structure_count,
+            powered_down_structure_count=powered_down_structure_count,
+            low_power_disabled_structure_count=low_power_disabled_structure_count,
+            power_outage_structure_count=power_outage_structure_count,
+            disabled_structures=disabled_structures,
             recommended_posture=recommended_posture,
             threat_level=threat_level,
             threat_direction=threat_direction,
@@ -667,6 +685,7 @@ class WorldModel:
         state from coarse world_summary prose.
         """
         counts = self._count_self_actors()
+        structure_power_state = self._self_structure_power_state()
         economy = self.state.economy
         total_credits = economy.get("total_credits", 0)
 
@@ -719,6 +738,11 @@ class WorldModel:
             "world_sync_total_failures": self._total_refresh_failures,
             "world_sync_last_error": self._last_refresh_error,
             "low_power": bool(economy.get("low_power")),
+            "disabled_structure_count": structure_power_state["disabled_structure_count"],
+            "powered_down_structure_count": structure_power_state["powered_down_structure_count"],
+            "low_power_disabled_structure_count": structure_power_state["low_power_disabled_structure_count"],
+            "power_outage_structure_count": structure_power_state["power_outage_structure_count"],
+            "disabled_structures": list(structure_power_state["disabled_structures"]),
             "has_construction_yard": has_construction_yard,
             "power_plant_count": power_plant_count,
             "barracks_count": barracks_count,
@@ -948,6 +972,43 @@ class WorldModel:
             "harvester_count": harvester_count,
             "combat_unit_count": combat_unit_count,
             "player_faction": demo_faction_hint_for_unit_types(faction_unit_types),
+        }
+
+    def _self_structure_power_state(self) -> dict[str, Any]:
+        disabled_structure_count = 0
+        powered_down_structure_count = 0
+        low_power_disabled_structure_count = 0
+        power_outage_structure_count = 0
+        disabled_structures: list[str] = []
+        for actor in self.state.actors.values():
+            if actor.owner != ActorOwner.SELF or not actor.is_alive or actor.category != ActorCategory.BUILDING:
+                continue
+            if actor.is_disabled:
+                disabled_structure_count += 1
+            if actor.is_powered_down:
+                powered_down_structure_count += 1
+            if actor.has_low_power and actor.is_disabled:
+                low_power_disabled_structure_count += 1
+            if actor.has_power_outage:
+                power_outage_structure_count += 1
+            if actor.is_disabled:
+                label = actor.display_name or actor.name
+                reason = actor.disabled_reason or (
+                    "powerdown"
+                    if actor.is_powered_down
+                    else "lowpower"
+                    if actor.has_low_power
+                    else "power-outage"
+                    if actor.has_power_outage
+                    else "disabled"
+                )
+                disabled_structures.append(f"{label}({reason})")
+        return {
+            "disabled_structure_count": disabled_structure_count,
+            "powered_down_structure_count": powered_down_structure_count,
+            "low_power_disabled_structure_count": low_power_disabled_structure_count,
+            "power_outage_structure_count": power_outage_structure_count,
+            "disabled_structures": disabled_structures,
         }
 
     def runtime_facts_buildable(self) -> dict[str, list[str]]:
@@ -1283,6 +1344,11 @@ class WorldModel:
             can_attack=can_attack,
             can_harvest=can_harvest,
             weapon_range=self._weapon_range(name, category, can_attack),
+            is_disabled=bool(getattr(raw, "is_disabled", False)),
+            is_powered_down=bool(getattr(raw, "is_powered_down", False)),
+            has_low_power=bool(getattr(raw, "has_low_power", False)),
+            has_power_outage=bool(getattr(raw, "has_power_outage", False)),
+            disabled_reason=str(getattr(raw, "disabled_reason", "") or ""),
             timestamp=timestamp,
         )
 
@@ -1790,6 +1856,11 @@ class WorldModel:
             "can_attack": actor.can_attack,
             "can_harvest": actor.can_harvest,
             "weapon_range": actor.weapon_range,
+            "is_disabled": actor.is_disabled,
+            "is_powered_down": actor.is_powered_down,
+            "has_low_power": actor.has_low_power,
+            "has_power_outage": actor.has_power_outage,
+            "disabled_reason": actor.disabled_reason,
             "timestamp": actor.timestamp,
         }
 

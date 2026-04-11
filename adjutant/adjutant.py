@@ -320,6 +320,11 @@ class Adjutant:
                 "queue_blocked": bool(query_snapshot.get("queue_blocked")),
                 "queue_blocked_reason": str(query_snapshot.get("queue_blocked_reason", "") or ""),
                 "queue_blocked_queue_types": [str(item) for item in list(query_snapshot.get("queue_blocked_queue_types", []) or []) if item],
+                "disabled_structure_count": int(self._coerce_float(query_snapshot.get("disabled_structure_count")) or 0),
+                "powered_down_structure_count": int(self._coerce_float(query_snapshot.get("powered_down_structure_count")) or 0),
+                "low_power_disabled_structure_count": int(self._coerce_float(query_snapshot.get("low_power_disabled_structure_count")) or 0),
+                "power_outage_structure_count": int(self._coerce_float(query_snapshot.get("power_outage_structure_count")) or 0),
+                "disabled_structures": [str(item) for item in list(query_snapshot.get("disabled_structures", []) or []) if item],
                 "recommended_posture": str(query_snapshot.get("recommended_posture", "maintain_posture")),
                 "threat_level": str(query_snapshot.get("threat_level", "unknown")),
                 "threat_direction": str(query_snapshot.get("threat_direction", "unknown")),
@@ -355,6 +360,11 @@ class Adjutant:
         queue_blocked = bool(economy.get("queue_blocked"))
         queue_blocked_reason = str(economy.get("queue_blocked_reason", "") or "")
         queue_blocked_queue_types = [str(item) for item in list(economy.get("queue_blocked_queue_types", []) or []) if item]
+        disabled_structure_count = int(self._coerce_float(economy.get("disabled_structure_count")) or 0)
+        powered_down_structure_count = int(self._coerce_float(economy.get("powered_down_structure_count")) or 0)
+        low_power_disabled_structure_count = int(self._coerce_float(economy.get("low_power_disabled_structure_count")) or 0)
+        power_outage_structure_count = int(self._coerce_float(economy.get("power_outage_structure_count")) or 0)
+        disabled_structures = [str(item) for item in list(economy.get("disabled_structures", []) or []) if item]
         explored_pct = self._coerce_float(game_map.get("explored_pct"))
         enemy_bases = int(self._coerce_float(known_enemy.get("bases")) or self._coerce_float(known_enemy.get("structures")) or 0)
         enemy_spotted = int(self._coerce_float(known_enemy.get("units_spotted")) or 0)
@@ -421,6 +431,8 @@ class Adjutant:
                 summary_text += "，生产队列被暂停"
             else:
                 summary_text += "，生产队列阻塞"
+        if disabled_structure_count:
+            summary_text += f"，离线建筑 {disabled_structure_count}"
 
         return {
             "summary": summary_text,
@@ -438,6 +450,11 @@ class Adjutant:
             "queue_blocked": queue_blocked,
             "queue_blocked_reason": queue_blocked_reason,
             "queue_blocked_queue_types": queue_blocked_queue_types,
+            "disabled_structure_count": disabled_structure_count,
+            "powered_down_structure_count": powered_down_structure_count,
+            "low_power_disabled_structure_count": low_power_disabled_structure_count,
+            "power_outage_structure_count": power_outage_structure_count,
+            "disabled_structures": disabled_structures,
             "recommended_posture": "stabilize_power" if low_power else ("unblock_queue" if queue_blocked else "maintain_posture"),
             "threat_level": "unknown",
             "threat_direction": "unknown",
@@ -607,6 +624,11 @@ class Adjutant:
             "queue_blocked": battlefield_snapshot.get("queue_blocked", False),
             "queue_blocked_reason": battlefield_snapshot.get("queue_blocked_reason", ""),
             "queue_blocked_queue_types": list(battlefield_snapshot.get("queue_blocked_queue_types", []) or []),
+            "disabled_structure_count": battlefield_snapshot.get("disabled_structure_count", 0),
+            "powered_down_structure_count": battlefield_snapshot.get("powered_down_structure_count", 0),
+            "low_power_disabled_structure_count": battlefield_snapshot.get("low_power_disabled_structure_count", 0),
+            "power_outage_structure_count": battlefield_snapshot.get("power_outage_structure_count", 0),
+            "disabled_structures": list(battlefield_snapshot.get("disabled_structures", []) or []),
             "recommended_posture": battlefield_snapshot.get("recommended_posture", "maintain_posture"),
             "threat_level": battlefield_snapshot.get("threat_level", "unknown"),
             "threat_direction": battlefield_snapshot.get("threat_direction", "unknown"),
