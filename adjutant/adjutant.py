@@ -955,6 +955,11 @@ class Adjutant:
                 add_alert("queue_blocked", "warning", f"生产队列有已完成未放置条目{queue_suffix}")
             else:
                 add_alert("queue_blocked", "warning", f"生产队列存在阻塞{queue_suffix}")
+        disabled_structures = [str(item) for item in list(battlefield.get("disabled_structures", []) or []) if item]
+        if disabled_structures:
+            preview = "、".join(disabled_structures[:2])
+            more = f" 等{len(disabled_structures)} 个" if len(disabled_structures) > 2 else ""
+            add_alert("disabled_structures", "warning", f"存在离线建筑：{preview}{more}")
         reservation_wait = int(task_overview.get("reservation_wait_count", 0) or 0)
         if reservation_wait:
             add_alert("reservation_waiting", "info", f"{reservation_wait} 个任务正在等待补位")
@@ -2003,6 +2008,7 @@ class Adjutant:
             "deploy_required": "需先展开基地车",
             "missing_prerequisite": "部分请求缺少前置建筑",
             "low_power": "当前低电，优先恢复供电",
+            "producer_disabled": "对应生产建筑离线/停用",
             "queue_blocked": "生产队列存在阻塞",
             "insufficient_funds": "当前资金不足",
             "pending_requests_waiting_dispatch": "仍有请求等待分发",

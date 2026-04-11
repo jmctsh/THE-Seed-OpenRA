@@ -44,6 +44,13 @@ from unit_registry import UnitRegistry, get_default_registry
 
 
 QUEUE_TYPES = ("Building", "Defense", "Infantry", "Vehicle", "Aircraft")
+QUEUE_PRODUCER_UNIT_IDS: dict[str, tuple[str, ...]] = {
+    "Building": ("fact", "const"),
+    "Defense": ("fact", "const"),
+    "Infantry": ("barr", "tent"),
+    "Vehicle": ("weap",),
+    "Aircraft": ("afld",),
+}
 
 DEFENSIVE_BUILDING_NAMES = {"防空炮", "哨戒炮", "sam", "agun", "gun", "hbox", "pbox", "tsla", "ftur"}
 FAST_NAMES = {"dog", "吉普车", "jeep", "bike", "矿车"}
@@ -1062,6 +1069,72 @@ class WorldModel:
             "queue_types": blocked_queues,
         }
 
+    def _queue_producer_state(self, queue_type: str) -> dict[str, Any]:
+        producer_ids = {
+            str(item).lower()
+            for item in QUEUE_PRODUCER_UNIT_IDS.get(str(queue_type or ""), ())
+            if item
+        }
+        if not producer_ids:
+            return {
+                "queue_type": str(queue_type or ""),
+                "producer_ids": [],
+                "producer_count": 0,
+                "active_producer_count": 0,
+                "disabled_producer_count": 0,
+                "low_power_disabled_count": 0,
+                "powered_down_count": 0,
+                "power_outage_count": 0,
+                "disabled_producers": [],
+            }
+
+        producer_count = 0
+        active_producer_count = 0
+        disabled_producer_count = 0
+        low_power_disabled_count = 0
+        powered_down_count = 0
+        power_outage_count = 0
+        disabled_producers: list[str] = []
+        for actor in self.state.actors.values():
+            if actor.owner != ActorOwner.SELF or not actor.is_alive or actor.category != ActorCategory.BUILDING:
+                continue
+            actor_unit_id = production_name_unit_id(actor.name) or production_name_unit_id(actor.display_name)
+            if str(actor_unit_id or "").lower() not in producer_ids:
+                continue
+            producer_count += 1
+            if actor.is_disabled:
+                disabled_producer_count += 1
+                if actor.has_low_power:
+                    low_power_disabled_count += 1
+                if actor.is_powered_down:
+                    powered_down_count += 1
+                if actor.has_power_outage:
+                    power_outage_count += 1
+                label = actor.display_name or actor.name
+                reason = actor.disabled_reason or (
+                    "powerdown"
+                    if actor.is_powered_down
+                    else "lowpower"
+                    if actor.has_low_power
+                    else "power-outage"
+                    if actor.has_power_outage
+                    else "disabled"
+                )
+                disabled_producers.append(f"{label}({reason})")
+            else:
+                active_producer_count += 1
+        return {
+            "queue_type": str(queue_type or ""),
+            "producer_ids": sorted(producer_ids),
+            "producer_count": producer_count,
+            "active_producer_count": active_producer_count,
+            "disabled_producer_count": disabled_producer_count,
+            "low_power_disabled_count": low_power_disabled_count,
+            "powered_down_count": powered_down_count,
+            "power_outage_count": power_outage_count,
+            "disabled_producers": disabled_producers,
+        }
+
     def production_readiness_for(self, unit_type: str, *, queue_type: str | None = None) -> dict[str, Any]:
         """Return whether a demo production order is safe to issue right now.
 
@@ -1097,12 +1170,17 @@ class WorldModel:
         )
         economy = dict(self.state.economy)
         queue_block_state = self._queue_block_state([resolved_queue] if resolved_queue else None)
+        producer_state = self._queue_producer_state(resolved_queue)
         queue_blocked = bool(queue_block_state.get("blocked"))
         low_power = bool(economy.get("low_power"))
         deploy_required = (
             not counts["has_construction_yard"]
             and int(counts["mcv_count"] or 0) > 0
             and str(base_progression.get("phase") or "") == "deploy_mcv"
+        )
+        all_producers_disabled = (
+            int(producer_state.get("producer_count", 0) or 0) > 0
+            and int(producer_state.get("active_producer_count", 0) or 0) == 0
         )
         prereq_satisfied = canonical in {
             str(item).lower() for item in list(buildable.get(resolved_queue, []) or [])
@@ -1124,6 +1202,12 @@ class WorldModel:
         elif queue_blocked:
             reason = "queue_blocked"
             can_issue_now = False
+        elif all_producers_disabled:
+            if low_power and int(producer_state.get("low_power_disabled_count", 0) or 0) > 0:
+                reason = "low_power"
+            else:
+                reason = "producer_disabled"
+            can_issue_now = False
         elif low_power and canonical not in {"powr", "apwr"}:
             reason = "low_power"
             can_issue_now = False
@@ -1143,6 +1227,10 @@ class WorldModel:
             "queue_blocked": queue_blocked,
             "queue_blocked_reason": str(queue_block_state.get("reason", "") or ""),
             "queue_blocked_queue_types": list(queue_block_state.get("queue_types", [])),
+            "producer_count": int(producer_state.get("producer_count", 0) or 0),
+            "active_producer_count": int(producer_state.get("active_producer_count", 0) or 0),
+            "disabled_producer_count": int(producer_state.get("disabled_producer_count", 0) or 0),
+            "disabled_producers": list(producer_state.get("disabled_producers", [])),
             "affordable": affordable,
             "cost": cost,
         }

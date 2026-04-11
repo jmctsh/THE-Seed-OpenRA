@@ -847,6 +847,41 @@ def test_production_readiness_marks_queue_blocked_for_ready_item() -> None:
     assert readiness["queue_blocked_queue_types"] == ["Building"]
 
 
+def test_production_readiness_marks_producer_disabled_when_factory_is_offline() -> None:
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=3, type="矿场", faction="自己", position=Location(12, 10), hppercent=100, activity="Idle"),
+            Actor(
+                actor_id=4,
+                type="战车工厂",
+                faction="自己",
+                position=Location(13, 10),
+                hppercent=100,
+                activity="Idle",
+                is_disabled=True,
+                is_powered_down=True,
+                disabled_reason="powerdown",
+            ),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=5000, Resources=0, Power=100, PowerDrained=20, PowerProvided=100),
+        map_info=make_map(0.1, 0.05),
+        queues={},
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+    readiness = wm.production_readiness_for("ftrk")
+    assert readiness["prereq_satisfied"] is True
+    assert readiness["can_issue_now"] is False
+    assert readiness["reason"] == "producer_disabled"
+    assert readiness["producer_count"] == 1
+    assert readiness["active_producer_count"] == 0
+    assert readiness["disabled_producer_count"] == 1
+    assert readiness["disabled_producers"] == ["战车工厂(powerdown)"]
+
+
 def test_world_summary_and_runtime_facts_expose_queue_block_reason() -> None:
     source = MockWorldSource([Frame(
         self_actors=[
@@ -1139,6 +1174,7 @@ def main() -> None:
     test_compute_runtime_facts_partial_base()
     test_runtime_facts_buildable_requires_power_for_proc()
     test_runtime_facts_buildable_exposes_airfield_and_top_tier_units()
+    test_production_readiness_marks_producer_disabled_when_factory_is_offline()
     test_compute_runtime_facts_this_task_jobs()
     test_compute_runtime_facts_exposes_unit_reservations()
     test_compute_runtime_facts_ordinary_view_omits_buildability()

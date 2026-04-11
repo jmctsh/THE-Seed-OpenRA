@@ -55,6 +55,9 @@ def capability_blocker_status_text(capability_status: CapabilityStatusSnapshot |
     if blocker == "missing_prerequisite":
         count = snapshot.prerequisite_gap_count
         return f"缺少前置建筑 ({count})" if count else "缺少前置建筑"
+    if blocker == "producer_disabled":
+        count = snapshot.producer_disabled_count
+        return f"生产建筑离线 ({count})" if count else "生产建筑离线"
     if blocker == "pending_requests_waiting_dispatch":
         count = snapshot.dispatch_request_count
         return f"请求待分发 ({count})" if count else "请求待分发"
@@ -83,6 +86,13 @@ def capability_coordinator_alert(
             "code": "capability_pending_dispatch",
             "severity": "info",
             "text": f"能力层仍有 {snapshot.pending_request_count} 个请求待分发",
+            "target_label": task_label,
+        }
+    if blocker == "producer_disabled":
+        return {
+            "code": "capability_producer_disabled",
+            "severity": "warning",
+            "text": f"能力层发现 {snapshot.producer_disabled_count} 个请求缺少在线生产建筑",
             "target_label": task_label,
         }
     return None

@@ -28,6 +28,7 @@ class CapabilityStatusSnapshot:
     world_sync_stale_count: int = 0
     deploy_required_count: int = 0
     low_power_count: int = 0
+    producer_disabled_count: int = 0
     queue_blocked_count: int = 0
     insufficient_funds_count: int = 0
     recent_directives: list[str] = field(default_factory=list)
@@ -74,6 +75,7 @@ class CapabilityStatusSnapshot:
             world_sync_stale_count=_to_int("world_sync_stale_count"),
             deploy_required_count=_to_int("deploy_required_count"),
             low_power_count=_to_int("low_power_count"),
+            producer_disabled_count=_to_int("producer_disabled_count"),
             queue_blocked_count=_to_int("queue_blocked_count"),
             insufficient_funds_count=_to_int("insufficient_funds_count"),
             recent_directives=recent_directives,
@@ -109,6 +111,7 @@ class CapabilityStatusSnapshot:
             "world_sync_stale_count": self.world_sync_stale_count,
             "deploy_required_count": self.deploy_required_count,
             "low_power_count": self.low_power_count,
+            "producer_disabled_count": self.producer_disabled_count,
             "queue_blocked_count": self.queue_blocked_count,
             "insufficient_funds_count": self.insufficient_funds_count,
             "recent_directives": list(self.recent_directives),

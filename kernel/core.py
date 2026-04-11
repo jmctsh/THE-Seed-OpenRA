@@ -385,8 +385,10 @@ class Kernel:
         """Return the task_id of the EconomyCapability, or None."""
         return self._capability_task_id
 
-    def ensure_capability_task(self) -> str:
+    def ensure_capability_task(self) -> Optional[str]:
         """Create the EconomyCapability task if it doesn't exist. Returns task_id."""
+        if not self.config.enable_capability_task:
+            return self._capability_task_id
         if self._capability_task_id and self._capability_task_id in self.tasks:
             task = self.tasks[self._capability_task_id]
             if task.status == TaskStatus.RUNNING:

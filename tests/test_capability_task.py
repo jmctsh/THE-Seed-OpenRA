@@ -520,6 +520,37 @@ def test_capability_context_renders_missing_prerequisite_details() -> None:
     assert "前置:维修厂 + 科技中心 + 战车工厂" in msg["content"]
 
 
+def test_capability_context_renders_producer_disabled_blocker() -> None:
+    packet = ContextPacket(
+        task={"task_id": "t_cap", "raw_text": "经济能力", "kind": "managed", "priority": 80, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {"cash": 5000, "power_provided": 100, "power_drained": 40}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[],
+        recent_events=[],
+        open_decisions=[],
+        runtime_facts={
+            "capability_blocker": "producer_disabled",
+            "capability_status": {"producer_disabled_count": 1},
+            "unfulfilled_requests": [
+                {
+                    "request_id": "r3",
+                    "task_label": "009",
+                    "category": "vehicle",
+                    "count": 1,
+                    "fulfilled": 0,
+                    "hint": "重坦",
+                    "reason": "producer_disabled",
+                    "disabled_producers": ["战车工厂(powerdown)"],
+                }
+            ],
+        },
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "对应生产建筑离线/停用" in msg["content"]
+    assert "生产建筑离线/停用，需先恢复" in msg["content"]
+    assert "生产点:战车工厂(powerdown)" in msg["content"]
+
+
 def test_capability_prompt_pins_demo_roster_and_stage_policy():
     """Capability prompt should pin demo-safe units/buildings and broad-command policy."""
     assert "powr=电厂（前置: 建造厂）" in CAPABILITY_SYSTEM_PROMPT

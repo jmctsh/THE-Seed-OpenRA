@@ -366,6 +366,7 @@ def _build_unfulfilled_requests(rf: dict[str, Any]) -> str:
         "deploy_required": "需先展开基地车",
         "missing_prerequisite": "缺少前置建筑",
         "low_power": "当前低电，先恢复供电",
+        "producer_disabled": "生产建筑离线/停用，需先恢复",
         "queue_blocked": "生产队列阻塞，需先解阻",
         "insufficient_funds": "资金不足",
     }
@@ -404,6 +405,9 @@ def _build_unfulfilled_requests(rf: dict[str, Any]) -> str:
         ]
         if reason == "missing_prerequisite" and prerequisites:
             line += f" 前置:{' + '.join(prerequisites)}"
+        disabled_producers = [str(item) for item in list(r.get("disabled_producers", []) or []) if item]
+        if reason == "producer_disabled" and disabled_producers:
+            line += f" 生产点:{' + '.join(disabled_producers)}"
         parts.append(line)
     return "\n".join(parts)
 
@@ -571,6 +575,12 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
         if low_power_count:
             line += f"（low_power={low_power_count}）"
         entries.append(line)
+    elif capability_blocker == "producer_disabled":
+        producer_disabled_count = capability_status.producer_disabled_count
+        line = "对应生产建筑离线/停用，需先恢复生产建筑再继续分发"
+        if producer_disabled_count:
+            line += f"（producer_disabled={producer_disabled_count}）"
+        entries.append(line)
     elif capability_blocker == "queue_blocked":
         queue_blocked_count = capability_status.queue_blocked_count
         line = "生产队列阻塞，需先处理已就绪/暂停条目"
@@ -624,6 +634,9 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
         ]
         if reason == "missing_prerequisite" and prerequisites:
             line += f" 前置:{' + '.join(prerequisites)}"
+        disabled_producers = [str(item) for item in list(req.get("disabled_producers", []) or []) if item]
+        if reason == "producer_disabled" and disabled_producers:
+            line += f" 生产点:{' + '.join(disabled_producers)}"
         entries.append(line)
 
     for sig in reversed(signals):

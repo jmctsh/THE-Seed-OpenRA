@@ -289,6 +289,11 @@ class _WorldModelNoPower(_WorldModel):
             result["pending_request_count"] = 0
             result["bootstrapping_request_count"] = 0
             result["reservation_count"] = 0
+            result["disabled_structure_count"] = 0
+            result["powered_down_structure_count"] = 0
+            result["low_power_disabled_structure_count"] = 0
+            result["power_outage_structure_count"] = 0
+            result["disabled_structures"] = []
         if query_type == "runtime_state":
             result["capability_status"]["blocker"] = ""
             result["capability_status"]["phase"] = "idle"
