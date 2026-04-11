@@ -11,6 +11,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Any, Optional
 
+import pytest
+
 from adjutant.adjutant import Adjutant
 from experts.base import BaseJob
 from llm import LLMResponse
@@ -452,6 +454,7 @@ def test_configurable_tick_rate():
     print(f"  PASS: configurable_tick_rate (50Hz, ticks={loop.tick_count})")
 
 
+@pytest.mark.runtime_invariants
 def test_worldmodel_stale_pauses_jobs_notifies_and_recovers():
     health_sequence = [
         {"stale": True, "consecutive_failures": 1, "total_failures": 1, "last_error": "disconnect", "failure_threshold": 3, "timestamp": 101.0},

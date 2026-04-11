@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import benchmark
 import logging_system
+import pytest
 from models import Constraint, ConstraintEnforcement, EventType
 from openra_api.game_api import GameAPIError
 from openra_api.models import Actor, Location, MapQueryResult, PlayerBaseInfo
@@ -450,6 +451,7 @@ def test_refresh_failure_marks_stale_and_recovers() -> None:
     print("  PASS: refresh_failure_marks_stale_and_recovers")
 
 
+@pytest.mark.runtime_invariants
 def test_connection_failure_skips_remaining_layers_and_respects_retry_backoff() -> None:
     source = ConnectionFailingWorldSource([make_frames()[0]])
     world = WorldModel(source)

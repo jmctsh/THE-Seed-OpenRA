@@ -11,6 +11,8 @@ from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+
 from llm import MockProvider
 from main import ApplicationRuntime, RuntimeConfig
 from models import TaskKind
@@ -157,6 +159,7 @@ def _runtime_config(root: str) -> RuntimeConfig:
     )
 
 
+@pytest.mark.mock_integration
 def test_capability_bootstrap_request_smoke() -> None:
     async def run() -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
