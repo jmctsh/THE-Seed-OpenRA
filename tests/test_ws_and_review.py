@@ -2369,6 +2369,143 @@ def test_task_replay_bundle_preserves_world_sync_detail_in_unit_pipeline():
     print("  PASS: task_replay_bundle_preserves_world_sync_detail_in_unit_pipeline")
 
 
+def test_task_replay_bundle_falls_back_to_live_runtime_facts_for_unit_pipeline():
+    entries = [
+        {
+            "timestamp": 10.0,
+            "component": "kernel",
+            "level": "INFO",
+            "message": "Task created",
+            "event": "task_created",
+            "data": {"task_id": "t_demo"},
+        },
+        {
+            "timestamp": 10.1,
+            "component": "task_agent",
+            "level": "DEBUG",
+            "message": "TaskAgent context snapshot",
+            "event": "context_snapshot",
+            "data": {
+                "task_id": "t_demo",
+                "packet": {
+                    "runtime_facts": {
+                        "cash": 5000,
+                        "unfulfilled_requests": [
+                            {
+                                "request_id": "req_persisted",
+                                "task_id": "t_demo",
+                                "unit_type": "e1",
+                                "queue_type": "Infantry",
+                                "count": 1,
+                                "fulfilled": 0,
+                                "remaining_count": 1,
+                                "reason": "world_sync_stale",
+                                "world_sync_last_error": "persisted:COMMAND_EXECUTION_ERROR",
+                                "world_sync_consecutive_failures": 2,
+                                "world_sync_failure_threshold": 3,
+                            }
+                        ],
+                    }
+                },
+            },
+        },
+    ]
+
+    bundle = build_task_replay_bundle(
+        "t_demo",
+        entries,
+        live_runtime_facts={
+            "unfulfilled_requests": [
+                {
+                    "request_id": "req_live",
+                    "task_id": "t_demo",
+                    "unit_type": "e1",
+                    "queue_type": "Infantry",
+                    "count": 1,
+                    "fulfilled": 0,
+                    "remaining_count": 1,
+                    "reason": "world_sync_stale",
+                    "world_sync_last_error": "live:COMMAND_EXECUTION_ERROR",
+                    "world_sync_consecutive_failures": 4,
+                    "world_sync_failure_threshold": 3,
+                }
+            ],
+            "unit_reservations": [
+                {
+                    "reservation_id": "res_live",
+                    "request_id": "req_live",
+                    "task_id": "t_demo",
+                    "unit_type": "e1",
+                    "queue_type": "Infantry",
+                    "count": 1,
+                    "remaining_count": 1,
+                    "status": "pending",
+                    "reason": "world_sync_stale",
+                    "world_sync_last_error": "economy:COMMAND_EXECUTION_ERROR",
+                    "world_sync_consecutive_failures": 5,
+                    "world_sync_failure_threshold": 3,
+                }
+            ],
+        },
+    )
+
+    request = bundle["unit_pipeline"]["unfulfilled_requests"][0]
+    reservation = bundle["unit_pipeline"]["unit_reservations"][0]
+    assert request["request_id"] == "req_persisted"
+    assert request["world_sync_last_error"] == "persisted:COMMAND_EXECUTION_ERROR"
+    assert request["world_sync_consecutive_failures"] == 2
+    assert request["world_sync_failure_threshold"] == 3
+    assert reservation["reservation_id"] == "res_live"
+    assert reservation["world_sync_last_error"] == "economy:COMMAND_EXECUTION_ERROR"
+    assert reservation["world_sync_consecutive_failures"] == 5
+    assert reservation["world_sync_failure_threshold"] == 3
+    print("  PASS: task_replay_bundle_falls_back_to_live_runtime_facts_for_unit_pipeline")
+
+
+def test_task_replay_bundle_falls_back_to_runtime_state_reservations():
+    entries = [
+        {
+            "timestamp": 10.0,
+            "component": "kernel",
+            "level": "INFO",
+            "message": "Task created",
+            "event": "task_created",
+            "data": {"task_id": "t_demo"},
+        }
+    ]
+
+    bundle = build_task_replay_bundle(
+        "t_demo",
+        entries,
+        runtime_state={
+            "unit_reservations": [
+                {
+                    "reservation_id": "res_runtime",
+                    "request_id": "req_runtime",
+                    "task_id": "t_demo",
+                    "unit_type": "3tnk",
+                    "queue_type": "Vehicle",
+                    "count": 2,
+                    "remaining_count": 2,
+                    "status": "pending",
+                    "reason": "world_sync_stale",
+                    "world_sync_last_error": "actors:COMMAND_EXECUTION_ERROR",
+                    "world_sync_consecutive_failures": 6,
+                    "world_sync_failure_threshold": 3,
+                }
+            ]
+        },
+    )
+
+    assert bundle["unit_pipeline"]["unfulfilled_requests"] == []
+    reservation = bundle["unit_pipeline"]["unit_reservations"][0]
+    assert reservation["reservation_id"] == "res_runtime"
+    assert reservation["world_sync_last_error"] == "actors:COMMAND_EXECUTION_ERROR"
+    assert reservation["world_sync_consecutive_failures"] == 6
+    assert reservation["world_sync_failure_threshold"] == 3
+    print("  PASS: task_replay_bundle_falls_back_to_runtime_state_reservations")
+
+
 def test_task_replay_bundle_keeps_distinct_llm_turns_when_wake_attempt_missing():
     entries = [
         {
