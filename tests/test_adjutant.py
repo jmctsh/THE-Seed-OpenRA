@@ -1270,7 +1270,7 @@ def test_task_message_formatting():
 
 
 def test_dialogue_history():
-    """Dialogue history is recorded and trimmed."""
+    """Dialogue history is recorded and hard-capped to max_dialogue_history."""
     mock_llm = MockProvider(responses=[
         LLMResponse(text='{"type":"command","confidence":0.9}', model="mock"),
         LLMResponse(text='{"type":"command","confidence":0.9}', model="mock"),
@@ -1285,7 +1285,12 @@ def test_dialogue_history():
     async def run():
         await adjutant.handle_player_input("第一条")
         await adjutant.handle_player_input("第二条")
-        assert len(adjutant._dialogue_history) == 4  # 2 player + 2 adjutant
+        assert len(adjutant._dialogue_history) == 3
+        assert [item["content"] for item in adjutant._dialogue_history] == [
+            "收到指令，已创建任务 t_1",
+            "第二条",
+            "收到指令，已创建任务 t_2",
+        ]
 
     asyncio.run(run())
     print("  PASS: dialogue_history")
@@ -1700,6 +1705,23 @@ def test_build_context_includes_recent_completed_tasks():
     assert ctx.recent_completed_tasks[0]["label"] == "001"
     assert ctx.recent_completed_tasks[1]["result"] == "failed"
     print("  PASS: build_context_includes_recent_completed_tasks")
+
+
+def test_record_dialogue_caps_storage_at_max_history():
+    """_dialogue_history itself should remain hard-bounded by max_dialogue_history."""
+    adjutant = Adjutant(
+        llm=MockProvider(),
+        kernel=MockKernel(),
+        world_model=MockWorldModel(),
+        config=AdjutantConfig(max_dialogue_history=3),
+    )
+
+    for idx in range(7):
+        adjutant._record_dialogue("player", f"msg-{idx}")
+
+    assert len(adjutant._dialogue_history) == 3
+    assert [item["content"] for item in adjutant._dialogue_history] == ["msg-4", "msg-5", "msg-6"]
+    print("  PASS: record_dialogue_caps_storage_at_max_history")
 
 
 def test_build_context_includes_coordinator_snapshot_and_task_status_lines():

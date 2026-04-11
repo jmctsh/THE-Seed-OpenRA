@@ -3081,8 +3081,7 @@ class Adjutant:
             "content": text,
             "timestamp": time.time(),
         })
-        # Trim history
-        if len(self._dialogue_history) > self.config.max_dialogue_history * 2:
+        if len(self._dialogue_history) > self.config.max_dialogue_history:
             self._dialogue_history = self._dialogue_history[-self.config.max_dialogue_history:]
 
     def notify_task_message(self, task_id: str, message_type: str, content: str) -> None:
