@@ -355,6 +355,7 @@ class MockWorldModel:
                 "active_jobs": {},
                 "resource_bindings": {},
                 "constraints": [],
+                "unfulfilled_requests": [],
                 "capability_status": CapabilityStatusSnapshot(
                     task_id="t_cap",
                     task_label="001",
@@ -1508,6 +1509,11 @@ def test_stale_world_blocks_rule_routed_build_and_skips_llm():
         assert result["routing"] == "stale_guard"
         assert result["reason"] == "world_sync_stale"
         assert "状态同步异常" in result["response_text"]
+        assert "连续失败 9/3" in result["response_text"]
+        assert "actors:COMMAND_EXECUTION_ERROR" in result["response_text"]
+        assert result["world_sync_failures"] == 9
+        assert result["world_sync_failure_threshold"] == 3
+        assert result["world_sync_error"] == "actors:COMMAND_EXECUTION_ERROR"
 
     asyncio.run(run())
 
@@ -1541,6 +1547,11 @@ def test_stale_world_blocks_query_and_skips_llm():
         assert result["routing"] == "stale_guard"
         assert result["reason"] == "world_sync_stale"
         assert "暂时无法可靠回答" in result["response_text"]
+        assert "连续失败 7/3" in result["response_text"]
+        assert "economy:COMMAND_EXECUTION_ERROR" in result["response_text"]
+        assert result["world_sync_failures"] == 7
+        assert result["world_sync_failure_threshold"] == 3
+        assert result["world_sync_error"] == "economy:COMMAND_EXECUTION_ERROR"
 
     asyncio.run(run())
 
@@ -2475,7 +2486,7 @@ def test_build_context_includes_coordinator_snapshot_and_task_status_lines():
     assert ctx.coordinator_snapshot["task_overview"]["largest_group_label"] == "002"
     assert ctx.coordinator_snapshot["capability"]["ready_queue_items"][0]["display_name"] == "发电厂"
     assert any(alert["code"] == "queue_ready_items" for alert in ctx.coordinator_snapshot["alerts"])
-    assert "队列里有待处理成品：发电厂" in ctx.coordinator_snapshot["status_line"]
+    assert any("队列里有待处理成品：发电厂" in str(alert.get("text", "")) for alert in ctx.coordinator_snapshot["alerts"])
     assert ctx.coordinator_hints["suggested_disposition"] == "merge"
     assert ctx.coordinator_hints["likely_target_label"] == "001"
     active_by_label = {task["label"]: task for task in ctx.active_tasks}

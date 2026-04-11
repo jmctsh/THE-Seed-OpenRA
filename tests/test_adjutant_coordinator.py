@@ -762,6 +762,28 @@ def test_coordinator_alerts_surface_queue_block_reason() -> None:
     print("  PASS: coordinator_alerts_surface_queue_block_reason")
 
 
+def test_coordinator_alerts_surface_world_sync_error_detail() -> None:
+    class _StaleWorldModel(_WorldModel):
+        def refresh_health(self):
+            return {
+                "stale": True,
+                "consecutive_failures": 6,
+                "total_failures": 6,
+                "last_error": "actors:COMMAND_EXECUTION_ERROR",
+                "failure_threshold": 3,
+                "timestamp": time.time(),
+            }
+
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_StaleWorldModel())
+    context = adjutant._build_context("现在怎么样")
+    alerts = context.coordinator_snapshot["alerts"]
+
+    assert any("连续失败 6/3" in str(alert.get("text", "")) for alert in alerts)
+    assert any("actors:COMMAND_EXECUTION_ERROR" in str(alert.get("text", "")) for alert in alerts)
+    assert "连续失败 6/3" in context.coordinator_snapshot["status_line"]
+    print("  PASS: coordinator_alerts_surface_world_sync_error_detail")
+
+
 def test_coordinator_hints_merge_capability_followup_on_fulfilling_phase() -> None:
     adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelFulfilling())
 

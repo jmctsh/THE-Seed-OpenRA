@@ -1062,7 +1062,11 @@ class Adjutant:
             })
 
         if world_sync.get("stale"):
-            add_alert("world_stale", "warning", "世界状态同步异常，当前判断可能滞后")
+            detail = Adjutant._world_sync_detail_text(world_sync)
+            text = "世界状态同步异常，当前判断可能滞后"
+            if detail:
+                text += f"（{detail}）"
+            add_alert("world_stale", "warning", text)
         if battlefield.get("base_under_attack"):
             direction = str(battlefield.get("threat_direction", "") or "")
             suffix = f"（方向：{direction}）" if direction and direction != "unknown" else ""
@@ -1978,18 +1982,70 @@ class Adjutant:
         return bool(health.get("stale"))
 
     @staticmethod
-    def _stale_world_response_text(kind: str) -> str:
+    def _world_sync_detail_text(world_sync: dict[str, Any]) -> str:
+        try:
+            failure_count = max(int(world_sync.get("consecutive_failures", 0) or 0), 0)
+        except Exception:
+            failure_count = 0
+        try:
+            failure_threshold = max(int(world_sync.get("failure_threshold", 0) or 0), 0)
+        except Exception:
+            failure_threshold = 0
+        error = str(
+            world_sync.get("last_error")
+            or world_sync.get("last_refresh_error")
+            or ""
+        ).strip()
+        if error:
+            compact = " ".join(error.split())
+            error = f"{compact[:93]}..." if len(compact) > 96 else compact
+
+        parts: list[str] = []
+        if failure_count:
+            if failure_threshold:
+                parts.append(f"连续失败 {failure_count}/{failure_threshold}")
+            else:
+                parts.append(f"连续失败 {failure_count}")
+        if error:
+            parts.append(f"最近错误：{error}")
+        return "；".join(parts)
+
+    @classmethod
+    def _stale_world_response_text(cls, kind: str, world_sync: Optional[dict[str, Any]] = None) -> str:
+        detail = cls._world_sync_detail_text(dict(world_sync or {}))
         if kind == "query":
-            return "当前游戏状态同步异常，暂时无法可靠回答，请稍后重试"
-        return "当前游戏状态同步异常，已暂停执行以避免基于旧状态误操作，请稍后重试"
+            base = "当前游戏状态同步异常，暂时无法可靠回答，请稍后重试"
+        else:
+            base = "当前游戏状态同步异常，已暂停执行以避免基于旧状态误操作，请稍后重试"
+        return f"{base}（{detail}）" if detail else base
 
     def _stale_world_guard(self, kind: str) -> dict[str, Any]:
+        world_sync = {}
+        refresh_health = getattr(self.world_model, "refresh_health", None)
+        if callable(refresh_health):
+            try:
+                health = refresh_health() or {}
+                if isinstance(health, dict):
+                    world_sync = dict(health)
+            except Exception:
+                logger.exception("Failed to read world refresh health")
+        try:
+            world_sync_failures = int(world_sync.get("consecutive_failures", 0) or 0)
+        except Exception:
+            world_sync_failures = 0
+        try:
+            world_sync_failure_threshold = int(world_sync.get("failure_threshold", 0) or 0)
+        except Exception:
+            world_sync_failure_threshold = 0
         return {
             "type": kind,
             "ok": False,
-            "response_text": self._stale_world_response_text(kind),
+            "response_text": self._stale_world_response_text(kind, world_sync),
             "routing": "stale_guard",
             "reason": "world_sync_stale",
+            "world_sync_error": str(world_sync.get("last_error") or ""),
+            "world_sync_failures": world_sync_failures,
+            "world_sync_failure_threshold": world_sync_failure_threshold,
         }
 
     def _fallback_query_answer(self, world_summary: dict[str, Any]) -> str:
