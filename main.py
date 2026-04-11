@@ -26,7 +26,7 @@ from typing import Any, Optional
 
 import benchmark
 
-from adjutant import Adjutant, AdjutantConfig, NotificationManager
+from adjutant import Adjutant, AdjutantConfig
 from dashboard_publish import DashboardPublisher
 from experts.base import ExecutionExpert
 from experts.combat import CombatExpert
@@ -55,11 +55,10 @@ from logging_system import (
     list_persistence_sessions,
     list_session_tasks,
     read_task_replay_records,
-    records_from as log_records_from,
     start_persistence_session,
     stop_persistence_session,
 )
-from models import PlayerResponse, TaskMessageType, TaskStatus
+from models import PlayerResponse, TaskStatus
 from openra_api.game_api import GameAPI
 from queue_manager import QueueManager, QueueManagerConfig
 from task_agent import AgentConfig
