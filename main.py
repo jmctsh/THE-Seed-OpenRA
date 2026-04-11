@@ -390,7 +390,7 @@ class RuntimeBridge(InboundHandler):
         self._publisher.clear_runtime_state()
         self.sync_runtime()
         if self.ws_server is not None and self.ws_server.is_running:
-            await self.ws_server.send_session_cleared()
+            await self._publisher.send_session_cleared()
             await self._send_session_catalog_to_client(client_id, selected_session_dir=new_session_dir)
             await self._send_session_tasks_to_client(client_id, session_dir=new_session_dir)
         await self.publish_dashboard()
@@ -417,7 +417,7 @@ class RuntimeBridge(InboundHandler):
         raw_entries = entries[-TASK_REPLAY_RAW_ENTRY_LIMIT:]
         log_path = str(resolved_session_dir / "tasks" / f"{task_id}.jsonl") if resolved_session_dir else None
         runtime_state = self.kernel.runtime_state()
-        await self.ws_server.send_task_replay_to_client(
+        await self._publisher.send_task_replay_to_client(
             client_id,
             {
                 "task_id": task_id,
@@ -478,10 +478,8 @@ class RuntimeBridge(InboundHandler):
         *,
         selected_session_dir: Optional[Path],
     ) -> None:
-        if self.ws_server is None or not self.ws_server.is_running:
-            return
         sessions = list_persistence_sessions(self.log_session_root, limit=30)
-        await self.ws_server.send_session_catalog_to_client(
+        await self._publisher.send_session_catalog_to_client(
             client_id,
             {
                 "sessions": sessions,
@@ -495,11 +493,9 @@ class RuntimeBridge(InboundHandler):
         *,
         session_dir: Optional[Path],
     ) -> None:
-        if self.ws_server is None or not self.ws_server.is_running:
-            return
         resolved = session_dir or self._default_log_session_dir()
         tasks = list_session_tasks(resolved, limit=300) if resolved is not None else []
-        await self.ws_server.send_session_task_catalog_to_client(
+        await self._publisher.send_session_task_catalog_to_client(
             client_id,
             {
                 "session_dir": str(resolved) if resolved is not None else None,
