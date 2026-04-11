@@ -9,15 +9,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from experts.knowledge import counter_recommendation, display_name_for, knowledge_for_target, tech_prerequisites_for
 from openra_state.data.dataset import (
+    DemoCapabilityTruth,
     demo_capability_buildable_lines,
     demo_faction_hint_for_unit_types,
     demo_capability_unit_type_for,
     demo_capability_truth_for,
     demo_display_name_for,
     demo_mobile_scout_unit_type,
+    demo_prerequisites_for,
     demo_prompt_display_name_for,
     demo_prompt_roster_lines,
     demo_queue_type_for,
+    _DEMO_TRUTH_OVERRIDES,
     filter_demo_capability_buildable,
     filter_demo_capability_production_queues,
     filter_demo_capability_ready_items,
@@ -66,6 +69,24 @@ def test_demo_truth_overrides_keep_shared_infantry_faction_neutral() -> None:
     assert demo_faction_hint_for_unit_types(["e1", "e3"]) is None
     assert demo_faction_hint_for_unit_types(["e1", "3tnk"]) == "soviet"
     print("  PASS: demo_truth_overrides_keep_shared_infantry_faction_neutral")
+
+
+def test_demo_prerequisites_follow_demo_truth_overrides() -> None:
+    original = _DEMO_TRUTH_OVERRIDES["e6"]
+    _DEMO_TRUTH_OVERRIDES["e6"] = DemoCapabilityTruth(
+        unit_type="e6",
+        queue_type=None,
+        display_name="工程师",
+        prompt_display_name="工程师",
+        prerequisites=("tent",),
+        faction=None,
+        in_demo_roster=False,
+    )
+    try:
+        assert demo_prerequisites_for("e6") == ["tent"]
+    finally:
+        _DEMO_TRUTH_OVERRIDES["e6"] = original
+    print("  PASS: demo_prerequisites_follow_demo_truth_overrides")
 
 
 def test_demo_prompt_roster_lines_follow_truth_table() -> None:

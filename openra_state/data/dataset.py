@@ -498,10 +498,10 @@ def demo_capability_supports(name: str | None) -> bool:
 
 def demo_prerequisites_for(unit_type: str) -> list[str]:
     """Return normalized prerequisites for the demo capability/buildability layer."""
-    entry = dataset_entry(unit_type)
-    if entry is None:
+    truth = demo_capability_truth_for(unit_type)
+    if truth is None:
         return []
-    return [str(prereq).lower() for prereq in entry.prerequisites]
+    return [str(prereq).lower() for prereq in truth.prerequisites]
 
 
 def demo_capability_truth_for(unit_type: str) -> DemoCapabilityTruth | None:
