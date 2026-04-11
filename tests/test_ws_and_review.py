@@ -18,7 +18,7 @@ import logging_system
 from logging_system import start_persistence_session, stop_persistence_session
 
 from models import Event, EventType, TaskMessage, TaskMessageType, TaskStatus
-from main import RuntimeBridge
+from main import RuntimeBridge, TASK_REPLAY_RAW_ENTRY_LIMIT
 from task_replay import build_task_replay_bundle
 from task_agent.queue import AgentQueue
 from game_loop import GameLoop, GameLoopConfig
@@ -1312,6 +1312,8 @@ def test_task_replay_request_returns_persisted_task_log():
     assert payload["task_id"] == "t_demo"
     assert payload["session_dir"] == str(session_dir)
     assert payload["entry_count"] == 7
+    assert payload["raw_entry_count"] == 7
+    assert payload["raw_entries_truncated"] is False
     assert payload["entries"][1]["data"]["job_id"] == "j_1"
     assert payload["bundle"]["summary"] == "侦察完成，发现目标"
     assert payload["bundle"]["last_transition"]["label"] == "task_completed"
@@ -1350,6 +1352,111 @@ def test_task_replay_request_returns_persisted_task_log():
     assert payload["bundle"]["unit_pipeline"]["unit_reservations"][0]["reservation_id"] == "res_1"
     assert payload["bundle"]["unit_pipeline"]["unit_reservations"][0]["assigned_count"] == 1
     print("  PASS: task_replay_request_returns_persisted_task_log")
+
+
+def test_task_replay_request_limits_raw_entries_payload():
+    class FakeKernel:
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return []
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+        def runtime_state(self):
+            return {}
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[tuple[str, dict[str, Any]]] = []
+
+        async def send_task_replay_to_client(self, client_id, payload):
+            self.sent.append(("task_replay", {"client_id": client_id, "payload": payload}))
+
+    import asyncio
+    import json
+    import tempfile
+    from pathlib import Path
+
+    ws = FakeWS()
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    bridge.attach_ws_server(ws)
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        session_dir = Path(tmp_dir) / "session-20260411T021500Z"
+        task_dir = session_dir / "tasks"
+        task_dir.mkdir(parents=True, exist_ok=True)
+        start_persistence_session(tmp_dir)
+        try:
+            records = [
+                {
+                    "timestamp": float(100 + index),
+                    "component": "kernel",
+                    "level": "INFO",
+                    "message": f"event-{index}",
+                    "event": "task_info",
+                    "data": {"task_id": "t_demo", "index": index},
+                }
+                for index in range(TASK_REPLAY_RAW_ENTRY_LIMIT + 25)
+            ]
+            (task_dir / "t_demo.jsonl").write_text(
+                "\n".join(json.dumps(record, ensure_ascii=False) for record in records) + "\n",
+                encoding="utf-8",
+            )
+
+            async def run():
+                await bridge.on_task_replay_request("t_demo", "client_7", session_dir=str(session_dir))
+
+            asyncio.run(run())
+        finally:
+            stop_persistence_session()
+
+    payload = ws.sent[0][1]["payload"]
+    assert payload["entry_count"] == TASK_REPLAY_RAW_ENTRY_LIMIT + 25
+    assert payload["raw_entry_count"] == TASK_REPLAY_RAW_ENTRY_LIMIT
+    assert payload["raw_entries_truncated"] is True
+    assert len(payload["entries"]) == TASK_REPLAY_RAW_ENTRY_LIMIT
+    assert payload["entries"][0]["data"]["index"] == 25
+    assert payload["entries"][-1]["data"]["index"] == TASK_REPLAY_RAW_ENTRY_LIMIT + 24
+    print("  PASS: task_replay_request_limits_raw_entries_payload")
 
 
 def test_session_select_returns_catalog_and_task_catalog():
@@ -1746,6 +1853,76 @@ def test_task_replay_bundle_counts_tools_once_and_keeps_separated_blockers():
     assert bundle["tools"] == [{"name": "query_world", "count": 1}]
     assert [item["message"] for item in bundle["blockers"]] == ["等待电厂", "等待电厂"]
     print("  PASS: task_replay_bundle_counts_tools_once_and_keeps_separated_blockers")
+
+
+def test_task_replay_bundle_keeps_distinct_llm_turns_when_wake_attempt_missing():
+    entries = [
+        {
+            "timestamp": 10.0,
+            "component": "kernel",
+            "level": "INFO",
+            "message": "Task created",
+            "event": "task_created",
+            "data": {"task_id": "t_demo"},
+        },
+        {
+            "timestamp": 10.1,
+            "component": "task_agent",
+            "level": "DEBUG",
+            "message": "TaskAgent llm input",
+            "event": "llm_input",
+            "data": {
+                "task_id": "t_demo",
+                "messages": [{"role": "system"}, {"role": "user", "content": "first"}],
+                "tools": [{"name": "query_world"}],
+            },
+        },
+        {
+            "timestamp": 10.2,
+            "component": "task_agent",
+            "level": "INFO",
+            "message": "TaskAgent LLM call succeeded",
+            "event": "llm_succeeded",
+            "data": {
+                "task_id": "t_demo",
+                "response_text": "first response",
+                "usage": {"prompt_tokens": 10, "completion_tokens": 3},
+            },
+        },
+        {
+            "timestamp": 10.3,
+            "component": "task_agent",
+            "level": "DEBUG",
+            "message": "TaskAgent llm input",
+            "event": "llm_input",
+            "data": {
+                "task_id": "t_demo",
+                "messages": [{"role": "system"}, {"role": "user", "content": "second"}],
+                "tools": [{"name": "query_world"}],
+            },
+        },
+        {
+            "timestamp": 10.4,
+            "component": "task_agent",
+            "level": "INFO",
+            "message": "TaskAgent LLM call succeeded",
+            "event": "llm_succeeded",
+            "data": {
+                "task_id": "t_demo",
+                "response_text": "second response",
+                "usage": {"prompt_tokens": 11, "completion_tokens": 4},
+            },
+        },
+    ]
+
+    bundle = build_task_replay_bundle("t_demo", entries)
+
+    assert len(bundle["llm_turns"]) == 2
+    assert bundle["llm_turns"][0]["response_text"] == "first response"
+    assert bundle["llm_turns"][0]["input_messages"][1]["content"] == "first"
+    assert bundle["llm_turns"][1]["response_text"] == "second response"
+    assert bundle["llm_turns"][1]["input_messages"][1]["content"] == "second"
+    print("  PASS: task_replay_bundle_keeps_distinct_llm_turns_when_wake_attempt_missing")
 
 
 def test_runtime_bridge_sync_runtime_uses_public_kernel_accessors():

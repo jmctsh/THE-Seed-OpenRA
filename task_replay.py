@@ -136,14 +136,16 @@ def build_task_replay_bundle(
     def _ensure_llm_turn(preview: dict[str, Any]) -> dict[str, Any]:
         wake = _safe_int(preview["data"].get("wake"))
         attempt = _safe_int(preview["data"].get("attempt"))
-        for turn in reversed(llm_turns):
-            if turn.get("_completed"):
-                continue
-            if wake is not None and turn.get("wake") != wake:
-                continue
-            if attempt is not None and turn.get("attempt") != attempt:
-                continue
-            return turn
+        incomplete_key = wake is None or attempt is None
+        if not (preview.get("label") == "llm_input" and incomplete_key):
+            for turn in reversed(llm_turns):
+                if turn.get("_completed"):
+                    continue
+                if wake is not None and turn.get("wake") != wake:
+                    continue
+                if attempt is not None and turn.get("attempt") != attempt:
+                    continue
+                return turn
         turn = {
             "turn_index": len(llm_turns) + 1,
             "wake": wake,

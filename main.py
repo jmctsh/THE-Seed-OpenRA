@@ -70,6 +70,7 @@ from ws_server import InboundHandler, WSServer, WSServerConfig
 
 
 slog = get_logger("main")
+TASK_REPLAY_RAW_ENTRY_LIMIT = 80
 
 
 @dataclass(slots=True)
@@ -397,6 +398,7 @@ class RuntimeBridge(InboundHandler):
             session_dir=resolved_session_dir,
             latest_base_dir=self.log_session_root,
         )
+        raw_entries = entries[-TASK_REPLAY_RAW_ENTRY_LIMIT:]
         log_path = str(resolved_session_dir / "tasks" / f"{task_id}.jsonl") if resolved_session_dir else None
         runtime_state = self.kernel.runtime_state()
         await self.ws_server.send_task_replay_to_client(
@@ -406,8 +408,10 @@ class RuntimeBridge(InboundHandler):
                 "session_dir": str(resolved_session_dir) if resolved_session_dir else None,
                 "log_path": log_path,
                 "entry_count": len(entries),
+                "raw_entry_count": len(raw_entries),
+                "raw_entries_truncated": len(raw_entries) < len(entries),
                 "bundle": self._build_task_replay_bundle(task_id, entries, runtime_state=runtime_state),
-                "entries": entries,
+                "entries": raw_entries,
             },
         )
 

@@ -218,7 +218,11 @@
         class="filter-btn replay-toggle"
         @click="toggleRawReplay(selectedTaskId)"
       >
-        {{ selectedTaskRawReplayVisible ? '隐藏原始回放' : `展开原始回放 (${selectedTaskReplayCount})` }}
+        {{
+          selectedTaskRawReplayVisible
+            ? '隐藏原始回放'
+            : `展开原始回放 (${selectedTaskReplayCountLabel})`
+        }}
       </button>
     </div>
     <div class="trace-stream">
@@ -375,6 +379,14 @@ const selectedTaskReplayCount = computed(() => {
   if (selectedTaskId.value === 'ALL') return 0
   const key = replayCacheKey(selectedTaskId.value)
   return Array.isArray(replayCache[key]) ? replayCache[key].length : 0
+})
+
+const selectedTaskReplayCountLabel = computed(() => {
+  const rawCount = selectedTaskReplayCount.value
+  const totalCount = Number(selectedTaskReplayBundle.value?.entry_count || 0)
+  if (!rawCount) return '0'
+  if (!totalCount || rawCount >= totalCount) return String(rawCount)
+  return `${rawCount}/${totalCount}`
 })
 
 const selectedTaskRawReplayVisible = computed(() => {
