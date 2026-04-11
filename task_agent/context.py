@@ -17,6 +17,7 @@ from openra_state.data.dataset import (
     demo_capability_buildable_lines,
     demo_capability_queue_types,
     demo_prompt_display_name_for,
+    demo_capability_unit_type_for,
     demo_queue_type_for,
     filter_demo_capability_buildable,
     filter_demo_capability_production_queues,
@@ -512,6 +513,36 @@ def _build_capability_queue_block_state(rf: dict[str, Any]) -> str:
     return line
 
 
+def _filter_capability_queue_blocked_items(items: list[Any]) -> list[dict[str, Any]]:
+    normalized = [
+        dict(item)
+        for item in list(items or [])
+        if isinstance(item, dict)
+    ]
+    return filter_demo_capability_ready_items(normalized)
+
+
+def _has_ready_power_recovery(rf: dict[str, Any]) -> bool:
+    for item in list(rf.get("ready_queue_items", []) or []) + list(rf.get("queue_blocked_items", []) or []):
+        if not isinstance(item, dict):
+            continue
+        canonical = demo_capability_unit_type_for(item.get("unit_type") or item.get("display_name"))
+        if canonical in {"powr", "apwr"}:
+            return True
+    return False
+
+
+def _build_capability_truth_guard(rf: dict[str, Any]) -> str:
+    blocker = str(rf.get("capability_truth_blocker") or "").strip()
+    if blocker != "faction_roster_unsupported":
+        return ""
+    faction = str(rf.get("faction") or "unknown").strip() or "unknown"
+    return (
+        f"[能力真值] faction={faction} 当前 demo capability roster 未覆盖该阵营；"
+        "已隐藏 buildable/buildable_now/buildable_blocked，禁止补链，直接 wait"
+    )
+
+
 def _build_unit_reservations(rf: dict[str, Any]) -> str:
     """Build [Reservations] block for Capability context."""
     reservations = rf.get("unit_reservations", [])
@@ -760,6 +791,19 @@ def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
     if not rf:
         return {}
     filtered = dict(rf)
+    if "queue_blocked_items" in filtered and isinstance(filtered["queue_blocked_items"], list):
+        filtered["queue_blocked_items"] = _filter_capability_queue_blocked_items(filtered["queue_blocked_items"])
+    if "unfulfilled_requests" in filtered and isinstance(filtered["unfulfilled_requests"], list):
+        compact_requests: list[dict[str, Any]] = []
+        for request in filtered["unfulfilled_requests"]:
+            if not isinstance(request, dict):
+                continue
+            normalized = dict(request)
+            normalized["queue_blocked_items"] = _filter_capability_queue_blocked_items(
+                list(request.get("queue_blocked_items", []) or [])
+            )
+            compact_requests.append(normalized)
+        filtered["unfulfilled_requests"] = compact_requests
     if "unit_reservations" in filtered and isinstance(filtered["unit_reservations"], list):
         reservations = filter_demo_capability_reservations(filtered["unit_reservations"])
         compact_reservations: list[dict[str, Any]] = []
@@ -814,17 +858,20 @@ def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
                     "queue_type": queue_type,
                     "reason": str(item.get("reason") or ""),
                     "queue_blocked_reason": str(item.get("queue_blocked_reason") or ""),
-                    "queue_blocked_items": [
-                        dict(value)
-                        for value in list(item.get("queue_blocked_items", []) or [])
-                        if isinstance(value, dict)
-                    ],
+                    "queue_blocked_items": _filter_capability_queue_blocked_items(
+                        list(item.get("queue_blocked_items", []) or [])
+                    ),
                     "disabled_prerequisites": [str(value) for value in list(item.get("disabled_prerequisites", []) or []) if value],
                     "disabled_producers": [str(value) for value in list(item.get("disabled_producers", []) or []) if value],
                 })
             if keep:
                 filtered_blocked[queue_type] = keep
         filtered["buildable_blocked"] = filtered_blocked
+    if str(filtered.get("capability_truth_blocker") or "") == "faction_roster_unsupported":
+        filtered["buildable"] = {}
+        filtered["buildable_now"] = {}
+        filtered["buildable_blocked"] = {}
+        filtered["base_progression"] = {}
     return filtered
 
 
@@ -921,6 +968,8 @@ def _build_capability_issue_now(rf: dict[str, Any]) -> str:
     """Render units/buildings that are safe to issue right now."""
     if not rf:
         return ""
+    if str(rf.get("capability_truth_blocker") or "") == "faction_roster_unsupported":
+        return ""
     buildable_now = rf.get("buildable_now", {})
     if not isinstance(buildable_now, dict):
         return ""
@@ -933,6 +982,8 @@ def _build_capability_issue_now(rf: dict[str, Any]) -> str:
 def _build_capability_blocked_buildable(rf: dict[str, Any]) -> str:
     """Render prereq-satisfied demo items that are still blocked right now."""
     if not rf:
+        return ""
+    if str(rf.get("capability_truth_blocker") or "") == "faction_roster_unsupported":
         return ""
     blocked = rf.get("buildable_blocked", {})
     if not isinstance(blocked, dict):
@@ -977,6 +1028,8 @@ def _build_capability_blocked_buildable(rf: dict[str, Any]) -> str:
 def _build_capability_base_progression(rf: dict[str, Any]) -> str:
     """Build the shared demo base-progression hint for Capability context."""
     if not rf:
+        return ""
+    if str(rf.get("capability_truth_blocker") or "") == "faction_roster_unsupported":
         return ""
     progression = demo_base_progression(
         has_construction_yard=bool(rf.get("has_construction_yard")),
@@ -1161,6 +1214,9 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
         world_sync_block = _build_capability_world_sync(rf)
         if world_sync_block:
             lines.append(world_sync_block)
+        truth_guard_block = _build_capability_truth_guard(rf)
+        if truth_guard_block:
+            lines.append(truth_guard_block)
         base_block = _build_capability_base_state(rf)
         if base_block:
             lines.append(base_block)
@@ -1171,7 +1227,7 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
             cash = eco.get("cash", 0)
             pwr = eco.get("power_provided", 0)
             drain = eco.get("power_drained", 0)
-            # Suppress ⚡低电力 if powr is already in production queue
+            # Suppress ⚡低电力 if power recovery is already queued or ready to place.
             is_low = eco.get("low_power", False)
             if is_low:
                 queues = rf.get("production_queues", {})
@@ -1179,6 +1235,8 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
                     if any(it.get("unit_type", "").lower() in ("powr", "apwr") for it in (items or [])):
                         is_low = False
                         break
+            if is_low and _has_ready_power_recovery(rf):
+                is_low = False
             low = " ⚡低电力" if is_low else ""
             harv = rf.get("harvester_count", eco.get("harvester_count", "?"))
             lines.append(f"[经济] 资金:{cash} 电力:{pwr}/{drain}{low} 矿车:{harv}")

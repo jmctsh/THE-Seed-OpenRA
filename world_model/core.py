@@ -31,6 +31,7 @@ from openra_state.data.dataset import (
     demo_base_counter_field_for,
     demo_base_progression,
     demo_capability_buildability_snapshot,
+    filter_demo_capability_ready_items,
     demo_capability_units_for_queue,
     demo_display_name_for,
     demo_faction_hint_for_unit_types,
@@ -861,6 +862,14 @@ class WorldModel:
                 "attack": combat_unit_count > 0,
                 "move_units": (combat_unit_count + mcv_count + harvester_count) > 0,
             }
+            faction = str(facts.get("faction") or "").strip().lower()
+            if faction and faction != "soviet":
+                facts["capability_truth_blocker"] = "faction_roster_unsupported"
+                facts["buildable"] = {}
+                facts["buildable_now"] = {}
+                facts["buildable_blocked"] = {}
+                facts["base_progression"] = {}
+                facts["feasibility"]["produce_units"] = False
 
         # Unfulfilled unit requests (from Kernel via set_runtime_state)
         facts["unfulfilled_requests"] = list(self._unfulfilled_requests)
@@ -977,7 +986,13 @@ class WorldModel:
                     "queue_type": queue_type,
                     "reason": str(readiness.get("reason", "") or ""),
                     "queue_blocked_reason": str(readiness.get("queue_blocked_reason", "") or ""),
-                    "queue_blocked_items": [dict(item) for item in list(readiness.get("queue_blocked_items", [])) if isinstance(item, dict)],
+                    "queue_blocked_items": filter_demo_capability_ready_items(
+                        [
+                            dict(item)
+                            for item in list(readiness.get("queue_blocked_items", []))
+                            if isinstance(item, dict)
+                        ]
+                    ),
                     "disabled_producers": list(readiness.get("disabled_producers", []) or []),
                     "disabled_prerequisites": list(readiness.get("disabled_prerequisites", []) or []),
                 })

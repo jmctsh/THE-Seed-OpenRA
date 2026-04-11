@@ -543,6 +543,80 @@ def test_capability_context_surfaces_queue_block_reason():
     assert "queues=Building" in msg["content"]
 
 
+def test_capability_context_filters_off_roster_queue_blocked_items() -> None:
+    rf = {
+        "queue_blocked": True,
+        "queue_blocked_reason": "ready_not_placed",
+        "queue_blocked_queue_types": ["Infantry"],
+        "queue_blocked_items": [
+            {"queue_type": "Infantry", "unit_type": "e6", "display_name": "工程师", "owner_actor_id": 7},
+        ],
+        "buildable_blocked": {
+            "Building": [
+                {
+                    "unit_type": "powr",
+                    "queue_type": "Building",
+                    "reason": "queue_blocked",
+                    "queue_blocked_reason": "ready_not_placed",
+                    "queue_blocked_items": [
+                        {"queue_type": "Infantry", "unit_type": "e6", "display_name": "工程师", "owner_actor_id": 7},
+                    ],
+                },
+            ]
+        },
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "[队列阻塞] 有已完成未放置条目" in msg["content"]
+    assert "工程师" not in msg["content"]
+    assert "items=" not in msg["content"]
+    assert "成品:" not in msg["content"]
+
+
+def test_capability_context_suppresses_low_power_nudge_when_ready_power_exists() -> None:
+    packet = ContextPacket(
+        task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {"cash": 5000, "power_provided": 100, "power_drained": 140, "low_power": True}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[],
+        recent_events=[],
+        open_decisions=[],
+        runtime_facts={
+            "queue_blocked": True,
+            "queue_blocked_reason": "ready_not_placed",
+            "queue_blocked_queue_types": ["Building"],
+            "queue_blocked_items": [
+                {"queue_type": "Building", "unit_type": "powr", "display_name": "发电厂", "owner_actor_id": 1},
+            ],
+            "ready_queue_items": [
+                {"queue_type": "Building", "unit_type": "powr", "display_name": "发电厂", "owner_actor_id": 1},
+            ],
+        },
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "⚡低电力" not in msg["content"]
+    assert "[待处理已就绪条目]" in msg["content"]
+    assert "Building: 发电厂 owner=1" in msg["content"]
+    assert "[队列阻塞] 有已完成未放置条目" in msg["content"]
+
+
+def test_capability_context_surfaces_truth_guard_for_unsupported_faction_roster() -> None:
+    rf = {
+        "faction": "allied",
+        "capability_truth_blocker": "faction_roster_unsupported",
+        "buildable": {"Building": ["powr", "proc", "barr"]},
+        "buildable_now": {"Building": ["powr"]},
+        "buildable_blocked": {"Building": [{"unit_type": "proc", "queue_type": "Building", "reason": "low_power"}]},
+        "base_progression": {"status": "下一步：矿场", "next_unit_type": "proc"},
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "[能力真值] faction=allied 当前 demo capability roster 未覆盖该阵营" in msg["content"]
+    assert "[可立即下单]" not in msg["content"]
+    assert "[前置已满足但当前受阻]" not in msg["content"]
+    assert "[基地推进]" not in msg["content"]
+
+
 def test_capability_context_has_runtime_status_and_parallel_tasks():
     packet = ContextPacket(
         task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},

@@ -797,6 +797,33 @@ def test_compute_runtime_facts_leaves_player_faction_empty_when_ambiguous() -> N
     assert facts["faction"] is None, facts
 
 
+def test_compute_runtime_facts_fails_closed_for_unsupported_allied_capability_roster() -> None:
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="发电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=3, type="矿场", faction="自己", position=Location(12, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=4, type="战车工厂", faction="自己", position=Location(13, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=5, type="tent", faction="自己", position=Location(14, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=6, type="2tnk", faction="自己", position=Location(15, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=5000, Resources=0, Power=200, PowerDrained=120, PowerProvided=200),
+        map_info=make_map(0.1, 0.05),
+        queues={},
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+    facts = wm.compute_runtime_facts("t_cap", include_buildable=True)
+    assert facts["faction"] == "allied", facts
+    assert facts["capability_truth_blocker"] == "faction_roster_unsupported", facts
+    assert facts["buildable"] == {}, facts
+    assert facts["buildable_now"] == {}, facts
+    assert facts["buildable_blocked"] == {}, facts
+    assert facts["base_progression"] == {}, facts
+    assert facts["feasibility"]["produce_units"] is False, facts
+
+
 def test_runtime_facts_buildable_requires_power_for_proc() -> None:
     """Buildability should not expose proc before a power plant exists."""
     source = MockWorldSource([Frame(
@@ -1103,6 +1130,33 @@ def test_runtime_facts_split_prereq_truth_from_issue_now_truth() -> None:
     }
     assert blocked["proc"]["reason"] == "low_power", blocked
     assert blocked["barr"]["reason"] == "low_power", blocked
+
+
+def test_runtime_facts_buildable_blocked_filters_off_roster_queue_items() -> None:
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=2000, Resources=0, Power=100, PowerDrained=20, PowerProvided=100),
+        map_info=make_map(0.1, 0.05),
+        queues={
+            "Building": {
+                "queue_type": "Building",
+                "items": [{"name": "防空炮", "display_name": "防空炮", "done": True, "paused": False, "status": "done", "owner_actor_id": 9}],
+                "has_ready_item": True,
+            }
+        },
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+
+    facts = wm.compute_runtime_facts("t_cap", include_buildable=True)
+    blocked_entries = list(facts.get("buildable_blocked", {}).get("Building", []) or [])
+    assert blocked_entries, facts
+    assert all(item.get("reason") == "queue_blocked" for item in blocked_entries), blocked_entries
+    assert all(item.get("queue_blocked_items") == [] for item in blocked_entries), blocked_entries
 
 
 def test_compute_runtime_facts_this_task_jobs() -> None:
