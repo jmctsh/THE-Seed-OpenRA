@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from pathlib import Path
+import socket
 import sys
 import tempfile
 from typing import Any
+
+import aiohttp
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -170,6 +175,12 @@ class _BridgeTaskKernel(_BridgeKernel):
 
     def list_tasks(self):
         return list(self._tasks)
+
+
+def _free_tcp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def test_start_game_passes_baseline_save() -> None:
@@ -507,7 +518,85 @@ def test_runtime_bridge_publishes_logs_and_benchmarks_incrementally() -> None:
     logging_system.clear()
     benchmark.clear()
     asyncio.run(run())
-    print("  PASS: runtime_bridge_publishes_logs_and_benchmarks_incrementally")
+
+
+@pytest.mark.startup_smoke
+def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+        background_errors: list[dict[str, Any]] = []
+
+        def _capture_loop_exception(loop, context) -> None:
+            del loop
+            background_errors.append(dict(context))
+
+        loop.set_exception_handler(_capture_loop_exception)
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                ws_port = _free_tcp_port()
+                cfg = RuntimeConfig(
+                    ws_host="127.0.0.1",
+                    ws_port=ws_port,
+                    enable_ws=True,
+                    enable_voice=False,
+                    log_session_root=str(Path(tmpdir) / "logs"),
+                    benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                    benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                    log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+                )
+                runtime = ApplicationRuntime(
+                    config=cfg,
+                    task_llm=provider,
+                    adjutant_llm=provider,
+                    api=api,
+                    world_source=source,
+                )
+                try:
+                    await runtime.start()
+
+                    cap_id = runtime.kernel.capability_task_id
+                    assert cap_id is not None
+                    cap_agent = runtime.kernel.get_task_agent(cap_id)
+                    assert cap_agent is not None
+                    assert "produce_units" in cap_agent.tool_executor._handlers
+                    assert "request_units" not in cap_agent.tool_executor._handlers
+
+                    async with aiohttp.ClientSession() as session:
+                        async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                            await ws.send_json({"type": "sync_request"})
+                            seen_types: set[str] = set()
+                            for _ in range(12):
+                                msg = await ws.receive(timeout=2.0)
+                                assert msg.type == aiohttp.WSMsgType.TEXT
+                                payload = json.loads(msg.data)
+                                seen_types.add(str(payload.get("type")))
+                                if {"world_snapshot", "task_list", "session_catalog"} <= seen_types:
+                                    break
+                            assert "world_snapshot" in seen_types
+                            assert "task_list" in seen_types
+                            assert "session_catalog" in seen_types
+
+                    runtime.bridge.on_tick(1, 0.0)
+                    await asyncio.sleep(0.1)
+                    assert background_errors == [], background_errors
+                finally:
+                    await runtime.stop()
+
+                assert api.close_calls == 1
+                assert runtime.ws_server is not None
+                assert runtime.ws_server.is_running is False
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                    assert probe.connect_ex(("127.0.0.1", ws_port)) != 0
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+    asyncio.run(run())
+    print("  PASS: application_runtime_ws_startup_smoke_and_background_publish")
 
 
 def test_runtime_bridge_session_clear_resets_benchmark_publish_state() -> None:
