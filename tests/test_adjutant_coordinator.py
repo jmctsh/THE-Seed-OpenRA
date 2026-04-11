@@ -542,6 +542,28 @@ def test_coordinator_snapshot_prefers_runtime_base_progression_when_present() ->
     print("  PASS: coordinator_snapshot_prefers_runtime_base_progression_when_present")
 
 
+def test_coordinator_alerts_surface_queue_block_reason() -> None:
+    class _QueueBlockedWorldModel(_WorldModel):
+        def query(self, query_type: str, params=None):
+            result = super().query(query_type, params=params)
+            if query_type == "battlefield_snapshot":
+                result["queue_blocked"] = True
+                result["queue_blocked_reason"] = "paused"
+                result["queue_blocked_queue_types"] = ["Building"]
+            return result
+
+        def compute_runtime_facts(self, task_id: str, include_buildable: bool = False):
+            result = super().compute_runtime_facts(task_id, include_buildable=include_buildable)
+            result["ready_queue_items"] = []
+            return result
+
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_QueueBlockedWorldModel())
+    context = adjutant._build_context("现在怎么样")
+    alerts = context.coordinator_snapshot["alerts"]
+    assert any("生产队列被暂停" in str(alert.get("text", "")) for alert in alerts)
+    print("  PASS: coordinator_alerts_surface_queue_block_reason")
+
+
 def test_coordinator_hints_merge_capability_followup_on_fulfilling_phase() -> None:
     adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelFulfilling())
 

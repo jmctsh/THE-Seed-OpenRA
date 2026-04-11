@@ -69,6 +69,8 @@ def test_build_battlefield_snapshot_normalizes_numeric_fields() -> None:
         free_combat_units=1,
         low_power=False,
         queue_blocked=True,
+        queue_blocked_reason="ready_not_placed",
+        queue_blocked_queue_types=["Building"],
         recommended_posture="unblock_queue",
         threat_level="medium",
         threat_direction="west",
@@ -89,6 +91,8 @@ def test_build_battlefield_snapshot_normalizes_numeric_fields() -> None:
     assert snapshot["self_combat_value"] == 123.46
     assert snapshot["enemy_combat_value"] == 78.9
     assert snapshot["queue_blocked"] is True
+    assert snapshot["queue_blocked_reason"] == "ready_not_placed"
+    assert snapshot["queue_blocked_queue_types"] == ["Building"]
     assert snapshot["recommended_posture"] == "unblock_queue"
     assert snapshot["capability_status"]["task_id"] == "t_cap"
     print("  PASS: build_battlefield_snapshot_normalizes_numeric_fields")

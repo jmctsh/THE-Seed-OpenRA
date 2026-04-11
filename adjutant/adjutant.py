@@ -318,6 +318,8 @@ class Adjutant:
                 "free_combat_units": int(self._coerce_float(query_snapshot.get("free_combat_units")) or 0),
                 "low_power": bool(query_snapshot.get("low_power")),
                 "queue_blocked": bool(query_snapshot.get("queue_blocked")),
+                "queue_blocked_reason": str(query_snapshot.get("queue_blocked_reason", "") or ""),
+                "queue_blocked_queue_types": [str(item) for item in list(query_snapshot.get("queue_blocked_queue_types", []) or []) if item],
                 "recommended_posture": str(query_snapshot.get("recommended_posture", "maintain_posture")),
                 "threat_level": str(query_snapshot.get("threat_level", "unknown")),
                 "threat_direction": str(query_snapshot.get("threat_direction", "unknown")),
@@ -351,6 +353,8 @@ class Adjutant:
         idle_self_units = int(self._coerce_float(military.get("idle_self_units")) or 0)
         low_power = bool(economy.get("low_power"))
         queue_blocked = bool(economy.get("queue_blocked"))
+        queue_blocked_reason = str(economy.get("queue_blocked_reason", "") or "")
+        queue_blocked_queue_types = [str(item) for item in list(economy.get("queue_blocked_queue_types", []) or []) if item]
         explored_pct = self._coerce_float(game_map.get("explored_pct"))
         enemy_bases = int(self._coerce_float(known_enemy.get("bases")) or self._coerce_float(known_enemy.get("structures")) or 0)
         enemy_spotted = int(self._coerce_float(known_enemy.get("units_spotted")) or 0)
@@ -411,7 +415,12 @@ class Adjutant:
         if low_power:
             summary_text += "，当前低电"
         if queue_blocked:
-            summary_text += "，生产队列阻塞"
+            if queue_blocked_reason == "ready_not_placed":
+                summary_text += "，生产队列有已完成未放置条目"
+            elif queue_blocked_reason == "paused":
+                summary_text += "，生产队列被暂停"
+            else:
+                summary_text += "，生产队列阻塞"
 
         return {
             "summary": summary_text,
@@ -427,6 +436,8 @@ class Adjutant:
             "free_combat_units": free_combat_units,
             "low_power": low_power,
             "queue_blocked": queue_blocked,
+            "queue_blocked_reason": queue_blocked_reason,
+            "queue_blocked_queue_types": queue_blocked_queue_types,
             "recommended_posture": "stabilize_power" if low_power else ("unblock_queue" if queue_blocked else "maintain_posture"),
             "threat_level": "unknown",
             "threat_direction": "unknown",
@@ -594,6 +605,8 @@ class Adjutant:
             "free_combat_units": battlefield_snapshot.get("free_combat_units", 0),
             "low_power": battlefield_snapshot.get("low_power", False),
             "queue_blocked": battlefield_snapshot.get("queue_blocked", False),
+            "queue_blocked_reason": battlefield_snapshot.get("queue_blocked_reason", ""),
+            "queue_blocked_queue_types": list(battlefield_snapshot.get("queue_blocked_queue_types", []) or []),
             "recommended_posture": battlefield_snapshot.get("recommended_posture", "maintain_posture"),
             "threat_level": battlefield_snapshot.get("threat_level", "unknown"),
             "threat_direction": battlefield_snapshot.get("threat_direction", "unknown"),
@@ -911,7 +924,15 @@ class Adjutant:
             ready_names = "、".join(str(item.get("display_name", "") or item.get("unit_type", "") or "?") for item in ready_items[:2])
             add_alert("queue_ready_items", "warning", f"队列里有待处理成品：{ready_names}")
         elif battlefield.get("queue_blocked"):
-            add_alert("queue_blocked", "warning", "生产队列存在阻塞")
+            queue_reason = str(battlefield.get("queue_blocked_reason", "") or "")
+            queue_types = [str(item) for item in list(battlefield.get("queue_blocked_queue_types", []) or []) if item]
+            queue_suffix = f"（{','.join(queue_types)}）" if queue_types else ""
+            if queue_reason == "paused":
+                add_alert("queue_blocked", "warning", f"生产队列被暂停{queue_suffix}")
+            elif queue_reason == "ready_not_placed":
+                add_alert("queue_blocked", "warning", f"生产队列有已完成未放置条目{queue_suffix}")
+            else:
+                add_alert("queue_blocked", "warning", f"生产队列存在阻塞{queue_suffix}")
         reservation_wait = int(task_overview.get("reservation_wait_count", 0) or 0)
         if reservation_wait:
             add_alert("reservation_waiting", "info", f"{reservation_wait} 个任务正在等待补位")

@@ -178,6 +178,8 @@ class BattlefieldSnapshot:
     free_combat_units: int = 0
     low_power: bool = False
     queue_blocked: bool = False
+    queue_blocked_reason: str = ""
+    queue_blocked_queue_types: list[str] = field(default_factory=list)
     recommended_posture: str = "maintain_posture"
     threat_level: str = "unknown"
     threat_direction: str = "unknown"
@@ -209,6 +211,8 @@ class BattlefieldSnapshot:
             "free_combat_units": self.free_combat_units,
             "low_power": self.low_power,
             "queue_blocked": self.queue_blocked,
+            "queue_blocked_reason": self.queue_blocked_reason,
+            "queue_blocked_queue_types": list(self.queue_blocked_queue_types),
             "recommended_posture": self.recommended_posture,
             "threat_level": self.threat_level,
             "threat_direction": self.threat_direction,
@@ -242,6 +246,8 @@ def build_battlefield_snapshot(
     free_combat_units: int,
     low_power: bool,
     queue_blocked: bool,
+    queue_blocked_reason: str = "",
+    queue_blocked_queue_types: list[str] | None = None,
     recommended_posture: str,
     threat_level: str,
     threat_direction: str,
@@ -273,6 +279,8 @@ def build_battlefield_snapshot(
         free_combat_units=int(free_combat_units or 0),
         low_power=bool(low_power),
         queue_blocked=bool(queue_blocked),
+        queue_blocked_reason=str(queue_blocked_reason or ""),
+        queue_blocked_queue_types=[str(item) for item in list(queue_blocked_queue_types or []) if item],
         recommended_posture=str(recommended_posture or "maintain_posture"),
         threat_level=str(threat_level or "unknown"),
         threat_direction=str(threat_direction or "unknown"),

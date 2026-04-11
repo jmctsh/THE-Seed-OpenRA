@@ -519,6 +519,8 @@ class WorldModel:
         enemy_score = float(military.get("enemy_combat_value", 0) or 0)
         low_power = bool(economy.get("low_power"))
         queue_blocked = bool(economy.get("queue_blocked"))
+        queue_blocked_reason = str(economy.get("queue_blocked_reason", "") or "")
+        queue_blocked_queue_types = [str(item) for item in list(economy.get("queue_blocked_queue_types", []) or []) if item]
         pending_requests = capability.pending_request_count
         bootstrapping_request_count = capability.bootstrapping_request_count
         reservation_count = len(self._unit_reservations)
@@ -608,6 +610,8 @@ class WorldModel:
             free_combat_units=free_combat_units,
             low_power=low_power,
             queue_blocked=queue_blocked,
+            queue_blocked_reason=queue_blocked_reason,
+            queue_blocked_queue_types=queue_blocked_queue_types,
             recommended_posture=recommended_posture,
             threat_level=threat_level,
             threat_direction=threat_direction,
