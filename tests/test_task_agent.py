@@ -2105,6 +2105,43 @@ def test_conversation_window_bounds_message_size() -> None:
     print("  PASS: conversation_window_bounds_message_size")
 
 
+def test_conversation_storage_prunes_old_tool_transcripts() -> None:
+    """Stored conversation history should also stay bounded across many tool-heavy wakes."""
+    task = make_task()
+    agent = TaskAgent(
+        task=task,
+        llm=MockProvider(),
+        tool_executor=ToolExecutor(),
+        jobs_provider=lambda _: [],
+        world_summary_provider=lambda: WorldSummary(),
+        config=AgentConfig(conversation_window=4),
+    )
+
+    for cycle in range(12):
+        ctx_msg = {"role": "user", "content": f"{_CONTEXT_MARKER}\n{{\"cycle\": {cycle}}}"}
+        agent._build_messages(ctx_msg)
+        agent._conversation.append({"role": "assistant", "content": "a" * 1200})
+        agent._conversation.append(
+            {
+                "role": "tool",
+                "tool_call_id": f"tc{cycle}",
+                "name": "query_world",
+                "content": "x" * 2400,
+            }
+        )
+
+    total_chars = sum(len(json.dumps(m)) for m in agent._conversation)
+    ctx_count = sum(
+        1
+        for msg in agent._conversation
+        if msg.get("role") == "user" and _CONTEXT_MARKER in str(msg.get("content", ""))
+    )
+
+    assert ctx_count <= 5, f"Expected at most 5 stored context turns, got {ctx_count}"
+    assert total_chars < 25_000, f"Stored conversation still growing too much: {total_chars} chars"
+    print("  PASS: conversation_storage_prunes_old_tool_transcripts")
+
+
 def test_compact_history_context_message_drops_json_header() -> None:
     """Stored history context keeps the marker but drops the bulky JSON header."""
     msg = {

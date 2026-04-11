@@ -918,10 +918,13 @@ class TaskAgent:
         responses. Older turns are dropped silently — no LLM summarization.
         """
         prompt = CAPABILITY_SYSTEM_PROMPT if getattr(self.task, "is_capability", False) else SYSTEM_PROMPT
+        trimmed_history = _trim_conversation(self._conversation, self.config.conversation_window)
+        if len(trimmed_history) != len(self._conversation):
+            self._conversation = trimmed_history
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": prompt},
         ]
-        messages.extend(_trim_conversation(self._conversation, self.config.conversation_window))
+        messages.extend(self._conversation)
         messages.append(context_msg)
         self._conversation.append(_compact_history_context_message(context_msg))
         return messages
