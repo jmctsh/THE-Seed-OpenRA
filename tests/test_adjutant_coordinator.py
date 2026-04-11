@@ -376,6 +376,46 @@ def test_battlefield_snapshot_prefers_runtime_query() -> None:
     print("  PASS: battlefield_snapshot_prefers_runtime_query")
 
 
+def test_battlefield_snapshot_runtime_query_is_normalized() -> None:
+    class _WorldModelNormalized(_WorldModel):
+        def query(self, query_type: str, params=None):
+            if query_type == "battlefield_snapshot":
+                return {
+                    "summary": "我方5 / 敌方14，探索42.0%",
+                    "disposition": "under_pressure",
+                    "focus": "defense",
+                    "self_units": "5",
+                    "enemy_units": "14",
+                    "self_combat_value": "900.126",
+                    "enemy_combat_value": "2600",
+                    "queue_blocked": 1,
+                    "queue_blocked_queue_types": ["Building", "", None],
+                    "disabled_structure_count": "2",
+                    "disabled_structures": ["雷达站(lowpower)", "", None],
+                    "pending_request_count": "3",
+                    "bootstrapping_request_count": "1",
+                    "reservation_count": "2",
+                }
+            return super().query(query_type, params)
+
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelNormalized())
+
+    snapshot = adjutant._battlefield_snapshot()
+
+    assert snapshot["self_units"] == 5
+    assert snapshot["enemy_units"] == 14
+    assert snapshot["self_combat_value"] == 900.13
+    assert snapshot["enemy_combat_value"] == 2600.0
+    assert snapshot["queue_blocked"] is True
+    assert snapshot["queue_blocked_queue_types"] == ["Building"]
+    assert snapshot["disabled_structure_count"] == 2
+    assert snapshot["disabled_structures"] == ["雷达站(lowpower)"]
+    assert snapshot["pending_request_count"] == 3
+    assert snapshot["bootstrapping_request_count"] == 1
+    assert snapshot["reservation_count"] == 2
+    print("  PASS: battlefield_snapshot_runtime_query_is_normalized")
+
+
 def test_battlefield_snapshot_fallback_reuses_runtime_state_and_facts() -> None:
     adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelBattlefieldFallback())
 
@@ -665,6 +705,7 @@ def test_coordinator_hints_do_not_force_merge_when_free_combat_units_exist() -> 
 if __name__ == "__main__":
     print("Running Adjutant coordinator tests...\n")
     test_battlefield_snapshot_prefers_runtime_query()
+    test_battlefield_snapshot_runtime_query_is_normalized()
     test_battlefield_snapshot_fallback_reuses_runtime_state_and_facts()
     test_build_context_includes_task_triage_fields()
     test_build_context_prefers_runtime_domain_over_generic_task_text()

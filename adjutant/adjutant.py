@@ -36,7 +36,7 @@ from models import (
 from openra_api.models import Actor as GameActor
 from openra_api.production_names import normalize_production_name, production_name_variants
 from openra_state.data.dataset import demo_base_progression
-from runtime_views import CapabilityStatusSnapshot, TaskTriageInputs
+from runtime_views import BattlefieldSnapshot, CapabilityStatusSnapshot, TaskTriageInputs
 from task_triage import (
     build_task_triage_from_artifacts,
     capability_blocker_status_text,
@@ -305,42 +305,7 @@ class Adjutant:
     ) -> dict[str, Any]:
         query_snapshot = self._safe_world_query("battlefield_snapshot")
         if query_snapshot:
-            return {
-                "summary": str(query_snapshot.get("summary", "")),
-                "disposition": query_snapshot.get("disposition", "unknown"),
-                "focus": query_snapshot.get("focus", "general"),
-                "self_units": int(self._coerce_float(query_snapshot.get("self_units")) or 0),
-                "enemy_units": int(self._coerce_float(query_snapshot.get("enemy_units")) or 0),
-                "self_combat_value": round(self._coerce_float(query_snapshot.get("self_combat_value")) or 0.0, 2),
-                "enemy_combat_value": round(self._coerce_float(query_snapshot.get("enemy_combat_value")) or 0.0, 2),
-                "idle_self_units": int(self._coerce_float(query_snapshot.get("idle_self_units")) or 0),
-                "self_combat_units": int(self._coerce_float(query_snapshot.get("self_combat_units")) or 0),
-                "committed_combat_units": int(self._coerce_float(query_snapshot.get("committed_combat_units")) or 0),
-                "free_combat_units": int(self._coerce_float(query_snapshot.get("free_combat_units")) or 0),
-                "low_power": bool(query_snapshot.get("low_power")),
-                "queue_blocked": bool(query_snapshot.get("queue_blocked")),
-                "queue_blocked_reason": str(query_snapshot.get("queue_blocked_reason", "") or ""),
-                "queue_blocked_queue_types": [str(item) for item in list(query_snapshot.get("queue_blocked_queue_types", []) or []) if item],
-                "disabled_structure_count": int(self._coerce_float(query_snapshot.get("disabled_structure_count")) or 0),
-                "powered_down_structure_count": int(self._coerce_float(query_snapshot.get("powered_down_structure_count")) or 0),
-                "low_power_disabled_structure_count": int(self._coerce_float(query_snapshot.get("low_power_disabled_structure_count")) or 0),
-                "power_outage_structure_count": int(self._coerce_float(query_snapshot.get("power_outage_structure_count")) or 0),
-                "disabled_structures": [str(item) for item in list(query_snapshot.get("disabled_structures", []) or []) if item],
-                "recommended_posture": str(query_snapshot.get("recommended_posture", "maintain_posture")),
-                "threat_level": str(query_snapshot.get("threat_level", "unknown")),
-                "threat_direction": str(query_snapshot.get("threat_direction", "unknown")),
-                "base_under_attack": bool(query_snapshot.get("base_under_attack")),
-                "base_health_summary": str(query_snapshot.get("base_health_summary", "")),
-                "has_production": bool(query_snapshot.get("has_production")),
-                "explored_pct": self._coerce_float(query_snapshot.get("explored_pct")),
-                "enemy_bases": int(self._coerce_float(query_snapshot.get("enemy_bases")) or 0),
-                "enemy_spotted": int(self._coerce_float(query_snapshot.get("enemy_spotted")) or 0),
-                "frozen_enemy_count": int(self._coerce_float(query_snapshot.get("frozen_enemy_count")) or 0),
-                "pending_request_count": int(self._coerce_float(query_snapshot.get("pending_request_count")) or 0),
-                "bootstrapping_request_count": int(self._coerce_float(query_snapshot.get("bootstrapping_request_count")) or 0),
-                "reservation_count": int(self._coerce_float(query_snapshot.get("reservation_count")) or 0),
-                "stale": bool(query_snapshot.get("stale")),
-            }
+            return BattlefieldSnapshot.from_mapping(query_snapshot).to_dict()
 
         summary = world_summary if isinstance(world_summary, dict) else self._get_world_summary()
         runtime_state = dict(runtime_state or {})
@@ -435,42 +400,42 @@ class Adjutant:
         if disabled_structure_count:
             summary_text += f"，离线建筑 {disabled_structure_count}"
 
-        return {
-            "summary": summary_text,
-            "disposition": disposition,
-            "focus": focus,
-            "self_units": self_units,
-            "enemy_units": enemy_units,
-            "self_combat_value": round(self_score, 2),
-            "enemy_combat_value": round(enemy_score, 2),
-            "idle_self_units": idle_self_units,
-            "self_combat_units": total_combat_units,
-            "committed_combat_units": committed_combat_units,
-            "free_combat_units": free_combat_units,
-            "low_power": low_power,
-            "queue_blocked": queue_blocked,
-            "queue_blocked_reason": queue_blocked_reason,
-            "queue_blocked_queue_types": queue_blocked_queue_types,
-            "disabled_structure_count": disabled_structure_count,
-            "powered_down_structure_count": powered_down_structure_count,
-            "low_power_disabled_structure_count": low_power_disabled_structure_count,
-            "power_outage_structure_count": power_outage_structure_count,
-            "disabled_structures": disabled_structures,
-            "recommended_posture": "stabilize_power" if low_power else ("unblock_queue" if queue_blocked else "maintain_posture"),
-            "threat_level": "unknown",
-            "threat_direction": "unknown",
-            "base_under_attack": False,
-            "base_health_summary": "",
-            "has_production": has_production,
-            "explored_pct": explored_pct,
-            "enemy_bases": enemy_bases,
-            "enemy_spotted": enemy_spotted,
-            "frozen_enemy_count": frozen_count,
-            "pending_request_count": pending_request_count,
-            "bootstrapping_request_count": bootstrapping_request_count,
-            "reservation_count": reservation_count,
-            "stale": False,
-        }
+        return BattlefieldSnapshot(
+            summary=summary_text,
+            disposition=disposition,
+            focus=focus,
+            self_units=self_units,
+            enemy_units=enemy_units,
+            self_combat_value=round(self_score, 2),
+            enemy_combat_value=round(enemy_score, 2),
+            idle_self_units=idle_self_units,
+            self_combat_units=total_combat_units,
+            committed_combat_units=committed_combat_units,
+            free_combat_units=free_combat_units,
+            low_power=low_power,
+            queue_blocked=queue_blocked,
+            queue_blocked_reason=queue_blocked_reason,
+            queue_blocked_queue_types=queue_blocked_queue_types,
+            disabled_structure_count=disabled_structure_count,
+            powered_down_structure_count=powered_down_structure_count,
+            low_power_disabled_structure_count=low_power_disabled_structure_count,
+            power_outage_structure_count=power_outage_structure_count,
+            disabled_structures=disabled_structures,
+            recommended_posture="stabilize_power" if low_power else ("unblock_queue" if queue_blocked else "maintain_posture"),
+            threat_level="unknown",
+            threat_direction="unknown",
+            base_under_attack=False,
+            base_health_summary="",
+            has_production=has_production,
+            explored_pct=explored_pct,
+            enemy_bases=enemy_bases,
+            enemy_spotted=enemy_spotted,
+            frozen_enemy_count=frozen_count,
+            pending_request_count=pending_request_count,
+            bootstrapping_request_count=bootstrapping_request_count,
+            reservation_count=reservation_count,
+            stale=False,
+        ).to_dict()
 
     @staticmethod
     def _task_text(task: Any) -> str:
@@ -609,41 +574,7 @@ class Adjutant:
         return scored[0][2]
 
     def _format_query_snapshot(self, battlefield_snapshot: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "summary": battlefield_snapshot.get("summary", ""),
-            "disposition": battlefield_snapshot.get("disposition", "unknown"),
-            "focus": battlefield_snapshot.get("focus", "general"),
-            "self_units": battlefield_snapshot.get("self_units", 0),
-            "enemy_units": battlefield_snapshot.get("enemy_units", 0),
-            "self_combat_value": battlefield_snapshot.get("self_combat_value", 0),
-            "enemy_combat_value": battlefield_snapshot.get("enemy_combat_value", 0),
-            "idle_self_units": battlefield_snapshot.get("idle_self_units", 0),
-            "self_combat_units": battlefield_snapshot.get("self_combat_units", 0),
-            "committed_combat_units": battlefield_snapshot.get("committed_combat_units", 0),
-            "free_combat_units": battlefield_snapshot.get("free_combat_units", 0),
-            "low_power": battlefield_snapshot.get("low_power", False),
-            "queue_blocked": battlefield_snapshot.get("queue_blocked", False),
-            "queue_blocked_reason": battlefield_snapshot.get("queue_blocked_reason", ""),
-            "queue_blocked_queue_types": list(battlefield_snapshot.get("queue_blocked_queue_types", []) or []),
-            "disabled_structure_count": battlefield_snapshot.get("disabled_structure_count", 0),
-            "powered_down_structure_count": battlefield_snapshot.get("powered_down_structure_count", 0),
-            "low_power_disabled_structure_count": battlefield_snapshot.get("low_power_disabled_structure_count", 0),
-            "power_outage_structure_count": battlefield_snapshot.get("power_outage_structure_count", 0),
-            "disabled_structures": list(battlefield_snapshot.get("disabled_structures", []) or []),
-            "recommended_posture": battlefield_snapshot.get("recommended_posture", "maintain_posture"),
-            "threat_level": battlefield_snapshot.get("threat_level", "unknown"),
-            "threat_direction": battlefield_snapshot.get("threat_direction", "unknown"),
-            "base_under_attack": battlefield_snapshot.get("base_under_attack", False),
-            "base_health_summary": battlefield_snapshot.get("base_health_summary", ""),
-            "has_production": battlefield_snapshot.get("has_production", False),
-            "explored_pct": battlefield_snapshot.get("explored_pct"),
-            "enemy_bases": battlefield_snapshot.get("enemy_bases", 0),
-            "enemy_spotted": battlefield_snapshot.get("enemy_spotted", 0),
-            "frozen_enemy_count": battlefield_snapshot.get("frozen_enemy_count", 0),
-            "pending_request_count": battlefield_snapshot.get("pending_request_count", 0),
-            "bootstrapping_request_count": battlefield_snapshot.get("bootstrapping_request_count", 0),
-            "reservation_count": battlefield_snapshot.get("reservation_count", 0),
-        }
+        return BattlefieldSnapshot.from_mapping(battlefield_snapshot).to_dict()
 
     @staticmethod
     def _format_group_mix(actors: list[GameActor]) -> list[str]:

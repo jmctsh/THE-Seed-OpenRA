@@ -208,6 +208,79 @@ class BattlefieldSnapshot:
     stale: bool = False
     capability_status: dict[str, Any] = field(default_factory=dict)
 
+    @classmethod
+    def from_mapping(cls, raw: Any) -> "BattlefieldSnapshot":
+        if isinstance(raw, cls):
+            return raw
+        if not isinstance(raw, dict):
+            return cls()
+
+        def _to_int(key: str) -> int:
+            try:
+                return int(raw.get(key, 0) or 0)
+            except Exception:
+                return 0
+
+        def _to_float(key: str) -> float | None:
+            try:
+                value = raw.get(key)
+                if value is None or value == "":
+                    return None
+                return float(value)
+            except Exception:
+                return None
+
+        return cls(
+            summary=str(raw.get("summary") or ""),
+            disposition=str(raw.get("disposition") or "unknown"),
+            focus=str(raw.get("focus") or "general"),
+            self_units=_to_int("self_units"),
+            enemy_units=_to_int("enemy_units"),
+            self_combat_value=round(_to_float("self_combat_value") or 0.0, 2),
+            enemy_combat_value=round(_to_float("enemy_combat_value") or 0.0, 2),
+            idle_self_units=_to_int("idle_self_units"),
+            self_combat_units=_to_int("self_combat_units"),
+            committed_combat_units=_to_int("committed_combat_units"),
+            free_combat_units=_to_int("free_combat_units"),
+            low_power=bool(raw.get("low_power")),
+            queue_blocked=bool(raw.get("queue_blocked")),
+            queue_blocked_reason=str(raw.get("queue_blocked_reason") or ""),
+            queue_blocked_queue_types=[
+                str(item)
+                for item in list(raw.get("queue_blocked_queue_types", []) or [])
+                if item is not None and str(item)
+            ],
+            queue_blocked_items=[
+                dict(item)
+                for item in list(raw.get("queue_blocked_items", []) or [])
+                if isinstance(item, dict)
+            ],
+            disabled_structure_count=_to_int("disabled_structure_count"),
+            powered_down_structure_count=_to_int("powered_down_structure_count"),
+            low_power_disabled_structure_count=_to_int("low_power_disabled_structure_count"),
+            power_outage_structure_count=_to_int("power_outage_structure_count"),
+            disabled_structures=[
+                str(item)
+                for item in list(raw.get("disabled_structures", []) or [])
+                if item is not None and str(item)
+            ],
+            recommended_posture=str(raw.get("recommended_posture") or "maintain_posture"),
+            threat_level=str(raw.get("threat_level") or "unknown"),
+            threat_direction=str(raw.get("threat_direction") or "unknown"),
+            base_under_attack=bool(raw.get("base_under_attack")),
+            base_health_summary=str(raw.get("base_health_summary") or ""),
+            has_production=bool(raw.get("has_production")),
+            explored_pct=_to_float("explored_pct"),
+            enemy_bases=_to_int("enemy_bases"),
+            enemy_spotted=_to_int("enemy_spotted"),
+            frozen_enemy_count=_to_int("frozen_enemy_count"),
+            pending_request_count=_to_int("pending_request_count"),
+            bootstrapping_request_count=_to_int("bootstrapping_request_count"),
+            reservation_count=_to_int("reservation_count"),
+            stale=bool(raw.get("stale")),
+            capability_status=dict(raw.get("capability_status") or {}),
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "summary": self.summary,

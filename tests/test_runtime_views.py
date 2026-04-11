@@ -8,6 +8,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from runtime_views import (
+    BattlefieldSnapshot,
     CapabilityStatusSnapshot,
     build_battlefield_snapshot,
     build_runtime_state_snapshot,
@@ -105,9 +106,46 @@ def test_build_battlefield_snapshot_normalizes_numeric_fields() -> None:
     print("  PASS: build_battlefield_snapshot_normalizes_numeric_fields")
 
 
+def test_battlefield_snapshot_from_mapping_normalizes_query_payload() -> None:
+    snapshot = BattlefieldSnapshot.from_mapping(
+        {
+            "summary": "压力中",
+            "disposition": "under_pressure",
+            "focus": "defense",
+            "self_units": "5",
+            "enemy_units": "14",
+            "self_combat_value": "900.126",
+            "enemy_combat_value": "2600",
+            "queue_blocked": 1,
+            "queue_blocked_queue_types": ["Building", "", None],
+            "disabled_structure_count": "2",
+            "disabled_structures": ["雷达站(lowpower)", "", None],
+            "explored_pct": "0.42",
+            "pending_request_count": "3",
+            "bootstrapping_request_count": "1",
+            "reservation_count": "2",
+        }
+    ).to_dict()
+
+    assert snapshot["self_units"] == 5
+    assert snapshot["enemy_units"] == 14
+    assert snapshot["self_combat_value"] == 900.13
+    assert snapshot["enemy_combat_value"] == 2600.0
+    assert snapshot["queue_blocked"] is True
+    assert snapshot["queue_blocked_queue_types"] == ["Building"]
+    assert snapshot["disabled_structure_count"] == 2
+    assert snapshot["disabled_structures"] == ["雷达站(lowpower)"]
+    assert snapshot["explored_pct"] == 0.42
+    assert snapshot["pending_request_count"] == 3
+    assert snapshot["bootstrapping_request_count"] == 1
+    assert snapshot["reservation_count"] == 2
+    print("  PASS: battlefield_snapshot_from_mapping_normalizes_query_payload")
+
+
 if __name__ == "__main__":
     print("Running runtime_views tests...\n")
     test_build_runtime_state_snapshot_normalizes_capability_status()
     test_build_runtime_state_snapshot_accepts_capability_snapshot_object()
     test_build_battlefield_snapshot_normalizes_numeric_fields()
+    test_battlefield_snapshot_from_mapping_normalizes_query_payload()
     print("\nAll runtime_views tests passed!")
