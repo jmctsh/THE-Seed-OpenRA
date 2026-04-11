@@ -53,6 +53,10 @@ from .unit_request_bookkeeping import (
     request_start_goal,
     reservation_for_request,
 )
+from .unit_request_entry import (
+    register_unit_request as register_unit_request_runtime,
+    try_fulfill_from_idle as try_fulfill_from_idle_runtime,
+)
 from .unit_request_fulfillment import (
     agent_is_suspended as agent_is_suspended_runtime,
     fulfill_unit_requests as fulfill_unit_requests_runtime,
@@ -438,70 +442,27 @@ class Kernel:
         blocking: bool = True,
         min_start_package: int = 1,
     ) -> dict[str, Any]:
-        """Register a unit request: idle matching → fast-path bootstrap → waiting.
-
-        Returns:
-            {"status": "fulfilled", "actor_ids": [...]}  — idle units matched
-            {"status": "waiting", "request_id": "..."}   — production needed
-        """
-        task = self.tasks.get(task_id)
-        if task is None:
-            return {"status": "error", "message": f"Task {task_id} not found"}
-        normalized_min_start = max(1, min(int(min_start_package), int(count)))
-        if category == "building" and not bool(getattr(task, "is_capability", False)):
-            return {
-                "status": "error",
-                "message": "普通任务不能直接请求建筑前置，请请求所需单位并等待 Capability 处理",
-            }
-        request_id = _gen_id("req_")
-        req = UnitRequest(
-            request_id=request_id,
+        return register_unit_request_runtime(
             task_id=task_id,
-            task_label=task.label,
-            task_summary=task.raw_text[:60],
             category=category,
             count=count,
             urgency=urgency,
             hint=hint,
-            blocking=bool(blocking),
-            min_start_package=normalized_min_start,
+            blocking=blocking,
+            min_start_package=min_start_package,
+            tasks=self.tasks,
+            unit_requests=self._unit_requests,
+            infer_unit_type_for_request=infer_unit_type_for_request,
+            ensure_reservation_for_request=self._ensure_reservation_for_request,
+            try_fulfill_from_idle=self._try_fulfill_from_idle,
+            update_request_status_from_progress=update_request_status_from_progress,
+            bootstrap_production_for_request=self._bootstrap_production_for_request,
+            sync_world_runtime=self._sync_world_runtime,
+            notify_capability_unfulfilled=self._notify_capability_unfulfilled,
+            suspend_agent_for_requests=self._suspend_agent_for_requests,
+            unit_request_result=lambda req, status: self._unit_request_result(req, status=status),
+            gen_id=_gen_id,
         )
-        self._unit_requests[request_id] = req
-        unit_type, queue_type = infer_unit_type_for_request(req.category, req.hint)
-        if unit_type is not None and queue_type is not None:
-            self._ensure_reservation_for_request(req, unit_type)
-
-        # Step 1: idle matching
-        if self._try_fulfill_from_idle(req):
-            update_request_status_from_progress(req)
-            slog.info("Unit request fulfilled from idle", event="unit_request_fulfilled",
-                      task_id=task_id, request_id=request_id, actor_ids=req.assigned_actor_ids)
-            result = self._unit_request_result(req, status="fulfilled")
-            result["actor_ids"] = list(req.assigned_actor_ids)
-            return result
-
-        # Partial idle match updates status
-        update_request_status_from_progress(req)
-
-        # Step 2: fast-path bootstrap production for remaining
-        bootstrap_outcome = self._bootstrap_production_for_request(req)
-
-        # Sync so Capability sees the new request in runtime_facts
-        self._sync_world_runtime()
-
-        # If fast-path couldn't handle it, notify Capability
-        if bootstrap_outcome.notify_capability:
-            self._notify_capability_unfulfilled(req)
-
-        # Suspend requesting agent if there are pending requests
-        self._suspend_agent_for_requests(task_id)
-
-        slog.info("Unit request registered", event="unit_request",
-                  task_id=task_id, request_id=request_id,
-                  category=category, count=count, urgency=urgency, hint=hint,
-                  fulfilled=req.fulfilled, status=req.status,
-                  blocking=req.blocking, min_start_package=req.min_start_package)
-        return self._unit_request_result(req, status="waiting")
 
     def cancel_unit_request(self, request_id: str) -> bool:
         """Cancel a pending unit request."""
@@ -584,24 +545,16 @@ class Kernel:
         )
 
     def _try_fulfill_from_idle(self, req: UnitRequest) -> bool:
-        """Try to fulfill a request from idle, unbound units on the field."""
-        if req.category == "building":
-            return False
-        actor_category = _CATEGORY_TO_ACTOR_CATEGORY.get(req.category)
-        if actor_category is None:
-            return False
-        idle = self.world_model.find_actors(
-            owner="self", idle_only=True, unbound_only=True,
-            category=actor_category,
+        return try_fulfill_from_idle_runtime(
+            req,
+            world_model=self.world_model,
+            category_to_actor_category=_CATEGORY_TO_ACTOR_CATEGORY,
+            hint_match_score=hint_match_score,
+            bind_actor_to_request=lambda request, actor: self._bind_actor_to_request(
+                request,
+                actor,
+            ),
         )
-        if not idle:
-            return False
-        # Sort by hint relevance (exact name match first)
-        idle.sort(key=lambda a: hint_match_score(a, req.hint), reverse=True)
-        to_bind = idle[:req.count - req.fulfilled]
-        for actor in to_bind:
-            self._bind_actor_to_request(req, actor)
-        return req.fulfilled >= req.count
 
     def _bind_actor_to_request(self, req: UnitRequest, actor: Any, *, produced: bool = False) -> None:
         """Bind an actor to a unit request."""
