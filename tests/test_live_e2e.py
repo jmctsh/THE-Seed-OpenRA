@@ -287,6 +287,11 @@ class LiveTestRunner:
         replay = self._task_replays.get(task_id)
         return dict(replay) if isinstance(replay, dict) else None
 
+    def has_task_surface(self, task_id: str) -> bool:
+        if self.get_task(task_id) is not None:
+            return True
+        return any(str(item.get("task_id") or "") == task_id for item in self._task_messages)
+
     @staticmethod
     def extract_task_id(reply: str) -> Optional[str]:
         match = re.search(r"\b(t_[0-9a-f]+)\b", reply)
@@ -347,6 +352,23 @@ class LiveTestSuite:
     def __init__(self, runner: LiveTestRunner) -> None:
         self.runner = runner
 
+    async def _require_task_surface(self, reply: str, *, timeout: float = 10.0) -> Optional[str]:
+        task_id = self.runner.extract_task_id(reply)
+        if task_id is None:
+            raise RuntimeError(
+                f"command reply did not include task_id; reply={reply}; {self.runner.recent_debug_context()}"
+            )
+        ok = await self.runner.wait_for_ws_state(
+            lambda: self.runner.has_task_surface(task_id),
+            timeout=timeout,
+        )
+        if not ok:
+            raise RuntimeError(
+                f"task {task_id} never surfaced in task_update/task_message; reply={reply}; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        return task_id
+
     async def _wait_for_structure_result(
         self,
         *,
@@ -391,6 +413,7 @@ class LiveTestSuite:
         if before > 0 and before_mcv == 0:
             return "skip: construction yard already exists and no undeployed mcv is present"
         reply = await self.runner.send_command("部署基地车")
+        await self._require_task_surface(reply)
         ok = await self.runner.wait_for_game_state(
             lambda actors: self.runner.count_matching_actors(["建造厂", "construction yard"], faction="己方") > before,
             timeout=90.0,
@@ -423,6 +446,7 @@ class LiveTestSuite:
     async def test_phase_c_produce_infantry(self) -> str:
         before = self.runner.count_matching_actors("e1", faction="己方")
         reply = await self.runner.send_command("生产3个步兵")
+        await self._require_task_surface(reply)
         ok = await self.runner.wait_for_game_state(
             lambda actors: self.runner.count_matching_actors("e1", faction="己方") >= before + 3,
             timeout=120.0,
@@ -435,6 +459,7 @@ class LiveTestSuite:
 
     async def test_phase_d_recon(self) -> str:
         reply = await self.runner.send_command("探索地图")
+        await self._require_task_surface(reply)
         ok = await self.runner.wait_for_ws_state(
             lambda: any(
                 job.get("expert_type") == "ReconExpert"

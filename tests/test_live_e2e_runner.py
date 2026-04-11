@@ -89,6 +89,19 @@ def test_live_runner_captures_diagnostics_payloads_and_task_replay(monkeypatch) 
     assert "正在执行" in debug
 
 
+def test_live_runner_has_task_surface_from_update_or_message(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    runner = live_e2e.LiveTestRunner()
+
+    assert runner.has_task_surface("t_1") is False
+
+    runner._handle_message({"type": "task_message", "data": {"task_id": "t_1", "content": "正在执行"}})
+    assert runner.has_task_surface("t_1") is True
+
+    runner._handle_message({"type": "task_update", "data": {"task_id": "t_2", "status": "running"}})
+    assert runner.has_task_surface("t_2") is True
+
+
 def test_live_runner_request_task_replay_waits_for_matching_payload(monkeypatch) -> None:
     monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
     runner = live_e2e.LiveTestRunner()
