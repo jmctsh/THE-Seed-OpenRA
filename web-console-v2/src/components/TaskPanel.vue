@@ -29,6 +29,11 @@
         <div v-if="getTaskStatusLine(task)" class="task-hint">
           {{ getTaskStatusLine(task) }}
         </div>
+        <div v-if="getTaskTriageMeta(task).length" class="task-triage-meta">
+          <span v-for="item in getTaskTriageMeta(task)" :key="`${task.task_id}-${item}`" class="task-triage-chip">
+            {{ item }}
+          </span>
+        </div>
         <div v-if="task.jobs?.length" class="task-jobs">
           <div class="task-jobs-title">Experts · {{ task.job_count }}</div>
           <div v-for="job in task.jobs" :key="job.job_id" class="job-row">
@@ -169,6 +174,17 @@ function getTaskStatusLine(task) {
   return getLegacyTaskWaitingHint(task)
 }
 
+function getTaskTriageMeta(task) {
+  const triage = task?.triage || {}
+  const items = []
+  if (triage.waiting_reason) items.push(`waiting=${triage.waiting_reason}`)
+  if (triage.blocking_reason) items.push(`blocker=${triage.blocking_reason}`)
+  const reservationCount = Array.isArray(triage.reservation_ids) ? triage.reservation_ids.length : 0
+  if (reservationCount) items.push(`reservations=${reservationCount}`)
+  if (triage.world_stale) items.push('world=stale')
+  return items
+}
+
 if (props.on) {
   props.on('task_list', (msg) => {
     latestTaskList = msg.data?.tasks || []
@@ -265,6 +281,19 @@ onUnmounted(() => {
   color: #8a6d3b;
   font-size: 11px;
   line-height: 1.4;
+}
+.task-triage-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.task-triage-chip {
+  font-size: 10px;
+  color: #546e7a;
+  background: #eef3f6;
+  border-radius: 999px;
+  padding: 2px 6px;
 }
 .task-collapsed-hint {
   margin-top: 4px;

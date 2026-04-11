@@ -30,6 +30,9 @@
       <div class="triage-meta">
         <span>state={{ selectedTaskTriage.state }}</span>
         <span v-if="selectedTaskTriage.phase">phase={{ selectedTaskTriage.phase }}</span>
+        <span v-if="selectedTaskTriage.waiting_reason">waiting={{ selectedTaskTriage.waiting_reason }}</span>
+        <span v-if="selectedTaskTriage.blocking_reason">blocker={{ selectedTaskTriage.blocking_reason }}</span>
+        <span v-if="selectedTaskTriage.reservation_ids?.length">reservations={{ selectedTaskTriage.reservation_ids.length }}</span>
         <span v-if="selectedTaskTriage.active_expert">expert={{ selectedTaskTriage.active_expert }}</span>
         <span v-if="selectedTaskTriage.active_group_size">group={{ selectedTaskTriage.active_group_size }}</span>
         <span v-if="selectedTaskTriage.world_stale">world=stale</span>
@@ -52,6 +55,15 @@
           <span>state={{ selectedTaskReplayBundle.current_runtime.triage.state }}</span>
           <span v-if="selectedTaskReplayBundle.current_runtime.triage.phase">
             phase={{ selectedTaskReplayBundle.current_runtime.triage.phase }}
+          </span>
+          <span v-if="selectedTaskReplayBundle.current_runtime.triage.waiting_reason">
+            waiting={{ selectedTaskReplayBundle.current_runtime.triage.waiting_reason }}
+          </span>
+          <span v-if="selectedTaskReplayBundle.current_runtime.triage.blocking_reason">
+            blocker={{ selectedTaskReplayBundle.current_runtime.triage.blocking_reason }}
+          </span>
+          <span v-if="selectedTaskReplayBundle.current_runtime.triage.reservation_ids?.length">
+            reservations={{ selectedTaskReplayBundle.current_runtime.triage.reservation_ids.length }}
           </span>
           <span v-if="selectedTaskReplayBundle.current_runtime.triage.active_expert">
             expert={{ selectedTaskReplayBundle.current_runtime.triage.active_expert }}
@@ -280,7 +292,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, reactive, defineProps, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, reactive, onMounted, onUnmounted, watch } from 'vue'
 import {
   formatTaskLabel,
   registerTaskLabel,

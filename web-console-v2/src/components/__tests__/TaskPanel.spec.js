@@ -114,4 +114,42 @@ describe('TaskPanel', () => {
     expect(wrapper.find('.status-badge').text()).toBe('running')
     expect(wrapper.find('.job-expert').text()).toBe('EconomyExpert')
   })
+
+  it('renders structured triage metadata chips when present', async () => {
+    const bus = createBus()
+    const wrapper = mount(TaskPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('task_list', {
+      tasks: [
+        {
+          task_id: 't_2',
+          raw_text: '发展经济',
+          status: 'running',
+          timestamp: 100,
+          priority: 20,
+          triage: {
+            status_line: '等待能力模块交付单位：重坦 × 2',
+            waiting_reason: 'unit_reservation',
+            blocking_reason: 'missing_prerequisite',
+            reservation_ids: ['res_1'],
+            world_stale: true,
+          },
+          jobs: [],
+          job_count: 0,
+        },
+      ],
+      pending_questions: [],
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('waiting=unit_reservation')
+    expect(wrapper.text()).toContain('blocker=missing_prerequisite')
+    expect(wrapper.text()).toContain('reservations=1')
+    expect(wrapper.text()).toContain('world=stale')
+  })
 })
