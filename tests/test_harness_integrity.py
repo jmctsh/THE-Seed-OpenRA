@@ -2,7 +2,27 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
+
+
+def _has_main_runner(path: Path) -> bool:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
+            continue
+        if not isinstance(node.test.left, ast.Name) or node.test.left.id != "__name__":
+            continue
+        values: list[object | None] = []
+        left = node.test.left
+        values.append(left.value if isinstance(left, ast.Constant) else None)
+        values.extend(
+            comparator.value if isinstance(comparator, ast.Constant) else None
+            for comparator in node.test.comparators
+        )
+        if "__main__" in values:
+            return True
+    return False
 
 
 def test_runtime_e2e_files_are_explicitly_layered() -> None:
@@ -34,9 +54,47 @@ def test_regular_test_files_delegate_main_runner_to_pytest() -> None:
     expected = 'raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))'
     for path in sorted(root.glob("test_*.py")):
         text = path.read_text(encoding="utf-8")
-        if 'if __name__ == "__main__":' not in text:
+        if not _has_main_runner(path):
             continue
         if path.name in manual_script_files:
             assert expected not in text, path.name
             continue
         assert expected in text, path.name
+
+
+def test_pytest_only_test_files_are_explicit_and_bounded() -> None:
+    root = Path(__file__).resolve().parent
+    expected_pytest_only = {
+        "test_benchmark.py",
+        "test_capability_task.py",
+        "test_clustering.py",
+        "test_e2e_capability_bootstrap.py",
+        "test_harness_integrity.py",
+        "test_kernel_defend_base_auto_response.py",
+        "test_kernel_event_delivery.py",
+        "test_kernel_event_orchestration.py",
+        "test_kernel_job_lifecycle.py",
+        "test_kernel_player_interaction.py",
+        "test_kernel_query_views.py",
+        "test_kernel_resource_assignment.py",
+        "test_kernel_resource_need_inference.py",
+        "test_kernel_runtime_projection.py",
+        "test_kernel_session_reset.py",
+        "test_kernel_signal_delivery.py",
+        "test_kernel_task_creation.py",
+        "test_kernel_task_lifecycle.py",
+        "test_kernel_task_runtime_ops.py",
+        "test_kernel_unit_request_entry.py",
+        "test_kernel_unit_request_fulfillment.py",
+        "test_live_e2e_runner.py",
+        "test_task_agent_policy.py",
+        "test_unit_request_bootstrap.py",
+        "test_unit_request_lifecycle.py",
+        "test_unit_request_state.py",
+    }
+    actual_pytest_only = {
+        path.name
+        for path in sorted(root.glob("test_*.py"))
+        if not _has_main_runner(path)
+    }
+    assert actual_pytest_only == expected_pytest_only
