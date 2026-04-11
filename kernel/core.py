@@ -60,6 +60,12 @@ from .unit_request_bookkeeping import (
     request_start_goal,
     reservation_for_request,
 )
+from .unit_request_matching import (
+    hint_match_score,
+    infer_unit_type,
+    matching_idle_actors,
+    sort_pending_requests,
+)
 from .runtime_projection import build_capability_status_snapshot
 from runtime_views import CapabilityStatusSnapshot
 from task_agent import AgentConfig, TaskAgent, TaskToolHandlers, ToolExecutor, WorldSummary
@@ -698,31 +704,15 @@ class Kernel:
 
     @staticmethod
     def _hint_match_score(actor: Any, hint: str) -> int:
-        """Score how well an actor matches the hint. Higher = better."""
-        if not hint:
-            return 0
-        name = getattr(actor, "name", "") or ""
-        display = getattr(actor, "display_name", "") or ""
-        if name and name in hint:
-            return 2
-        if display and display in hint:
-            return 2
-        return 0
+        return hint_match_score(actor, hint)
 
     def _infer_unit_type(self, category: str, hint: str) -> tuple[Optional[str], Optional[str]]:
-        """Infer concrete (unit_type, queue_type) from category + hint.
-
-        Returns (None, None) if no inference possible — leaves it for Capability.
-        """
-        # Try hint keywords first
-        for keyword, (unit_type, queue_type) in _HINT_TO_UNIT.items():
-            if keyword in hint:
-                return unit_type, queue_type
-        # Fall back to category default
-        default = _CATEGORY_DEFAULTS.get(category)
-        if default:
-            return default
-        return None, None
+        return infer_unit_type(
+            category,
+            hint,
+            hint_to_unit=_HINT_TO_UNIT,
+            category_defaults=_CATEGORY_DEFAULTS,
+        )
 
     def _request_reason(self, req: UnitRequest, reservation: Optional[UnitReservation], unit_type: str) -> str:
         return unit_request_reason(
@@ -825,23 +815,13 @@ class Kernel:
         if not idle:
             return
 
-        def _available_match_count(req: UnitRequest) -> int:
-            actor_category = _CATEGORY_TO_ACTOR_CATEGORY.get(req.category)
-            matched = [
-                actor for actor in idle
-                if actor_category is None or actor.category.value == actor_category
-            ]
-            return len(matched)
-
-        pending = sorted(
+        pending = sort_pending_requests(
             [r for r in self._unit_requests.values() if r.status in ("pending", "partial")],
-            key=lambda r: (
-                -_URGENCY_WEIGHT.get(r.urgency, 1),
-                -int(bool(r.blocking)),
-                -int((r.fulfilled + _available_match_count(r)) >= max(1, r.min_start_package)),
-                -(self.tasks[r.task_id].priority if r.task_id in self.tasks else 0),
-                r.created_at,
-            ),
+            idle,
+            category_to_actor_category=_CATEGORY_TO_ACTOR_CATEGORY,
+            urgency_weight=_URGENCY_WEIGHT,
+            task_priority_for=lambda task_id: self.tasks[task_id].priority if task_id in self.tasks else 0,
+            request_start_goal=self._request_start_goal,
         )
         if not pending:
             return
@@ -852,9 +832,11 @@ class Kernel:
                 continue
             if req.category == "building":
                 continue
-            actor_category = _CATEGORY_TO_ACTOR_CATEGORY.get(req.category)
-            matched = [a for a in idle if actor_category is None
-                       or a.category.value == actor_category]
+            matched = matching_idle_actors(
+                req,
+                idle,
+                category_to_actor_category=_CATEGORY_TO_ACTOR_CATEGORY,
+            )
             matched.sort(key=lambda a: self._hint_match_score(a, req.hint), reverse=True)
             for actor in matched[:remaining]:
                 # These actors came from the live idle pool, not from an explicit
