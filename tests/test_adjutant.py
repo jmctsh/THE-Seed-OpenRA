@@ -1319,6 +1319,52 @@ def test_deploy_feedback_uses_atomic_actor_snapshot_for_short_circuit():
     print("  PASS: deploy_feedback_uses_atomic_actor_snapshot_for_short_circuit")
 
 
+def test_deploy_feedback_falls_back_to_targeted_queries_when_full_snapshot_missing():
+    class TargetedOnlyDeployTruthWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            if query_type == "my_actors" and not params:
+                return {"data": [], "timestamp": time.time()}
+            if query_type == "my_actors" and params == {"category": "mcv"}:
+                return {
+                    "actors": [
+                        {
+                            "actor_id": 99,
+                            "type": "mcv",
+                            "display_name": "基地车",
+                            "category": "mcv",
+                            "position": [500, 400],
+                        }
+                    ],
+                    "timestamp": time.time(),
+                }
+            if query_type == "my_actors" and params == {"type": "建造厂"}:
+                return {"actors": [], "timestamp": time.time()}
+            return super().query(query_type, params)
+
+        def compute_runtime_facts(self, task_id, *, include_buildable=False):
+            del task_id, include_buildable
+            return {"mcv_count": 1, "has_construction_yard": False}
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = TargetedOnlyDeployTruthWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("展开基地车")
+        assert result["type"] == "command"
+        assert result["ok"] is True
+        assert result["routing"] == "nlu"
+        assert result["expert_type"] == "DeployExpert"
+        assert result["nlu_route_intent"] == "deploy_mcv"
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.started_jobs[0]["config"].actor_id == 99
+    print("  PASS: deploy_feedback_falls_back_to_targeted_queries_when_full_snapshot_missing")
+
+
 def test_deploy_feedback_treats_sentence_final_particles_as_query():
     class AlreadyDeployedWorldModel(MockWorldModel):
         def query(self, query_type, params=None):
