@@ -107,6 +107,7 @@ from .task_runtime_ops import (
     release_task_job_resources as release_task_runtime_job_resources,
     stop_task_runtime,
 )
+from .signal_delivery import route_expert_signal
 from .task_questions import PendingQuestionStore
 from runtime_views import CapabilityStatusSnapshot
 from task_agent import AgentConfig, TaskAgent, TaskToolHandlers, ToolExecutor, WorldSummary
@@ -1052,37 +1053,16 @@ class Kernel:
                 self.route_event(event)
 
     def route_signal(self, signal: ExpertSignal) -> None:
-        task = self.tasks.get(signal.task_id)
-        if task is None or task.status in {
-            TaskStatus.SUCCEEDED,
-            TaskStatus.FAILED,
-            TaskStatus.ABORTED,
-            TaskStatus.PARTIAL,
-        }:
-            return
-        runtime = self._task_runtimes.get(signal.task_id)
-        if runtime is None:
-            return
         slog.info("Kernel routed expert signal", event="signal_routed", task_id=signal.task_id, job_id=signal.job_id, signal_kind=signal.kind.value, result=signal.result)
-        if signal.kind == SignalKind.BLOCKED:
-            self.register_task_message(
-                TaskMessage(
-                    message_id=_gen_id("msg_"),
-                    task_id=signal.task_id,
-                    type=TaskMessageType.TASK_WARNING,
-                    content=signal.summary,
-                    priority=task.priority,
-                )
-            )
-
-        # Direct-managed tasks have no running agent — auto-close on TASK_COMPLETE
-        if signal.kind == SignalKind.TASK_COMPLETE and self.is_direct_managed(signal.task_id):
-            result_map = {"succeeded": "succeeded", "failed": "failed", "aborted": "failed"}
-            result = result_map.get(signal.result, "succeeded")
-            self.complete_task(signal.task_id, result, signal.summary or "direct job completed")
-            return
-
-        runtime.agent.push_signal(signal)
+        route_expert_signal(
+            signal,
+            tasks=self.tasks,
+            task_runtimes=self._task_runtimes,
+            is_direct_managed=self.is_direct_managed,
+            register_task_message=self.register_task_message,
+            complete_task=self.complete_task,
+            gen_message_id=_gen_id,
+        )
 
     def get_task_agent(self, task_id: str) -> Optional[TaskAgentLike]:
         runtime = self._task_runtimes.get(task_id)
