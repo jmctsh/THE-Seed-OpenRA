@@ -702,10 +702,10 @@ def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
     buildable = rf.get("buildable", {})
     if isinstance(buildable, dict):
         filtered["buildable"] = filter_demo_capability_buildable(buildable)
-    buildable_now = rf.get("buildable_now", {})
+    buildable_now = rf.get("buildable_now")
     if isinstance(buildable_now, dict):
         filtered["buildable_now"] = filter_demo_capability_buildable(buildable_now)
-    buildable_blocked = rf.get("buildable_blocked", {})
+    buildable_blocked = rf.get("buildable_blocked")
     if isinstance(buildable_blocked, dict):
         filtered_blocked: dict[str, list[dict[str, Any]]] = {}
         for queue_type in demo_capability_queue_types():
@@ -859,10 +859,33 @@ def _build_capability_base_progression(rf: dict[str, Any]) -> str:
     if action_required:
         line += f" | action={action_required}"
     next_unit_type = str(progression.get("next_unit_type", "") or "")
+    next_queue_type = str(progression.get("next_queue_type", "") or demo_queue_type_for(next_unit_type) or "")
     if next_unit_type:
         line += f" | next={next_unit_type}"
-    if progression.get("buildable_now"):
+    runtime_buildable_now = {
+        str(item).lower()
+        for item in list((rf.get("buildable_now", {}) or {}).get(next_queue_type, []) or [])
+        if item is not None
+    }
+    blocked_entry = None
+    for item in list((rf.get("buildable_blocked", {}) or {}).get(next_queue_type, []) or []):
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("unit_type") or "").lower() == next_unit_type:
+            blocked_entry = item
+            break
+    has_runtime_buildable_now = isinstance(rf.get("buildable_now"), dict)
+    can_progress_now = bool(next_unit_type and next_unit_type in runtime_buildable_now)
+    if next_unit_type and not has_runtime_buildable_now and bool(progression.get("buildable_now")):
+        can_progress_now = True
+    if can_progress_now:
         line += " | 可直接推进"
+    elif blocked_entry is not None:
+        blocked_label = _readiness_reason_label(
+            str(blocked_entry.get("reason") or ""),
+            queue_blocked_reason=str(blocked_entry.get("queue_blocked_reason") or ""),
+        )
+        line += f" | 当前受阻:{blocked_label}"
     return line
 
 

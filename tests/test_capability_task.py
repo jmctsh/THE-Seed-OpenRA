@@ -137,6 +137,30 @@ def test_capability_context_has_base_progression_hint():
     assert "可直接推进" in msg["content"]
 
 
+def test_capability_base_progression_does_not_claim_direct_progress_when_blocked():
+    rf = {
+        "has_construction_yard": True,
+        "mcv_count": 0,
+        "power_plant_count": 1,
+        "refinery_count": 0,
+        "barracks_count": 0,
+        "war_factory_count": 0,
+        "buildable": {"Building": ["proc", "barr"]},
+        "buildable_now": {"Building": []},
+        "buildable_blocked": {
+            "Building": [
+                {"unit_type": "proc", "queue_type": "Building", "reason": "low_power"},
+            ]
+        },
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "[基地推进]" in msg["content"]
+    assert "next=proc" in msg["content"]
+    assert "当前受阻:低电" in msg["content"]
+    assert "可直接推进" not in msg["content"]
+
+
 def test_capability_context_distinguishes_issue_now_from_prereq_truth():
     rf = {
         "buildable": {"Building": ["powr", "proc", "barr"]},
