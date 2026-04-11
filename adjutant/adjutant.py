@@ -949,13 +949,24 @@ class Adjutant:
         elif battlefield.get("queue_blocked"):
             queue_reason = str(battlefield.get("queue_blocked_reason", "") or "")
             queue_types = [str(item) for item in list(battlefield.get("queue_blocked_queue_types", []) or []) if item]
+            queue_items = [
+                dict(item)
+                for item in list(battlefield.get("queue_blocked_items", []) or [])
+                if isinstance(item, dict)
+            ]
             queue_suffix = f"（{','.join(queue_types)}）" if queue_types else ""
+            queue_items_suffix = ""
+            if queue_items:
+                queue_items_suffix = "：" + "、".join(
+                    str(item.get("display_name") or item.get("unit_type") or "?")
+                    for item in queue_items[:2]
+                )
             if queue_reason == "paused":
-                add_alert("queue_blocked", "warning", f"生产队列被暂停{queue_suffix}")
+                add_alert("queue_blocked", "warning", f"生产队列被暂停{queue_suffix}{queue_items_suffix}")
             elif queue_reason == "ready_not_placed":
-                add_alert("queue_blocked", "warning", f"生产队列有已完成未放置条目{queue_suffix}")
+                add_alert("queue_blocked", "warning", f"生产队列有已完成未放置条目{queue_suffix}{queue_items_suffix}")
             else:
-                add_alert("queue_blocked", "warning", f"生产队列存在阻塞{queue_suffix}")
+                add_alert("queue_blocked", "warning", f"生产队列存在阻塞{queue_suffix}{queue_items_suffix}")
         disabled_structures = [str(item) for item in list(battlefield.get("disabled_structures", []) or []) if item]
         if disabled_structures:
             preview = "、".join(disabled_structures[:2])

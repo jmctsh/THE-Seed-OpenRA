@@ -168,7 +168,15 @@ def test_capability_context_distinguishes_issue_now_from_prereq_truth():
         "buildable_blocked": {
             "Building": [
                 {"unit_type": "proc", "queue_type": "Building", "reason": "low_power"},
-                {"unit_type": "barr", "queue_type": "Building", "reason": "queue_blocked", "queue_blocked_reason": "ready_not_placed"},
+                {
+                    "unit_type": "barr",
+                    "queue_type": "Building",
+                    "reason": "queue_blocked",
+                    "queue_blocked_reason": "ready_not_placed",
+                    "queue_blocked_items": [
+                        {"queue_type": "Building", "unit_type": "powr", "display_name": "电厂"},
+                    ],
+                },
             ]
         },
     }
@@ -179,6 +187,7 @@ def test_capability_context_distinguishes_issue_now_from_prereq_truth():
     assert "[前置已满足但当前受阻]" in msg["content"]
     assert "proc(矿场)=低电" in msg["content"]
     assert "barr(兵营)=队列有已完成未放置条目" in msg["content"]
+    assert "成品:电厂" in msg["content"]
     assert "[前置已满足]" in msg["content"]
 
 
@@ -205,6 +214,35 @@ def test_capability_context_has_unfulfilled_requests():
     assert "REQ-r001" in msg["content"]
     assert "aircraft" in msg["content"]
     assert "无机场" in msg["content"]
+
+
+def test_capability_context_surfaces_request_queue_block_detail():
+    rf = {
+        "unfulfilled_requests": [
+            {
+                "request_id": "r003",
+                "task_label": "005",
+                "category": "vehicle",
+                "unit_type": "ftrk",
+                "queue_type": "Vehicle",
+                "count": 1,
+                "fulfilled": 0,
+                "urgency": "medium",
+                "hint": "防空车",
+                "reason": "queue_blocked",
+                "queue_blocked_reason": "ready_not_placed",
+                "queue_blocked_queue_types": ["Building"],
+                "queue_blocked_items": [
+                    {"queue_type": "Building", "unit_type": "powr", "display_name": "发电厂"},
+                ],
+            }
+        ]
+    }
+    packet = _make_context_packet(runtime_facts=rf)
+    msg = context_to_message(packet, is_capability=True)
+    assert "队列:Building" in msg["content"]
+    assert "细因:队列有已完成未放置条目" in msg["content"]
+    assert "成品:发电厂" in msg["content"]
 
 
 def test_capability_context_translates_request_reason_labels():
@@ -450,7 +488,37 @@ def test_capability_context_marks_deploy_mcv_as_action_not_production():
     assert "[基地推进]" in msg["content"]
     assert "基地车待展开" in msg["content"]
     assert "action=deploy_mcv" in msg["content"]
+    assert "query_world(my_actors, category=mcv)" in msg["content"]
     assert "next=fact" not in msg["content"]
+
+
+def test_capability_base_state_surfaces_disabled_structure_preview():
+    packet = ContextPacket(
+        task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {"cash": 5000, "power_provided": 100, "power_drained": 40}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[],
+        recent_events=[],
+        open_decisions=[],
+        runtime_facts={
+            "has_construction_yard": True,
+            "mcv_count": 0,
+            "power_plant_count": 1,
+            "refinery_count": 1,
+            "barracks_count": 0,
+            "war_factory_count": 1,
+            "radar_count": 1,
+            "repair_facility_count": 0,
+            "airfield_count": 0,
+            "tech_center_count": 0,
+            "harvester_count": 1,
+            "disabled_structure_count": 2,
+            "low_power_disabled_structure_count": 1,
+            "disabled_structures": ["战车工厂(powerdown)", "雷达站(lowpower)"],
+        },
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "离线明细=战车工厂(powerdown)、雷达站(lowpower)" in msg["content"]
 
 
 def test_capability_context_surfaces_queue_block_reason():

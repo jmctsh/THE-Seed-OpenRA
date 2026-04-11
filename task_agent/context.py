@@ -400,6 +400,28 @@ def _build_unfulfilled_requests(rf: dict[str, Any]) -> str:
             line += f" start>={min_start_package}"
         if reason:
             line += f" 原因:{reason_labels.get(reason, reason)}"
+        queue_blocked_reason = str(r.get("queue_blocked_reason", "") or "")
+        queue_blocked_queue_types = [
+            str(item)
+            for item in list(r.get("queue_blocked_queue_types", []) or [])
+            if item
+        ]
+        queue_blocked_items = [
+            dict(item)
+            for item in list(r.get("queue_blocked_items", []) or [])
+            if isinstance(item, dict)
+        ]
+        if reason == "queue_blocked":
+            if queue_blocked_queue_types:
+                line += f" 队列:{','.join(queue_blocked_queue_types)}"
+            if queue_blocked_reason:
+                line += f" 细因:{_readiness_reason_label('queue_blocked', queue_blocked_reason=queue_blocked_reason)}"
+            if queue_blocked_items:
+                names = "、".join(
+                    str(item.get("display_name") or item.get("unit_type") or "?")
+                    for item in queue_blocked_items[:2]
+                )
+                line += f" 成品:{names}"
         prerequisites = [
             demo_prompt_display_name_for(item)
             for item in list(r.get("prerequisites", []) or [])
@@ -458,6 +480,17 @@ def _build_capability_queue_block_state(rf: dict[str, Any]) -> str:
     line = f"[队列阻塞] {reason_text}"
     if queues:
         line += f" | queues={','.join(queues)}"
+    blocked_items = [
+        dict(item)
+        for item in list(rf.get("queue_blocked_items", []) or [])
+        if isinstance(item, dict)
+    ]
+    if blocked_items:
+        names = "、".join(
+            str(item.get("display_name") or item.get("unit_type") or "?")
+            for item in blocked_items[:3]
+        )
+        line += f" | items={names}"
     return line
 
 
@@ -629,6 +662,28 @@ def _build_capability_blocker_block(rf: dict[str, Any], signals: list[dict[str, 
             line += f' "{hint}"'
         if reason:
             line += f" 原因:{reason}"
+        queue_blocked_reason = str(req.get("queue_blocked_reason", "") or "")
+        queue_blocked_queue_types = [
+            str(item)
+            for item in list(req.get("queue_blocked_queue_types", []) or [])
+            if item
+        ]
+        queue_blocked_items = [
+            dict(item)
+            for item in list(req.get("queue_blocked_items", []) or [])
+            if isinstance(item, dict)
+        ]
+        if reason == "queue_blocked":
+            if queue_blocked_queue_types:
+                line += f" 队列:{','.join(queue_blocked_queue_types)}"
+            if queue_blocked_reason:
+                line += f" 细因:{_readiness_reason_label('queue_blocked', queue_blocked_reason=queue_blocked_reason)}"
+            if queue_blocked_items:
+                names = "、".join(
+                    str(item.get("display_name") or item.get("unit_type") or "?")
+                    for item in queue_blocked_items[:2]
+                )
+                line += f" 成品:{names}"
         prerequisites = [
             demo_prompt_display_name_for(item)
             for item in list(req.get("prerequisites", []) or [])
@@ -722,6 +777,11 @@ def _capability_runtime_facts_view(rf: dict[str, Any]) -> dict[str, Any]:
                     "queue_type": queue_type,
                     "reason": str(item.get("reason") or ""),
                     "queue_blocked_reason": str(item.get("queue_blocked_reason") or ""),
+                    "queue_blocked_items": [
+                        dict(value)
+                        for value in list(item.get("queue_blocked_items", []) or [])
+                        if isinstance(value, dict)
+                    ],
                     "disabled_producers": [str(value) for value in list(item.get("disabled_producers", []) or []) if value],
                 })
             if keep:
@@ -753,6 +813,12 @@ def _build_capability_base_state(rf: dict[str, Any]) -> str:
         fields.append(f"离线建筑={disabled_count}")
     if low_power_disabled_count:
         fields.append(f"低电离线={low_power_disabled_count}")
+    disabled_structures = [str(item) for item in list(rf.get("disabled_structures", []) or []) if item]
+    if disabled_structures:
+        preview = "、".join(disabled_structures[:2])
+        if len(disabled_structures) > 2:
+            preview += f" 等{len(disabled_structures)}个"
+        fields.append(f"离线明细={preview}")
     return "[基地状态] " + " ".join(fields)
 
 
@@ -829,6 +895,17 @@ def _build_capability_blocked_buildable(rf: dict[str, Any]) -> str:
                 queue_blocked_reason=str(item.get("queue_blocked_reason") or ""),
             )
             line = f"{unit_type}({label})={reason}"
+            blocked_items = [
+                dict(value)
+                for value in list(item.get("queue_blocked_items", []) or [])
+                if isinstance(value, dict)
+            ]
+            if blocked_items and str(item.get("reason") or "") == "queue_blocked":
+                names = "、".join(
+                    str(value.get("display_name") or value.get("unit_type") or "?")
+                    for value in blocked_items[:2]
+                )
+                line += f" 成品:{names}"
             disabled_producers = [str(value) for value in list(item.get("disabled_producers", []) or []) if value]
             if disabled_producers and str(item.get("reason") or "") == "producer_disabled":
                 line += f" 生产点:{' + '.join(disabled_producers[:2])}"
@@ -858,6 +935,8 @@ def _build_capability_base_progression(rf: dict[str, Any]) -> str:
     action_required = str(progression.get("action_required", "") or "")
     if action_required:
         line += f" | action={action_required}"
+        if action_required == "deploy_mcv":
+            line += " | 先query_world(my_actors, category=mcv)获取actor_id"
     next_unit_type = str(progression.get("next_unit_type", "") or "")
     next_queue_type = str(progression.get("next_queue_type", "") or demo_queue_type_for(next_unit_type) or "")
     if next_unit_type:
@@ -886,6 +965,17 @@ def _build_capability_base_progression(rf: dict[str, Any]) -> str:
             queue_blocked_reason=str(blocked_entry.get("queue_blocked_reason") or ""),
         )
         line += f" | 当前受阻:{blocked_label}"
+        blocked_items = [
+            dict(value)
+            for value in list(blocked_entry.get("queue_blocked_items", []) or [])
+            if isinstance(value, dict)
+        ]
+        if blocked_items and str(blocked_entry.get("reason") or "") == "queue_blocked":
+            names = "、".join(
+                str(value.get("display_name") or value.get("unit_type") or "?")
+                for value in blocked_items[:2]
+            )
+            line += f"({names})"
     return line
 
 

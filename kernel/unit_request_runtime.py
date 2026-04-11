@@ -84,6 +84,17 @@ def build_unfulfilled_request_payloads(
                     production_readiness_for=production_readiness_for,
                 ),
                 "disabled_producers": list(readiness.get("disabled_producers", [])),
+                "queue_blocked_reason": str(readiness.get("queue_blocked_reason", "") or ""),
+                "queue_blocked_queue_types": [
+                    str(item)
+                    for item in list(readiness.get("queue_blocked_queue_types", []) or [])
+                    if item
+                ],
+                "queue_blocked_items": [
+                    dict(item)
+                    for item in list(readiness.get("queue_blocked_items", []) or [])
+                    if isinstance(item, dict)
+                ],
             }
         )
     return unfulfilled

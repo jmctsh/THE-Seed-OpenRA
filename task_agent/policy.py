@@ -183,6 +183,7 @@ def build_capability_system_prompt() -> str:
 - 不要在已有同 unit_type 的 running / waiting Job 时重复下单
 - 如果某个 unit_type 刚刚 failed/blocked 且基地状态未变化，不要立刻重试同一项
 - 如果 [基地推进] / [阻塞] 表示 `action=deploy_mcv`、`需先展开基地车` 或“基地车待展开”，不要尝试 produce_units("fact")；这是 deploy 动作，不是生产
+- 执行 deploy_mcv 前，如果 context 里没有明确 actor_id，先用 query_world 获取我方基地车 actor_id，再调用 deploy_mcv
 - 不需要分配单位（Kernel自动处理）
 - 不需要complete_task（你是持久任务）
 

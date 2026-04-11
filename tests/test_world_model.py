@@ -845,6 +845,14 @@ def test_production_readiness_marks_queue_blocked_for_ready_item() -> None:
     assert readiness["reason"] == "queue_blocked"
     assert readiness["queue_blocked_reason"] == "ready_not_placed"
     assert readiness["queue_blocked_queue_types"] == ["Building"]
+    assert readiness["queue_blocked_items"] == [
+        {
+            "queue_type": "Building",
+            "unit_type": "powr",
+            "display_name": "发电厂",
+            "owner_actor_id": 1,
+        }
+    ]
 
 
 def test_production_readiness_marks_producer_disabled_when_factory_is_offline() -> None:
@@ -906,9 +914,11 @@ def test_world_summary_and_runtime_facts_expose_queue_block_reason() -> None:
     assert summary["economy"]["queue_blocked"] is True
     assert summary["economy"]["queue_blocked_reason"] == "paused"
     assert summary["economy"]["queue_blocked_queue_types"] == ["Building"]
+    assert summary["economy"]["queue_blocked_items"] == []
     assert facts["queue_blocked"] is True
     assert facts["queue_blocked_reason"] == "paused"
     assert facts["queue_blocked_queue_types"] == ["Building"]
+    assert facts["queue_blocked_items"] == []
 
 
 def test_production_readiness_allows_power_recovery_while_low_power() -> None:

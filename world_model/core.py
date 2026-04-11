@@ -32,6 +32,7 @@ from openra_state.data.dataset import (
     demo_base_progression,
     demo_capability_buildability_snapshot,
     demo_capability_units_for_queue,
+    demo_display_name_for,
     demo_faction_hint_for_unit_types,
     demo_capability_queue_types,
     demo_queue_type_for,
@@ -453,6 +454,7 @@ class WorldModel:
                 "queue_blocked_reason": queue_block_state.get("reason", ""),
                 "queue_blocked_reasons": list(queue_block_state.get("reasons", [])),
                 "queue_blocked_queue_types": list(queue_block_state.get("queue_types", [])),
+                "queue_blocked_items": [dict(item) for item in list(queue_block_state.get("items", []))],
                 "disabled_structure_count": structure_power_state["disabled_structure_count"],
                 "powered_down_structure_count": structure_power_state["powered_down_structure_count"],
                 "low_power_disabled_structure_count": structure_power_state["low_power_disabled_structure_count"],
@@ -535,6 +537,7 @@ class WorldModel:
         queue_blocked = bool(economy.get("queue_blocked"))
         queue_blocked_reason = str(economy.get("queue_blocked_reason", "") or "")
         queue_blocked_queue_types = [str(item) for item in list(economy.get("queue_blocked_queue_types", []) or []) if item]
+        queue_blocked_items = [dict(item) for item in list(economy.get("queue_blocked_items", []) or []) if isinstance(item, dict)]
         disabled_structure_count = int(economy.get("disabled_structure_count", 0) or 0)
         powered_down_structure_count = int(economy.get("powered_down_structure_count", 0) or 0)
         low_power_disabled_structure_count = int(economy.get("low_power_disabled_structure_count", 0) or 0)
@@ -608,6 +611,12 @@ class WorldModel:
             summary_text += "，低电"
         if queue_blocked:
             summary_text += "，队列阻塞"
+            if queue_blocked_items:
+                preview = "、".join(
+                    str(item.get("display_name") or item.get("unit_type") or "?")
+                    for item in queue_blocked_items[:2]
+                )
+                summary_text += f"({preview})"
         if disabled_structure_count:
             summary_text += f"，离线建筑{disabled_structure_count}"
         if pending_requests:
@@ -633,6 +642,7 @@ class WorldModel:
             queue_blocked=queue_blocked,
             queue_blocked_reason=queue_blocked_reason,
             queue_blocked_queue_types=queue_blocked_queue_types,
+            queue_blocked_items=queue_blocked_items,
             disabled_structure_count=disabled_structure_count,
             powered_down_structure_count=powered_down_structure_count,
             low_power_disabled_structure_count=low_power_disabled_structure_count,
@@ -775,6 +785,7 @@ class WorldModel:
         facts["queue_blocked"] = bool(queue_block_state.get("blocked"))
         facts["queue_blocked_reason"] = str(queue_block_state.get("reason", "") or "")
         facts["queue_blocked_queue_types"] = list(queue_block_state.get("queue_types", []))
+        facts["queue_blocked_items"] = [dict(item) for item in list(queue_block_state.get("items", []))]
 
         if include_buildable:
             power_plant_cost = dataset_cost_for("powr") or 0
@@ -935,6 +946,7 @@ class WorldModel:
                     "queue_type": queue_type,
                     "reason": str(readiness.get("reason", "") or ""),
                     "queue_blocked_reason": str(readiness.get("queue_blocked_reason", "") or ""),
+                    "queue_blocked_items": [dict(item) for item in list(readiness.get("queue_blocked_items", [])) if isinstance(item, dict)],
                     "disabled_producers": list(readiness.get("disabled_producers", []) or []),
                 })
         return {
@@ -1068,10 +1080,18 @@ class WorldModel:
         selected = set(str(q) for q in (queue_types or self.state.production_queues.keys()) if q)
         reasons: list[str] = []
         blocked_queues: list[str] = []
+        blocked_items: list[dict[str, Any]] = []
         for qname, queue in self.state.production_queues.items():
             if selected and qname not in selected:
                 continue
             has_ready_item = bool(queue.get("has_ready_item"))
+            ready_items = [
+                self._queue_block_item_payload(qname, item)
+                for item in list(queue.get("items", []) or [])
+                if isinstance(item, dict) and (
+                    bool(item.get("done")) or str(item.get("status", "")).lower() in {"done", "completed"}
+                )
+            ]
             has_paused = any(
                 bool(item.get("paused"))
                 for item in queue.get("items", [])
@@ -1082,10 +1102,11 @@ class WorldModel:
             blocked_queues.append(str(qname))
             if has_ready_item and "ready_not_placed" not in reasons:
                 reasons.append("ready_not_placed")
+                blocked_items.extend(item for item in ready_items if item)
             if has_paused and "paused" not in reasons:
                 reasons.append("paused")
         if not blocked_queues:
-            return {"blocked": False, "reason": "", "reasons": [], "queue_types": []}
+            return {"blocked": False, "reason": "", "reasons": [], "queue_types": [], "items": []}
         if len(reasons) == 1:
             reason = reasons[0]
         else:
@@ -1095,6 +1116,21 @@ class WorldModel:
             "reason": reason,
             "reasons": reasons,
             "queue_types": blocked_queues,
+            "items": blocked_items,
+        }
+
+    def _queue_block_item_payload(self, queue_type: str, item: dict[str, Any]) -> dict[str, Any]:
+        unit_type = str(item.get("name") or "").lower()
+        display_name = str(item.get("display_name") or "")
+        if not display_name and unit_type:
+            display_name = demo_display_name_for(unit_type)
+        if not display_name:
+            display_name = unit_type or str(queue_type or "?")
+        return {
+            "queue_type": str(queue_type or ""),
+            "unit_type": unit_type,
+            "display_name": display_name,
+            "owner_actor_id": item.get("owner_actor_id"),
         }
 
     def _queue_producer_state(self, queue_type: str) -> dict[str, Any]:
@@ -1255,6 +1291,7 @@ class WorldModel:
             "queue_blocked": queue_blocked,
             "queue_blocked_reason": str(queue_block_state.get("reason", "") or ""),
             "queue_blocked_queue_types": list(queue_block_state.get("queue_types", [])),
+            "queue_blocked_items": [dict(item) for item in list(queue_block_state.get("items", [])) if isinstance(item, dict)],
             "producer_count": int(producer_state.get("producer_count", 0) or 0),
             "active_producer_count": int(producer_state.get("active_producer_count", 0) or 0),
             "disabled_producer_count": int(producer_state.get("disabled_producer_count", 0) or 0),

@@ -183,6 +183,7 @@ class BattlefieldSnapshot:
     queue_blocked: bool = False
     queue_blocked_reason: str = ""
     queue_blocked_queue_types: list[str] = field(default_factory=list)
+    queue_blocked_items: list[dict[str, Any]] = field(default_factory=list)
     disabled_structure_count: int = 0
     powered_down_structure_count: int = 0
     low_power_disabled_structure_count: int = 0
@@ -221,6 +222,7 @@ class BattlefieldSnapshot:
             "queue_blocked": self.queue_blocked,
             "queue_blocked_reason": self.queue_blocked_reason,
             "queue_blocked_queue_types": list(self.queue_blocked_queue_types),
+            "queue_blocked_items": [dict(item) for item in self.queue_blocked_items],
             "disabled_structure_count": self.disabled_structure_count,
             "powered_down_structure_count": self.powered_down_structure_count,
             "low_power_disabled_structure_count": self.low_power_disabled_structure_count,
@@ -261,6 +263,7 @@ def build_battlefield_snapshot(
     queue_blocked: bool,
     queue_blocked_reason: str = "",
     queue_blocked_queue_types: list[str] | None = None,
+    queue_blocked_items: list[dict[str, Any]] | None = None,
     disabled_structure_count: int = 0,
     powered_down_structure_count: int = 0,
     low_power_disabled_structure_count: int = 0,
@@ -299,6 +302,7 @@ def build_battlefield_snapshot(
         queue_blocked=bool(queue_blocked),
         queue_blocked_reason=str(queue_blocked_reason or ""),
         queue_blocked_queue_types=[str(item) for item in list(queue_blocked_queue_types or []) if item],
+        queue_blocked_items=[dict(item) for item in list(queue_blocked_items or []) if isinstance(item, dict)],
         disabled_structure_count=int(disabled_structure_count or 0),
         powered_down_structure_count=int(powered_down_structure_count or 0),
         low_power_disabled_structure_count=int(low_power_disabled_structure_count or 0),
