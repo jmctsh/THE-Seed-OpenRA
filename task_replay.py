@@ -50,7 +50,7 @@ def build_task_replay_bundle(
         except (TypeError, ValueError):
             return None
 
-    def _preview(entry: dict[str, Any], start_timestamp: float) -> dict[str, Any]:
+    def _preview(entry: dict[str, Any], start_timestamp: float, entry_index: int) -> dict[str, Any]:
         data = _entry_data(entry)
         signal_kind = data.get("signal_kind")
         label = entry.get("event") or entry.get("component") or "log"
@@ -76,17 +76,21 @@ def build_task_replay_bundle(
             "signal_kind": data.get("signal_kind"),
             "result": data.get("result"),
             "data": data,
+            "entry_index": entry_index,
         }
 
     def _dedupe(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
-        seen: set[tuple[Any, ...]] = set()
+        last_key: Optional[tuple[Any, ...]] = None
+        last_index: Optional[int] = None
         for item in items:
             key = (item.get("label"), item.get("message"))
-            if key in seen:
+            item_index = _safe_int(item.get("entry_index"))
+            if key == last_key and item_index is not None and last_index is not None and item_index == last_index + 1:
                 continue
-            seen.add(key)
             out.append(item)
+            last_key = key
+            last_index = item_index
         return out[-limit:]
 
     def _timeline_item(preview: dict[str, Any], start_timestamp: float) -> dict[str, Any]:
@@ -110,7 +114,7 @@ def build_task_replay_bundle(
         return None
 
     start_ts = float(entries[0].get("timestamp") or 0.0)
-    previews = [_preview(entry, start_ts) for entry in entries]
+    previews = [_preview(entry, start_ts, entry_index=index) for index, entry in enumerate(entries)]
     end_ts = float(entries[-1].get("timestamp") or start_ts)
     duration_s = max(0.0, end_ts - start_ts)
     llm_rounds = 0
@@ -118,7 +122,9 @@ def build_task_replay_bundle(
     llm_prompt_tokens = 0
     llm_completion_tokens = 0
     llm_tool_rounds = 0
-    tool_counts: dict[str, int] = {}
+    planned_tool_counts: dict[str, int] = {}
+    executed_tool_counts: dict[str, int] = {}
+    counted_tool_calls: set[str] = set()
     expert_counts: dict[str, int] = {}
     signal_counts: dict[str, int] = {}
     latest_context_packet: Optional[dict[str, Any]] = None
@@ -196,7 +202,7 @@ def build_task_replay_bundle(
                     continue
                 tool_name = str(tool_call.get("name") or "").strip()
                 if tool_name:
-                    tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+                    planned_tool_counts[tool_name] = planned_tool_counts.get(tool_name, 0) + 1
         elif event == "llm_failed":
             llm_failures += 1
         elif event == "context_snapshot":
@@ -217,7 +223,15 @@ def build_task_replay_bundle(
                 or ""
             ).strip()
             if tool_name:
-                tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+                tool_call_id = str(data.get("tool_call_id") or "").strip()
+                if event == "tool_execute":
+                    count_key = tool_call_id or f"tool_execute:{preview['timestamp']}:{tool_name}"
+                    if count_key not in counted_tool_calls:
+                        counted_tool_calls.add(count_key)
+                        executed_tool_counts[tool_name] = executed_tool_counts.get(tool_name, 0) + 1
+                elif tool_call_id and tool_call_id not in counted_tool_calls:
+                    counted_tool_calls.add(tool_call_id)
+                    executed_tool_counts[tool_name] = executed_tool_counts.get(tool_name, 0) + 1
 
         if event == "job_started":
             expert_type = str(data.get("expert_type") or "").strip()
@@ -300,6 +314,8 @@ def build_task_replay_bundle(
                         "error": data.get("error"),
                     }
                 )
+
+    tool_counts = executed_tool_counts or planned_tool_counts
 
     blockers = [
         preview

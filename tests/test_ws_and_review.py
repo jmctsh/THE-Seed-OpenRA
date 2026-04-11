@@ -19,6 +19,7 @@ from logging_system import start_persistence_session, stop_persistence_session
 
 from models import Event, EventType, TaskStatus
 from main import RuntimeBridge
+from task_replay import build_task_replay_bundle
 from task_agent.queue import AgentQueue
 from game_loop import GameLoop, GameLoopConfig
 from ws_server import WSServer, WSServerConfig
@@ -1563,6 +1564,96 @@ def test_task_replay_bundle_prefers_live_runtime_status_line_for_active_tasks():
     assert bundle["status_line"] == "等待能力层补前置：电厂"
     assert bundle["timeline"][0]["label"] == "task_created"
     print("  PASS: task_replay_bundle_prefers_live_runtime_status_line_for_active_tasks")
+
+
+def test_task_replay_bundle_counts_tools_once_and_keeps_separated_blockers():
+    entries = [
+        {
+            "timestamp": 10.0,
+            "component": "kernel",
+            "level": "INFO",
+            "message": "Task created",
+            "event": "task_created",
+            "data": {"task_id": "t_demo"},
+        },
+        {
+            "timestamp": 10.2,
+            "component": "task_agent",
+            "level": "INFO",
+            "message": "TaskAgent LLM call succeeded",
+            "event": "llm_succeeded",
+            "data": {
+                "task_id": "t_demo",
+                "tool_calls_detail": [{"name": "query_world", "arguments": "{}"}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 4},
+            },
+        },
+        {
+            "timestamp": 10.3,
+            "component": "task_agent",
+            "level": "INFO",
+            "message": "Executing tool call",
+            "event": "tool_execute",
+            "data": {
+                "task_id": "t_demo",
+                "tool": "query_world",
+                "tool_call_id": "call_1",
+            },
+        },
+        {
+            "timestamp": 10.4,
+            "component": "task_agent",
+            "level": "INFO",
+            "message": "Tool call completed",
+            "event": "tool_execute_completed",
+            "data": {
+                "task_id": "t_demo",
+                "tool": "query_world",
+                "tool_call_id": "call_1",
+            },
+        },
+        {
+            "timestamp": 10.5,
+            "component": "expert",
+            "level": "WARN",
+            "message": "Expert signal emitted",
+            "event": "expert_signal",
+            "data": {
+                "task_id": "t_demo",
+                "job_id": "j_1",
+                "signal_kind": "risk_alert",
+                "summary": "等待电厂",
+            },
+        },
+        {
+            "timestamp": 10.6,
+            "component": "kernel",
+            "level": "INFO",
+            "message": "Task still running",
+            "event": "task_info",
+            "data": {"task_id": "t_demo", "summary": "继续检查前置条件"},
+        },
+        {
+            "timestamp": 10.7,
+            "component": "expert",
+            "level": "WARN",
+            "message": "Expert signal emitted",
+            "event": "expert_signal",
+            "data": {
+                "task_id": "t_demo",
+                "job_id": "j_1",
+                "signal_kind": "risk_alert",
+                "summary": "等待电厂",
+            },
+        },
+    ]
+
+    bundle = build_task_replay_bundle("t_demo", entries)
+
+    assert bundle["llm"]["rounds"] == 1
+    assert bundle["tools"] == [{"name": "query_world", "count": 1}]
+    assert [item["message"] for item in bundle["blockers"]] == ["等待电厂", "等待电厂"]
+    print("  PASS: task_replay_bundle_counts_tools_once_and_keeps_separated_blockers")
 
 
 def test_runtime_bridge_sync_runtime_uses_public_kernel_accessors():
