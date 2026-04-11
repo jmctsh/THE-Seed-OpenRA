@@ -194,7 +194,7 @@ class RuntimeBridge(InboundHandler):
         self.log_session_root = "Logs/runtime"
         self._publisher = DashboardPublisher(
             kernel=self.kernel,
-            adjutant=self.adjutant,
+            task_message_callback=self._handle_published_task_message,
             dashboard_payload_builder=lambda: self._build_dashboard_payload(),
             task_payload_builder=lambda task, jobs, **kwargs: self._task_to_dict(task, jobs, **kwargs),
         )
@@ -205,6 +205,28 @@ class RuntimeBridge(InboundHandler):
 
     def attach_runtime(self, runtime: ApplicationRuntime) -> None:
         self.runtime = runtime
+
+    def _handle_published_task_message(self, message: TaskMessage) -> None:
+        if self.adjutant is None:
+            return
+        if message.type == TaskMessageType.TASK_COMPLETE_REPORT:
+            task_obj = next((t for t in self.kernel.list_tasks() if t.task_id == message.task_id), None)
+            if task_obj is None:
+                return
+            self.adjutant.notify_task_completed(
+                label=getattr(task_obj, "label", message.task_id),
+                raw_text=task_obj.raw_text,
+                result=task_obj.status.value,
+                summary=message.content,
+                task_id=message.task_id,
+            )
+            return
+        if message.type in (TaskMessageType.TASK_WARNING, TaskMessageType.TASK_INFO):
+            self.adjutant.notify_task_message(
+                task_id=message.task_id,
+                message_type=message.type.value,
+                content=message.content,
+            )
 
     def sync_runtime(self) -> None:
         active_agent_ids: set[str] = set()

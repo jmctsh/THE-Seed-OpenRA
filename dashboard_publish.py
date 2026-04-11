@@ -9,9 +9,9 @@ from typing import Any, Callable, Optional
 
 import benchmark
 
-from adjutant import Adjutant, NotificationManager
+from adjutant import NotificationManager
 from logging_system import records_from as log_records_from
-from models import TaskMessageType
+from models import TaskMessage, TaskMessageType
 from ws_server import WSServer
 
 
@@ -22,13 +22,13 @@ class DashboardPublisher:
         self,
         *,
         kernel: Any,
-        adjutant: Optional[Adjutant],
+        task_message_callback: Optional[Callable[[TaskMessage], None]] = None,
         ws_server: Optional[WSServer] = None,
         dashboard_payload_builder: Callable[[], dict[str, Any]],
         task_payload_builder: Callable[..., dict[str, Any]],
     ) -> None:
         self.kernel = kernel
-        self.adjutant = adjutant
+        self._task_message_callback = task_message_callback
         self.ws_server = ws_server
         self._dashboard_payload_builder = dashboard_payload_builder
         self._task_payload_builder = task_payload_builder
@@ -102,24 +102,8 @@ class DashboardPublisher:
         for message in new_messages:
             payload = self._task_message_payload(message)
             await self.ws_server.send_task_message(payload)
-            if self.adjutant is None:
-                continue
-            if message.type == TaskMessageType.TASK_COMPLETE_REPORT:
-                task_obj = next((t for t in self.kernel.list_tasks() if t.task_id == message.task_id), None)
-                if task_obj is not None:
-                    self.adjutant.notify_task_completed(
-                        label=getattr(task_obj, "label", message.task_id),
-                        raw_text=task_obj.raw_text,
-                        result=task_obj.status.value,
-                        summary=message.content,
-                        task_id=message.task_id,
-                    )
-            elif message.type in (TaskMessageType.TASK_WARNING, TaskMessageType.TASK_INFO):
-                self.adjutant.notify_task_message(
-                    task_id=message.task_id,
-                    message_type=message.type.value,
-                    content=message.content,
-                )
+            if self._task_message_callback is not None:
+                self._task_message_callback(message)
 
     async def publish_notifications(self) -> None:
         assert self.ws_server is not None
