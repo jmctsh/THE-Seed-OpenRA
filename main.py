@@ -50,6 +50,7 @@ from logging_system import (
     export_json as export_log_json,
     get_logger,
     install_benchmark_logging,
+    latest_session_dir,
     read_task_replay_records,
     records_from as log_records_from,
     start_persistence_session,
@@ -196,6 +197,7 @@ class RuntimeBridge(InboundHandler):
         self._recent_responses: list[dict[str, Any]] = []
         self._publish_lock = asyncio.Lock()
         self._publish_task: Optional[asyncio.Task[Any]] = None
+        self.log_session_root = "Logs/runtime"
 
     def attach_ws_server(self, ws_server: Optional[WSServer]) -> None:
         self.ws_server = ws_server
@@ -357,8 +359,8 @@ class RuntimeBridge(InboundHandler):
     async def on_task_replay_request(self, task_id: str, client_id: str) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
             return
-        entries = read_task_replay_records(task_id)
-        session_dir = current_session_dir()
+        entries = read_task_replay_records(task_id, latest_base_dir=self.log_session_root)
+        session_dir = current_session_dir() or latest_session_dir(self.log_session_root)
         log_path = str(session_dir / "tasks" / f"{task_id}.jsonl") if session_dir else None
         runtime_state = self.kernel.runtime_state()
         await self.ws_server.send_task_replay_to_client(
@@ -662,6 +664,9 @@ class RuntimeBridge(InboundHandler):
                 "duration_s": 0.0,
                 "last_transition": None,
                 "timeline": [],
+                "lifecycle_events": [],
+                "expert_runs": [],
+                "llm_turns": [],
                 "blockers": [],
                 "highlights": [],
                 "player_visible": [],
@@ -673,8 +678,20 @@ class RuntimeBridge(InboundHandler):
                 "debug": {},
             }
 
-        def _preview(entry: dict[str, Any]) -> dict[str, Any]:
-            data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+        def _entry_data(entry: dict[str, Any]) -> dict[str, Any]:
+            payload = entry.get("data")
+            return payload if isinstance(payload, dict) else {}
+
+        def _safe_int(value: Any) -> Optional[int]:
+            if value is None or value == "":
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        def _preview(entry: dict[str, Any], start_timestamp: float) -> dict[str, Any]:
+            data = _entry_data(entry)
             signal_kind = data.get("signal_kind")
             label = entry.get("event") or entry.get("component") or "log"
             if entry.get("event") == "expert_signal" and signal_kind:
@@ -685,11 +702,20 @@ class RuntimeBridge(InboundHandler):
                 or entry.get("message")
                 or label
             )
+            ts = float(entry.get("timestamp") or start_timestamp)
             return {
-                "timestamp": entry.get("timestamp"),
+                "timestamp": ts,
+                "elapsed_s": round(max(0.0, ts - start_timestamp), 1),
+                "component": entry.get("component", "log"),
                 "level": entry.get("level", "INFO"),
                 "label": label,
                 "message": str(message),
+                "task_id": data.get("task_id") or task_id,
+                "job_id": data.get("job_id"),
+                "expert_type": data.get("expert_type"),
+                "signal_kind": data.get("signal_kind"),
+                "result": data.get("result"),
+                "data": data,
             }
 
         def _dedupe(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -703,7 +729,7 @@ class RuntimeBridge(InboundHandler):
                 out.append(item)
             return out[-limit:]
 
-        def _timeline_item(entry: dict[str, Any], preview: dict[str, Any], start_timestamp: float) -> dict[str, Any]:
+        def _timeline_item(preview: dict[str, Any], start_timestamp: float) -> dict[str, Any]:
             ts = float(preview.get("timestamp") or start_timestamp)
             return {
                 "elapsed_s": round(max(0.0, ts - start_timestamp), 1),
@@ -712,8 +738,19 @@ class RuntimeBridge(InboundHandler):
                 "message": preview.get("message"),
             }
 
-        previews = [_preview(entry) for entry in entries]
+        def _related_job_id(preview: dict[str, Any]) -> Optional[str]:
+            job_id = preview.get("job_id")
+            if isinstance(job_id, str) and job_id:
+                return job_id
+            nested = preview["data"].get("result")
+            if isinstance(nested, dict):
+                nested_job_id = nested.get("job_id") or nested.get("holder_job_id")
+                if isinstance(nested_job_id, str) and nested_job_id:
+                    return nested_job_id
+            return None
+
         start_ts = float(entries[0].get("timestamp") or 0.0)
+        previews = [_preview(entry, start_ts) for entry in entries]
         end_ts = float(entries[-1].get("timestamp") or start_ts)
         duration_s = max(0.0, end_ts - start_ts)
         llm_rounds = 0
@@ -726,10 +763,66 @@ class RuntimeBridge(InboundHandler):
         signal_counts: dict[str, int] = {}
         latest_context_packet: Optional[dict[str, Any]] = None
         latest_llm_input: Optional[dict[str, Any]] = None
+        latest_context_by_wake: dict[int, dict[str, Any]] = {}
+        llm_turns: list[dict[str, Any]] = []
+        expert_runs: dict[str, dict[str, Any]] = {}
 
-        for entry in entries:
+        def _ensure_llm_turn(preview: dict[str, Any]) -> dict[str, Any]:
+            wake = _safe_int(preview["data"].get("wake"))
+            attempt = _safe_int(preview["data"].get("attempt"))
+            for turn in reversed(llm_turns):
+                if turn.get("_completed"):
+                    continue
+                if wake is not None and turn.get("wake") != wake:
+                    continue
+                if attempt is not None and turn.get("attempt") != attempt:
+                    continue
+                return turn
+            turn = {
+                "turn_index": len(llm_turns) + 1,
+                "wake": wake,
+                "attempt": attempt,
+                "timestamp": preview["timestamp"],
+                "elapsed_s": preview["elapsed_s"],
+                "status": "pending",
+                "input_messages": [],
+                "input_tools": [],
+                "context_packet": latest_context_by_wake.get(wake) if wake is not None else latest_context_packet,
+                "response_text": None,
+                "reasoning_content": None,
+                "tool_calls_detail": [],
+                "usage": {},
+                "error": None,
+                "error_type": None,
+                "event_log": [],
+                "_completed": False,
+            }
+            llm_turns.append(turn)
+            return turn
+
+        def _ensure_expert_run(job_id: str, preview: dict[str, Any]) -> dict[str, Any]:
+            run = expert_runs.get(job_id)
+            if run is None:
+                run = {
+                    "job_id": job_id,
+                    "expert_type": preview.get("expert_type") or None,
+                    "started_at": None,
+                    "started_elapsed_s": None,
+                    "config": None,
+                    "events": [],
+                    "signals": [],
+                    "tool_results": [],
+                    "latest_signal": None,
+                    "terminal_signal": None,
+                }
+                expert_runs[job_id] = run
+            if not run.get("expert_type") and preview.get("expert_type"):
+                run["expert_type"] = preview.get("expert_type")
+            return run
+
+        for entry, preview in zip(entries, previews):
             event = entry.get("event")
-            data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+            data = preview["data"]
             if event == "llm_succeeded":
                 llm_rounds += 1
                 usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
@@ -750,6 +843,9 @@ class RuntimeBridge(InboundHandler):
                 packet = data.get("packet")
                 if isinstance(packet, dict):
                     latest_context_packet = packet
+                    wake = _safe_int(data.get("wake"))
+                    if wake is not None:
+                        latest_context_by_wake[wake] = packet
             elif event == "llm_input":
                 latest_llm_input = data
 
@@ -776,6 +872,75 @@ class RuntimeBridge(InboundHandler):
                 if signal_kind:
                     signal_counts[signal_kind] = signal_counts.get(signal_kind, 0) + 1
 
+            if event == "llm_input":
+                turn = _ensure_llm_turn(preview)
+                turn["status"] = "running"
+                turn["input_messages"] = list(data.get("messages") or [])
+                turn["input_tools"] = list(data.get("tools") or [])
+                turn["context_packet"] = latest_context_by_wake.get(turn.get("wake")) or latest_context_packet
+                turn["event_log"].append(preview)
+            elif event == "llm_succeeded":
+                turn = _ensure_llm_turn(preview)
+                turn["status"] = "succeeded"
+                turn["model"] = data.get("model")
+                turn["usage"] = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+                turn["response_text"] = data.get("response_text")
+                turn["reasoning_content"] = data.get("reasoning_content")
+                turn["tool_calls_detail"] = list(data.get("tool_calls_detail") or [])
+                turn["event_log"].append(preview)
+                turn["_completed"] = True
+            elif event in {"llm_call_error", "llm_failed", "llm_empty_output"}:
+                turn = _ensure_llm_turn(preview)
+                turn["status"] = "failed"
+                turn["error_type"] = data.get("error_type") or event
+                turn["error"] = data.get("error") or data.get("last_error") or preview["message"]
+                turn["event_log"].append(preview)
+                if event == "llm_failed":
+                    turn["_completed"] = True
+            elif event == "llm_reasoning" and llm_turns:
+                llm_turns[-1]["event_log"].append(preview)
+
+            related_job_id = _related_job_id(preview)
+            if related_job_id:
+                run = _ensure_expert_run(related_job_id, preview)
+                if event == "job_started":
+                    run["started_at"] = preview["timestamp"]
+                    run["started_elapsed_s"] = preview["elapsed_s"]
+                    run["config"] = data.get("config")
+                if event in {
+                    "job_started",
+                    "job_paused",
+                    "job_resumed",
+                    "job_aborted",
+                    "expert_signal",
+                    "resource_granted",
+                    "resource_revoked",
+                    "signal_routed",
+                }:
+                    run["events"].append(preview)
+                if event == "expert_signal":
+                    run["signals"].append(preview)
+                    run["latest_signal"] = preview
+                    if preview.get("signal_kind") == "task_complete" or preview.get("result") in {
+                        "succeeded",
+                        "failed",
+                        "partial",
+                        "aborted",
+                    }:
+                        run["terminal_signal"] = preview
+                if event in {"tool_execute_completed", "tool_execute_failed"}:
+                    run["tool_results"].append(
+                        {
+                            "timestamp": preview["timestamp"],
+                            "elapsed_s": preview["elapsed_s"],
+                            "label": preview["label"],
+                            "message": preview["message"],
+                            "tool_name": data.get("tool_name") or data.get("name") or data.get("tool"),
+                            "result": data.get("result"),
+                            "error": data.get("error"),
+                        }
+                    )
+
         blockers = [
             preview
             for entry, preview in zip(entries, previews)
@@ -786,14 +951,14 @@ class RuntimeBridge(InboundHandler):
                 or (preview["label"] == "expert:risk_alert")
                 or (
                     preview["label"] == "expert:task_complete"
-                    and str((entry.get("data") or {}).get("result")) in {"failed", "partial", "aborted"}
+                    and str(_entry_data(entry).get("result")) in {"failed", "partial", "aborted"}
                 )
             )
         ]
 
         highlights = [
             preview
-            for entry, preview in zip(entries, previews)
+            for preview in previews
             if preview["label"] in {
                 "task_created",
                 "job_started",
@@ -823,8 +988,8 @@ class RuntimeBridge(InboundHandler):
         ]
 
         timeline = [
-            _timeline_item(entry, preview, start_ts)
-            for entry, preview in zip(entries, previews)
+            _timeline_item(preview, start_ts)
+            for preview in previews
             if preview["label"] in {
                 "task_created",
                 "job_started",
@@ -849,9 +1014,27 @@ class RuntimeBridge(InboundHandler):
         if last_transition is None:
             last_transition = previews[-1]
 
+        lifecycle_events = [
+            {
+                "timestamp": preview["timestamp"],
+                "elapsed_s": preview["elapsed_s"],
+                "component": preview["component"],
+                "level": preview["level"],
+                "label": preview["label"],
+                "message": preview["message"],
+                "task_id": preview["task_id"],
+                "job_id": preview["job_id"],
+                "expert_type": preview["expert_type"],
+                "signal_kind": preview["signal_kind"],
+                "result": preview["result"],
+                "data": preview["data"],
+            }
+            for preview in previews
+        ]
+
         summary = "任务记录已加载"
         for entry in reversed(entries):
-            data = entry.get("data") if isinstance(entry.get("data"), dict) else {}
+            data = _entry_data(entry)
             if entry.get("event") == "task_completed":
                 summary = str(data.get("summary") or entry.get("message") or summary)
                 break
@@ -899,6 +1082,7 @@ class RuntimeBridge(InboundHandler):
                 "runtime_fact_keys": sorted((context_runtime_facts or {}).keys())[:12]
                 if isinstance(context_runtime_facts, dict)
                 else [],
+                "packet": latest_context_packet,
             }
         if isinstance(latest_llm_input, dict):
             debug["latest_llm_input"] = {
@@ -906,6 +1090,8 @@ class RuntimeBridge(InboundHandler):
                 "tool_count": len(latest_llm_input.get("tools") or []),
                 "attempt": int(latest_llm_input.get("attempt", 0) or 0),
                 "wake": int(latest_llm_input.get("wake", 0) or 0),
+                "messages": latest_llm_input.get("messages") or [],
+                "tools": latest_llm_input.get("tools") or [],
             }
 
         return {
@@ -916,6 +1102,22 @@ class RuntimeBridge(InboundHandler):
             "duration_s": round(duration_s, 1),
             "last_transition": last_transition,
             "timeline": _dedupe(timeline, limit=12),
+            "lifecycle_events": lifecycle_events,
+            "expert_runs": sorted(
+                expert_runs.values(),
+                key=lambda item: (
+                    float(item["started_at"]) if item.get("started_at") is not None else float("inf"),
+                    item["job_id"],
+                ),
+            ),
+            "llm_turns": [
+                {
+                    key: value
+                    for key, value in turn.items()
+                    if key != "_completed"
+                }
+                for turn in llm_turns
+            ],
             "blockers": _dedupe(blockers, limit=4),
             "highlights": _dedupe(highlights, limit=6),
             "player_visible": _dedupe(player_visible, limit=5),
@@ -1066,6 +1268,7 @@ class ApplicationRuntime:
             game_loop=self.game_loop,
             adjutant=self.adjutant,
         )
+        self.bridge.log_session_root = config.log_session_root
         self.bridge.attach_runtime(self)
         self.game_loop._dashboard_callback = self.bridge.on_tick  # type: ignore[attr-defined]
         self.ws_server = (

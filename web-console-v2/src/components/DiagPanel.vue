@@ -74,7 +74,7 @@
             {{ key }}
           </span>
         </div>
-        <div v-if="selectedTaskReplayBundle.debug?.latest_llm_input" class="triage-meta">
+      <div v-if="selectedTaskReplayBundle.debug?.latest_llm_input" class="triage-meta">
           <span>llm.messages={{ selectedTaskReplayBundle.debug.latest_llm_input.message_count }}</span>
           <span>llm.tools={{ selectedTaskReplayBundle.debug.latest_llm_input.tool_count }}</span>
           <span v-if="selectedTaskReplayBundle.debug.latest_llm_input.wake">
@@ -85,6 +85,50 @@
           </span>
         </div>
       </div>
+      <details v-if="selectedTaskReplayBundle.llm_turns?.length" class="replay-detail">
+        <summary>LLM Turns · {{ selectedTaskReplayBundle.llm_turns.length }}</summary>
+        <div
+          v-for="turn in selectedTaskReplayBundle.llm_turns"
+          :key="`llm-turn-${turn.turn_index}`"
+          class="replay-detail-card"
+        >
+          <div class="triage-meta">
+            <span>turn={{ turn.turn_index }}</span>
+            <span v-if="turn.wake">wake={{ turn.wake }}</span>
+            <span v-if="turn.attempt">attempt={{ turn.attempt }}</span>
+            <span>status={{ turn.status }}</span>
+          </div>
+          <div v-if="turn.response_text" class="replay-overview">{{ turn.response_text }}</div>
+          <div v-if="turn.reasoning_content" class="replay-item replay-blocker">{{ turn.reasoning_content }}</div>
+          <div v-if="turn.error" class="replay-item replay-blocker">{{ turn.error }}</div>
+          <pre v-if="turn.context_packet" class="trace-details">{{ formatJsonBlock(turn.context_packet) }}</pre>
+          <pre v-if="turn.input_messages?.length" class="trace-details">{{ formatJsonBlock(turn.input_messages) }}</pre>
+          <pre v-if="turn.tool_calls_detail?.length" class="trace-details">{{ formatJsonBlock(turn.tool_calls_detail) }}</pre>
+        </div>
+      </details>
+      <details v-if="selectedTaskReplayBundle.expert_runs?.length" class="replay-detail">
+        <summary>Expert Runs · {{ selectedTaskReplayBundle.expert_runs.length }}</summary>
+        <div
+          v-for="run in selectedTaskReplayBundle.expert_runs"
+          :key="`expert-run-${run.job_id}`"
+          class="replay-detail-card"
+        >
+          <div class="triage-meta">
+            <span>{{ run.job_id }}</span>
+            <span v-if="run.expert_type">expert={{ run.expert_type }}</span>
+            <span v-if="run.started_elapsed_s !== null">t={{ run.started_elapsed_s }}s</span>
+            <span>signals={{ run.signals?.length || 0 }}</span>
+          </div>
+          <div v-if="run.latest_signal" class="replay-overview">{{ formatReplayItem(run.latest_signal) }}</div>
+          <pre v-if="run.config" class="trace-details">{{ formatJsonBlock(run.config) }}</pre>
+          <pre v-if="run.signals?.length" class="trace-details">{{ formatJsonBlock(run.signals) }}</pre>
+          <pre v-if="run.tool_results?.length" class="trace-details">{{ formatJsonBlock(run.tool_results) }}</pre>
+        </div>
+      </details>
+      <details v-if="selectedTaskReplayBundle.lifecycle_events?.length" class="replay-detail">
+        <summary>Lifecycle · {{ selectedTaskReplayBundle.lifecycle_events.length }}</summary>
+        <pre class="trace-details">{{ formatJsonBlock(selectedTaskReplayBundle.lifecycle_events) }}</pre>
+      </details>
       <div v-if="selectedTaskReplayBundle.tools?.length" class="replay-section">
         <div class="replay-heading">Tools</div>
         <div class="replay-tags">
@@ -203,7 +247,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, reactive, defineProps, onMounted, watch } from 'vue'
+import { ref, computed, nextTick, reactive, defineProps, onMounted, onUnmounted, watch } from 'vue'
 import {
   formatTaskLabel,
   registerTaskLabel,
@@ -214,6 +258,7 @@ import {
 const props = defineProps({ on: Function, send: Function })
 
 const BENCHMARK_LIMIT = 20
+const PREFETCH_TASK_REPLAY_LIMIT = 8
 const COMPONENT_FILTERS = ['ALL', 'adjutant', 'task_agent', 'kernel', 'expert', 'world_model', 'game_loop']
 const LEVEL_ORDER = { DEBUG: 0, INFO: 1, WARN: 2, WARNING: 2, ERROR: 3 }
 
@@ -251,6 +296,9 @@ const filteredTraceEntries = computed(() => {
           )
         : traceEntries.value.filter((entry) => entry.taskId === selectedTaskId.value)
     )
+  if (selectedTaskId.value !== 'ALL' && replayExpanded[selectedTaskId.value]) {
+    return items
+  }
   return items.slice(-200)
 })
 
@@ -395,6 +443,33 @@ function toggleRawReplay(taskId) {
   replayExpanded[taskId] = !replayExpanded[taskId]
 }
 
+function ensureReplayRequested(taskId) {
+  if (!props.send || !taskId || taskId === 'ALL') return
+  if (replayRequested[taskId]) return
+  const sent = props.send('task_replay_request', { task_id: taskId })
+  if (sent) replayRequested[taskId] = true
+}
+
+function prefetchRecentReplays(tasks) {
+  for (const task of (tasks || []).slice(0, PREFETCH_TASK_REPLAY_LIMIT)) {
+    ensureReplayRequested(task?.task_id)
+  }
+}
+
+function clearDiagnostics() {
+  logEntries.value = []
+  traceEntries.value = []
+  knownTasks.value = []
+  selectedTaskId.value = 'ALL'
+  filterLevel.value = 'ALL'
+  filterComponent.value = 'ALL'
+  Object.keys(benchmarkStats).forEach((key) => delete benchmarkStats[key])
+  Object.keys(replayCache).forEach((key) => delete replayCache[key])
+  Object.keys(replayBundleCache).forEach((key) => delete replayBundleCache[key])
+  Object.keys(replayRequested).forEach((key) => delete replayRequested[key])
+  Object.keys(replayExpanded).forEach((key) => delete replayExpanded[key])
+}
+
 function addLog(entry) {
   logEntries.value.push(entry)
   if (logEntries.value.length > 500) logEntries.value.splice(0, 100)
@@ -422,8 +497,19 @@ function updateBenchmark(records) {
   }
 }
 
+function formatJsonBlock(value) {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+const offHandlers = []
+let clearUiHandler = null
+
 if (props.on) {
-  props.on('log_entry', (msg) => {
+  offHandlers.push(props.on('log_entry', (msg) => {
     const entry = msg.data || msg
     const message = replaceTaskIdsWithLabels(entry.message || JSON.stringify(entry))
     addLog({
@@ -437,18 +523,19 @@ if (props.on) {
     if (traceEntry.taskId || traceEntry.jobId) {
       addTraceEntry(traceEntry)
     }
-  })
-  props.on('world_snapshot', (msg) => {
+  }))
+  offHandlers.push(props.on('world_snapshot', (msg) => {
     if (msg.data?.benchmark) updateBenchmark(msg.data.benchmark)
-  })
-  props.on('benchmark', (msg) => {
+  }))
+  offHandlers.push(props.on('benchmark', (msg) => {
     if (msg.data?.records) updateBenchmark(msg.data.records)
-  })
-  props.on('task_list', (msg) => {
+  }))
+  offHandlers.push(props.on('task_list', (msg) => {
     const tasks = msg.data?.tasks || []
     normalizeTaskCatalog(tasks)
-  })
-  props.on('task_update', (msg) => {
+    prefetchRecentReplays(knownTasks.value)
+  }))
+  offHandlers.push(props.on('task_update', (msg) => {
     const task = msg.data || {}
     if (!task.task_id) return
     mergeKnownTask(task)
@@ -462,8 +549,8 @@ if (props.on) {
       message: `状态更新：${task.status}${task.raw_text ? ` · ${task.raw_text}` : ''}`,
       details: task,
     })
-  })
-  props.on('query_response', (msg) => {
+  }))
+  offHandlers.push(props.on('query_response', (msg) => {
     const taskId = msg.data?.task_id || null
     if (!taskId) return
     registerTaskLabel(taskId)
@@ -476,8 +563,8 @@ if (props.on) {
       message: replaceTaskIdsWithLabels(msg.data?.answer || msg.data?.response_text || '收到副官回复'),
       details: msg.data || null,
     })
-  })
-  props.on('player_notification', (msg) => {
+  }))
+  offHandlers.push(props.on('player_notification', (msg) => {
     const taskId = msg.data?.task_id || msg.data?.data?.task_id || null
     if (!taskId) return
     registerTaskLabel(taskId)
@@ -490,8 +577,23 @@ if (props.on) {
       message: replaceTaskIdsWithLabels(msg.data?.content || JSON.stringify(msg.data)),
       details: msg.data || null,
     })
-  })
-  props.on('task_replay', (msg) => {
+  }))
+  offHandlers.push(props.on('task_message', (msg) => {
+    const payload = msg.data || {}
+    const taskId = payload.task_id || null
+    if (!taskId) return
+    registerTaskLabel(taskId)
+    addTraceEntry({
+      timestamp: msg.timestamp,
+      source: 'task_message',
+      taskId,
+      taskLabel: formatTaskLabel(taskId),
+      jobId: null,
+      message: replaceTaskIdsWithLabels(payload.content || JSON.stringify(payload)),
+      details: payload,
+    })
+  }))
+  offHandlers.push(props.on('task_replay', (msg) => {
     const payload = msg.data || {}
     const taskId = payload.task_id
     if (!taskId) return
@@ -500,20 +602,29 @@ if (props.on) {
       ? payload.entries.map((entry) => traceEntryFromLogRecord(entry, taskId, true))
       : []
     replayRequested[taskId] = true
-  })
+  }))
+  offHandlers.push(props.on('session_cleared', () => {
+    clearDiagnostics()
+  }))
 }
 
 onMounted(() => {
   if (props.send) {
     props.send('sync_request')
   }
+  clearUiHandler = () => clearDiagnostics()
+  window.addEventListener('theseed:clear-ui', clearUiHandler)
+})
+
+onUnmounted(() => {
+  offHandlers.forEach((off) => {
+    if (typeof off === 'function') off()
+  })
+  if (clearUiHandler) window.removeEventListener('theseed:clear-ui', clearUiHandler)
 })
 
 watch(selectedTaskId, (taskId) => {
-  if (!props.send || !taskId || taskId === 'ALL') return
-  if (replayRequested[taskId]) return
-  replayRequested[taskId] = true
-  props.send('task_replay_request', { task_id: taskId })
+  ensureReplayRequested(taskId)
 })
 </script>
 
@@ -614,6 +725,24 @@ watch(selectedTaskId, (taskId) => {
   font-weight: 600;
   color: #8b6b13;
   margin-bottom: 4px;
+}
+.replay-detail {
+  margin-top: 8px;
+  border: 1px solid #ead7a1;
+  border-radius: 6px;
+  background: #fffdf5;
+  padding: 6px 8px;
+}
+.replay-detail summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a5200;
+}
+.replay-detail-card {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #ead7a1;
 }
 .replay-item {
   font-size: 11px;

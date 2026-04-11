@@ -864,6 +864,9 @@ def test_task_replay_request_returns_persisted_task_log():
                                 "event": "llm_succeeded",
                                 "data": {
                                     "task_id": "t_demo",
+                                    "model": "demo-model",
+                                    "response_text": "先查询世界状态",
+                                    "reasoning_content": "需要先确认当前侦察态势",
                                     "tool_calls_detail": [{"name": "query_world", "arguments": "{}"}],
                                     "usage": {"prompt_tokens": 321, "completion_tokens": 45},
                                 },
@@ -935,6 +938,15 @@ def test_task_replay_request_returns_persisted_task_log():
     assert payload["bundle"]["debug"]["latest_llm_input"]["tool_count"] == 1
     assert payload["bundle"]["debug"]["latest_llm_input"]["attempt"] == 2
     assert payload["bundle"]["debug"]["latest_llm_input"]["wake"] == 7
+    assert len(payload["bundle"]["lifecycle_events"]) == 7
+    assert payload["bundle"]["lifecycle_events"][1]["job_id"] == "j_1"
+    assert payload["bundle"]["expert_runs"][0]["job_id"] == "j_1"
+    assert payload["bundle"]["expert_runs"][0]["latest_signal"]["label"] == "expert:risk_alert"
+    assert payload["bundle"]["llm_turns"][0]["wake"] == 7
+    assert payload["bundle"]["llm_turns"][0]["attempt"] == 2
+    assert payload["bundle"]["llm_turns"][0]["response_text"] == "先查询世界状态"
+    assert payload["bundle"]["llm_turns"][0]["reasoning_content"] == "需要先确认当前侦察态势"
+    assert payload["bundle"]["llm_turns"][0]["input_messages"][0]["role"] == "system"
     print("  PASS: task_replay_request_returns_persisted_task_log")
 
 

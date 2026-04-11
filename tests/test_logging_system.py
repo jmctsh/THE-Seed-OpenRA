@@ -154,6 +154,39 @@ def test_persistent_log_session_writes_all_and_task_files() -> None:
     assert json.loads(task_lines[0])["data"]["task_id"] == "t_1"
 
 
+def test_read_task_replay_records_falls_back_to_latest_session() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        session_dir = logging_system.start_persistence_session(
+            tmpdir,
+            session_name="replay-session",
+        )
+        task_path = session_dir / "tasks" / "t_replay.jsonl"
+        task_path.parent.mkdir(parents=True, exist_ok=True)
+        task_path.write_text(
+            json.dumps(
+                {
+                    "timestamp": 1.0,
+                    "component": "kernel",
+                    "level": "INFO",
+                    "message": "Task created",
+                    "event": "task_created",
+                    "data": {"task_id": "t_replay"},
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        logging_system.stop_persistence_session()
+
+        assert logging_system.current_session_dir() is None
+        assert logging_system.latest_session_dir(tmpdir) == session_dir
+        records = logging_system.read_task_replay_records("t_replay", latest_base_dir=tmpdir)
+
+    assert len(records) == 1
+    assert records[0]["data"]["task_id"] == "t_replay"
+
+
 def test_benchmark_summary_and_logging_integration() -> None:
     logging_system.install_benchmark_logging()
     try:

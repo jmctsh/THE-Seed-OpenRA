@@ -436,33 +436,58 @@ def current_session_dir() -> Optional[Path]:
     return _DEFAULT_STORE.current_session_dir()
 
 
+def latest_session_dir(
+    base_dir: Union[str, Path] = "Logs/runtime",
+) -> Optional[Path]:
+    """Resolve the latest persisted log session from ``latest.txt`` if present."""
+    latest_path = Path(base_dir) / "latest.txt"
+    if not latest_path.exists():
+        return None
+    try:
+        session_path = Path(latest_path.read_text(encoding="utf-8").strip())
+    except OSError:
+        return None
+    if not session_path.exists():
+        return None
+    return session_path
+
+
 def read_task_replay_records(
     task_id: str,
     *,
     session_dir: Optional[Union[str, Path]] = None,
+    latest_base_dir: Optional[Union[str, Path]] = "Logs/runtime",
     limit: Optional[int] = None,
 ) -> list[dict[str, Any]]:
-    """Read persisted task-scoped JSONL logs from the active or given session."""
+    """Read persisted task-scoped JSONL logs from the active/given or latest session."""
     if not task_id:
         return []
-    base = Path(session_dir) if session_dir is not None else current_session_dir()
-    if base is None:
-        return []
-    task_path = Path(base) / "tasks" / f"{_safe_filename(task_id)}.jsonl"
-    if not task_path.exists():
-        return []
-    items: list[dict[str, Any]] = []
-    with task_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            try:
-                payload = json.loads(stripped)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                items.append(payload)
-    if limit is not None and limit > 0:
-        return items[-limit:]
-    return items
+    candidates: list[Path] = []
+    primary = Path(session_dir) if session_dir is not None else current_session_dir()
+    if primary is not None:
+        candidates.append(primary)
+    if latest_base_dir is not None:
+        latest = latest_session_dir(latest_base_dir)
+        if latest is not None and latest not in candidates:
+            candidates.append(latest)
+
+    for base in candidates:
+        task_path = Path(base) / "tasks" / f"{_safe_filename(task_id)}.jsonl"
+        if not task_path.exists():
+            continue
+        items: list[dict[str, Any]] = []
+        with task_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    items.append(payload)
+        if limit is not None and limit > 0:
+            return items[-limit:]
+        return items
+    return []
