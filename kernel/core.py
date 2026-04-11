@@ -89,7 +89,6 @@ from .defend_base_auto_response import (
     ensure_defend_base_task,
     ensure_immediate_defend_base_job,
 )
-from .event_delivery import deliver_player_response
 from .event_orchestration import (
     handle_game_reset as handle_game_reset_runtime,
     route_runtime_event,
@@ -138,6 +137,12 @@ from .task_lifecycle import (
     close_pending_questions_for_task,
     complete_task as complete_task_runtime,
     task_matches_filters,
+)
+from .player_interaction import (
+    push_player_notification as push_player_notification_runtime,
+    register_task_message as register_task_message_runtime,
+    submit_player_response as submit_player_response_runtime,
+    tick_question_timeouts,
 )
 from .task_questions import PendingQuestionStore
 from task_agent import AgentConfig, TaskAgent, TaskToolHandlers, ToolExecutor, WorldSummary
@@ -845,15 +850,14 @@ class Kernel:
         data: Optional[dict[str, Any]] = None,
         timestamp: Optional[float] = None,
     ) -> None:
-        self.player_notifications.append(
-            {
-                "type": notification_type,
-                "content": content,
-                "data": dict(data or {}),
-                "timestamp": _now() if timestamp is None else timestamp,
-            }
+        push_player_notification_runtime(
+            notification_type=notification_type,
+            content=content,
+            data=data,
+            timestamp=timestamp,
+            player_notifications=self.player_notifications,
+            now=_now,
         )
-        slog.info("Player notification queued", event="player_notification", notification_type=notification_type, content=content, data=data or {})
 
     def list_task_messages(self, task_id: Optional[str] = None) -> list[TaskMessage]:
         if task_id is None:
@@ -898,14 +902,12 @@ class Kernel:
         self.ensure_capability_task()
 
     def register_task_message(self, message: TaskMessage) -> bool:
-        with bm_span("tool_exec", name=f"kernel:register_task_message:{message.type.value}"):
-            task = self.tasks.get(message.task_id)
-            if task is None or task.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.ABORTED, TaskStatus.PARTIAL}:
-                return False
-            self.task_messages.append(message)
-            slog.info("Task message registered", event="task_message_registered", task_id=message.task_id, message_id=message.message_id, message_type=message.type.value, priority=message.priority)
-            self._question_store.register(message)
-            return True
+        return register_task_message_runtime(
+            message,
+            tasks=self.tasks,
+            task_messages=self.task_messages,
+            question_store=self._question_store,
+        )
 
     def cancel_pending_question(self, message_id: str) -> bool:
         return self._question_store.cancel(message_id)
@@ -916,28 +918,23 @@ class Kernel:
         *,
         now: Optional[float] = None,
     ) -> dict[str, Any]:
-        with bm_span("tool_exec", name="kernel:submit_player_response"):
-            timestamp = _now() if now is None else now
-            result = self._question_store.submit(response, timestamp)
-            if result.delivered_response is not None:
-                deliver_player_response(
-                    self._delivered_player_responses,
-                    self._task_runtimes,
-                    result.delivered_response,
-                )
-            return result.to_payload()
+        return submit_player_response_runtime(
+            response,
+            now=now,
+            current_time=_now,
+            question_store=self._question_store,
+            delivered_player_responses=self._delivered_player_responses,
+            task_runtimes=self._task_runtimes,
+        )
 
     def tick(self, *, now: Optional[float] = None) -> int:
-        with bm_span("tool_exec", name="kernel:tick"):
-            timestamp = _now() if now is None else now
-            expired_responses = self._question_store.expire_due(timestamp)
-            for response in expired_responses:
-                deliver_player_response(
-                    self._delivered_player_responses,
-                    self._task_runtimes,
-                    response,
-                )
-            return len(expired_responses)
+        return tick_question_timeouts(
+            now=now,
+            current_time=_now,
+            question_store=self._question_store,
+            delivered_player_responses=self._delivered_player_responses,
+            task_runtimes=self._task_runtimes,
+        )
 
     def register_auto_response_rule(
         self,
