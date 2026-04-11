@@ -89,11 +89,10 @@ from .defend_base_auto_response import (
     ensure_defend_base_task,
     ensure_immediate_defend_base_job,
 )
-from .event_delivery import (
-    append_player_notification,
-    broadcast_event,
-    deliver_player_response,
-    route_actor_event,
+from .event_delivery import deliver_player_response
+from .event_orchestration import (
+    handle_game_reset as handle_game_reset_runtime,
+    route_runtime_event,
 )
 from .task_runtime_ops import (
     maybe_start_agent,
@@ -748,51 +747,27 @@ class Kernel:
     def route_event(self, event: Event) -> None:
         with bm_span("tool_exec", name=f"kernel:route_event:{event.type.value}"):
             slog.info("Kernel routing event", event="event_routed", event_type=event.type.value, actor_id=event.actor_id, position=event.position, data=event.data)
-            self._apply_auto_response_rules(event)
-            if event.type == EventType.GAME_RESET:
-                self._handle_game_reset(event)
-                return
-            if event.type in {EventType.UNIT_DIED, EventType.UNIT_DAMAGED}:
-                route_actor_event(
-                    event,
-                    jobs=self._jobs,
-                    task_runtimes=self._task_runtimes,
-                    world_model=self.world_model,
-                    is_terminal_job_status=self._is_terminal_status,
-                    rebalance_resources=self._rebalance_resources,
-                    sync_world_runtime=self._sync_world_runtime,
-                )
-                return
-            if event.type in {EventType.ENEMY_DISCOVERED, EventType.STRUCTURE_LOST}:
-                broadcast_event(event, task_runtimes=self._task_runtimes)
-                return
-            if event.type == EventType.BASE_UNDER_ATTACK:
-                broadcast_event(event, task_runtimes=self._task_runtimes)
-                return
-            if event.type == EventType.LOW_POWER:
-                # Push to Capability so it can build a power plant
-                if self._capability_task_id:
-                    runtime = self._task_runtimes.get(self._capability_task_id)
-                    if runtime is not None:
-                        runtime.agent.push_event(event)
-                return
-            if event.type in {EventType.ENEMY_EXPANSION, EventType.FRONTLINE_WEAK, EventType.ECONOMY_SURPLUS}:
-                append_player_notification(self.player_notifications, event)
-                return
-            if event.type == EventType.PRODUCTION_COMPLETE:
-                self._rebalance_resources()
-                self._fulfill_unit_requests()
-                return
+            route_runtime_event(
+                event,
+                apply_auto_response_rules=self._apply_auto_response_rules,
+                handle_game_reset=self._handle_game_reset,
+                jobs=self._jobs,
+                task_runtimes=self._task_runtimes,
+                world_model=self.world_model,
+                is_terminal_job_status=self._is_terminal_status,
+                rebalance_resources=self._rebalance_resources,
+                sync_world_runtime=self._sync_world_runtime,
+                capability_task_id=self._capability_task_id,
+                player_notifications=self.player_notifications,
+                fulfill_unit_requests=self._fulfill_unit_requests,
+            )
             return None
 
     def _handle_game_reset(self, event: Event) -> None:
-        stop_all_task_runtimes(
-            self._task_runtimes,
-            stop_task_runtime_fn=stop_task_runtime,
-        )
-        clear_kernel_runtime_collections(
-            tasks=self.tasks,
+        handle_game_reset_runtime(
+            event,
             task_runtimes=self._task_runtimes,
+            tasks=self.tasks,
             jobs=self._jobs,
             constraints=self._constraints,
             resource_needs=self._resource_needs,
@@ -807,26 +782,12 @@ class Kernel:
             task_actor_groups=self._task_actor_groups,
             direct_managed_tasks=self._direct_managed_tasks,
             capability_recent_inputs=self._capability_recent_inputs,
-            clear_player_notifications=False,
-            clear_task_messages=True,
+            stop_task_runtime_fn=stop_task_runtime,
+            set_capability_task_id=lambda value: setattr(self, "_capability_task_id", value),
+            set_runtime_state=self.world_model.set_runtime_state,
+            push_player_notification=self.push_player_notification,
+            ensure_capability_task=self.ensure_capability_task,
         )
-        self._capability_task_id = None
-        self.world_model.set_runtime_state(
-            active_tasks={},
-            active_jobs={},
-            resource_bindings={},
-            constraints=[],
-            capability_status={},
-            unit_reservations=[],
-        )
-        self.push_player_notification(
-            "game_reset",
-            "检测到对局已重置，已清理旧任务状态",
-            data=event.data,
-            timestamp=event.timestamp,
-        )
-        slog.warn("Kernel cleared stale runtime after game reset", event="game_reset_handled", data=event.data)
-        self.ensure_capability_task()
 
     def route_events(self, events: list[Event]) -> None:
         with bm_span("tool_exec", name="kernel:route_events", metadata={"count": len(events)}):
