@@ -6,16 +6,14 @@ import asyncio
 from dataclasses import dataclass, field
 import time
 import uuid
-from typing import Any, Awaitable, Callable, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 from benchmark import span as bm_span
 from experts.base import BaseJob, ExecutionExpert
-from experts.planners import query_planner as run_planner_query
 from llm import LLMProvider
 from logging_system import get_logger
 from models import (
     Constraint,
-    ConstraintEnforcement,
     Event,
     EventType,
     ExpertConfig,
@@ -35,7 +33,6 @@ from models import (
     UnitRequest,
     validate_job_config,
 )
-from models.configs import EXPERT_CONFIG_REGISTRY
 from openra_state.data.dataset import (
     _CATEGORY_TO_ACTOR_CATEGORY,
     _UNIT_TO_QUEUE_TYPE,
@@ -95,7 +92,6 @@ from .task_coordination import (
     task_has_running_actor_job as has_running_actor_job,
 )
 from .defend_base_auto_response import (
-    active_task_jobs as collect_active_task_jobs,
     ensure_defend_base_task,
     ensure_immediate_defend_base_job,
 )
@@ -1405,10 +1401,6 @@ class Kernel:
             return False
         return True
 
-    def _config_from_payload(self, expert_type: str, payload: dict[str, Any]) -> ExpertConfig:
-        config_cls = EXPERT_CONFIG_REGISTRY[expert_type]
-        return config_cls(**payload)
-
     def _build_resource_needs(self, controller: BaseJob | _ManagedJob, config: ExpertConfig) -> list[ResourceNeed]:
         if hasattr(controller, "get_resource_needs"):
             needs = list(controller.get_resource_needs())  # type: ignore[call-arg]
@@ -1749,7 +1741,7 @@ class Kernel:
 
     _DEFEND_BASE_COOLDOWN_S = 10.0
 
-    def _ensure_defend_base_task(self) -> Optional[Task]:
+    def _handle_base_under_attack_auto_response(self, event: Event) -> None:
         task, last_created = ensure_defend_base_task(
             self.tasks.values(),
             last_created=self._defend_base_last_created,
@@ -1758,17 +1750,8 @@ class Kernel:
             create_task=self.create_task,
         )
         self._defend_base_last_created = last_created
-        return task
-
-    def _active_task_jobs(self, task_id: str, *, expert_type: Optional[str] = None) -> list[BaseJob | _ManagedJob]:
-        return collect_active_task_jobs(
-            self._jobs,
-            task_id,
-            expert_type=expert_type,
-            is_terminal_status=self._is_terminal_status,
-        )
-
-    def _ensure_immediate_defend_base_job(self, task: Task, event: Event) -> None:
+        if task is None:
+            return  # Cooldown active — suppress duplicate defend_base creation
         ensure_immediate_defend_base_job(
             task,
             event,
@@ -1778,12 +1761,6 @@ class Kernel:
             start_job=self.start_job,
             sync_world_runtime=self._sync_world_runtime,
         )
-
-    def _handle_base_under_attack_auto_response(self, event: Event) -> None:
-        task = self._ensure_defend_base_task()
-        if task is None:
-            return  # Cooldown active — suppress duplicate defend_base creation
-        self._ensure_immediate_defend_base_job(task, event)
 
     def _apply_auto_response_rules(self, event: Event) -> None:
         for rule in self._auto_response_rules.get(event.type, []):
@@ -1815,83 +1792,3 @@ class Kernel:
             return
         if hasattr(runtime.agent, "push_player_response"):
             runtime.agent.push_player_response(response)  # type: ignore[attr-defined]
-
-    def _tool_start_job(self, task_id: str) -> Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]:
-        async def handler(_: str, args: dict[str, Any]) -> dict[str, Any]:
-            config = self._config_from_payload(args["expert_type"], args["config"])
-            job = self.start_job(task_id, args["expert_type"], config)
-            return {"job_id": job.job_id, "status": job.status.value}
-
-        return handler
-
-    async def _tool_patch_job(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": self.patch_job(args["job_id"], args["params"])}
-
-    async def _tool_pause_job(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": self.pause_job(args["job_id"])}
-
-    async def _tool_resume_job(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": self.resume_job(args["job_id"])}
-
-    async def _tool_abort_job(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": self.abort_job(args["job_id"])}
-
-    def _tool_complete_task(self, task_id: str) -> Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]:
-        async def handler(_: str, args: dict[str, Any]) -> dict[str, Any]:
-            return {"ok": self.complete_task(task_id, args["result"], args["summary"])}
-
-        return handler
-
-    async def _tool_create_constraint(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        constraint = Constraint(
-            constraint_id=_gen_id("c_"),
-            kind=args["kind"],
-            scope=args["scope"],
-            params=dict(args["params"]),
-            enforcement=ConstraintEnforcement(args["enforcement"]),
-        )
-        self._constraints[constraint.constraint_id] = constraint
-        self.world_model.set_constraint(constraint)
-        self._sync_world_runtime()
-        return {"constraint_id": constraint.constraint_id}
-
-    async def _tool_remove_constraint(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        constraint_id = args["constraint_id"]
-        removed = self._constraints.pop(constraint_id, None)
-        if removed is not None:
-            self.world_model.remove_constraint(constraint_id)
-            self._sync_world_runtime()
-        return {"ok": removed is not None}
-
-    async def _tool_query_world(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        query_type = args["query_type"]
-        mapping = {
-            "my_actors": "my_actors",
-            "enemy_actors": "enemy_actors",
-            "enemy_bases": "find_actors",
-            "economy_status": "economy",
-            "map_control": "map",
-            "threat_assessment": "world_summary",
-        }
-        target_query = mapping.get(query_type)
-        if target_query is None:
-            raise ValueError(f"Unsupported query_world type: {query_type}")
-        params = dict(args.get("params") or {})
-        if query_type == "enemy_bases":
-            params.setdefault("owner", "enemy")
-            params.setdefault("category", "building")
-        result = self.world_model.query(target_query, params)
-        return {"data": result}
-
-    async def _tool_query_planner(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        world_state = {
-            "world_summary": self.world_model.query("world_summary"),
-            "economy": self.world_model.query("economy"),
-            "production_queues": self.world_model.query("production_queues"),
-            "my_actors": self.world_model.query("my_actors"),
-            "enemy_actors": self.world_model.query("enemy_actors"),
-        }
-        return {"proposal": run_planner_query(args["planner_type"], args.get("params"), world_state)}
-
-    async def _tool_cancel_tasks(self, _: str, args: dict[str, Any]) -> dict[str, Any]:
-        return {"count": self.cancel_tasks(args["filters"])}
