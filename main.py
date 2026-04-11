@@ -51,6 +51,8 @@ from logging_system import (
     get_logger,
     install_benchmark_logging,
     latest_session_dir,
+    list_persistence_sessions,
+    list_session_tasks,
     read_task_replay_records,
     records_from as log_records_from,
     start_persistence_session,
@@ -337,6 +339,9 @@ class RuntimeBridge(InboundHandler):
         """Client connected/reconnected — push full state immediately."""
         self.sync_runtime()
         await self._send_current_dashboard_to_client(client_id)
+        selected_session_dir = self._default_log_session_dir()
+        await self._send_session_catalog_to_client(client_id, selected_session_dir=selected_session_dir)
+        await self._send_session_tasks_to_client(client_id, session_dir=selected_session_dir)
         await self._replay_history(client_id)
 
     async def on_session_clear(self, client_id: str) -> None:
@@ -357,17 +362,32 @@ class RuntimeBridge(InboundHandler):
             await self.ws_server.send_session_cleared()
         await self.publish_dashboard()
 
-    async def on_task_replay_request(self, task_id: str, client_id: str) -> None:
+    async def on_session_select(self, session_dir: str, client_id: str) -> None:
+        selected_session_dir = self._resolve_log_session_dir(session_dir) or self._default_log_session_dir()
+        await self._send_session_catalog_to_client(client_id, selected_session_dir=selected_session_dir)
+        await self._send_session_tasks_to_client(client_id, session_dir=selected_session_dir)
+
+    async def on_task_replay_request(
+        self,
+        task_id: str,
+        client_id: str,
+        session_dir: Optional[str] = None,
+    ) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
             return
-        entries = read_task_replay_records(task_id, latest_base_dir=self.log_session_root)
-        session_dir = current_session_dir() or latest_session_dir(self.log_session_root)
-        log_path = str(session_dir / "tasks" / f"{task_id}.jsonl") if session_dir else None
+        resolved_session_dir = self._resolve_log_session_dir(session_dir) or self._default_log_session_dir()
+        entries = read_task_replay_records(
+            task_id,
+            session_dir=resolved_session_dir,
+            latest_base_dir=self.log_session_root,
+        )
+        log_path = str(resolved_session_dir / "tasks" / f"{task_id}.jsonl") if resolved_session_dir else None
         runtime_state = self.kernel.runtime_state()
         await self.ws_server.send_task_replay_to_client(
             client_id,
             {
                 "task_id": task_id,
+                "session_dir": str(resolved_session_dir) if resolved_session_dir else None,
                 "log_path": log_path,
                 "entry_count": len(entries),
                 "bundle": self._build_task_replay_bundle(task_id, entries, runtime_state=runtime_state),
@@ -595,6 +615,54 @@ class RuntimeBridge(InboundHandler):
 
         for response in self._recent_responses[-100:]:
             await self.ws_server.send_to_client(client_id, "query_response", response)
+
+    def _default_log_session_dir(self) -> Optional[Path]:
+        return current_session_dir() or latest_session_dir(self.log_session_root)
+
+    def _resolve_log_session_dir(self, session_dir: Optional[str]) -> Optional[Path]:
+        if not session_dir:
+            return None
+        candidate = Path(session_dir)
+        if not candidate.is_absolute():
+            candidate = (Path(self.log_session_root) / candidate).resolve()
+        else:
+            candidate = candidate.resolve()
+        return candidate if candidate.exists() else None
+
+    async def _send_session_catalog_to_client(
+        self,
+        client_id: str,
+        *,
+        selected_session_dir: Optional[Path],
+    ) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        sessions = list_persistence_sessions(self.log_session_root, limit=30)
+        await self.ws_server.send_session_catalog_to_client(
+            client_id,
+            {
+                "sessions": sessions,
+                "selected_session_dir": str(selected_session_dir) if selected_session_dir is not None else None,
+            },
+        )
+
+    async def _send_session_tasks_to_client(
+        self,
+        client_id: str,
+        *,
+        session_dir: Optional[Path],
+    ) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        resolved = session_dir or self._default_log_session_dir()
+        tasks = list_session_tasks(resolved, limit=300) if resolved is not None else []
+        await self.ws_server.send_session_task_catalog_to_client(
+            client_id,
+            {
+                "session_dir": str(resolved) if resolved is not None else None,
+                "tasks": tasks,
+            },
+        )
 
     def _task_to_dict(
         self,

@@ -454,6 +454,169 @@ def latest_session_dir(
     return session_path
 
 
+def _load_json_dict(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _iter_jsonl_dicts(path: Path) -> Iterable[dict[str, Any]]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    payload = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(payload, dict):
+                    yield payload
+    except OSError:
+        return
+
+
+def list_persistence_sessions(
+    base_dir: Union[str, Path] = "Logs/runtime",
+    *,
+    limit: int = 20,
+) -> list[dict[str, Any]]:
+    """List persisted runtime sessions with lightweight metadata."""
+    base = Path(base_dir).resolve()
+    if not base.exists():
+        return []
+
+    latest = latest_session_dir(base)
+    current = current_session_dir()
+    sessions: list[dict[str, Any]] = []
+    for child in sorted(base.iterdir(), reverse=True):
+        if not child.is_dir():
+            continue
+        metadata_path = child / "session.json"
+        if not metadata_path.exists():
+            continue
+        payload = _load_json_dict(metadata_path)
+        task_counts = payload.get("task_counts")
+        task_count = len(task_counts) if isinstance(task_counts, dict) else int(payload.get("task_file_count") or 0)
+        started_at = str(payload.get("started_at") or "")
+        sessions.append(
+            {
+                "session_name": str(payload.get("session_name") or child.name),
+                "session_dir": str(child.resolve()),
+                "started_at": started_at,
+                "ended_at": str(payload.get("ended_at") or ""),
+                "record_count": int(payload.get("record_count") or 0),
+                "task_count": task_count,
+                "task_file_count": int(payload.get("task_file_count") or task_count),
+                "pid": int(payload.get("pid") or 0),
+                "cwd": str(payload.get("cwd") or ""),
+                "metadata": payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                "is_latest": latest is not None and child.resolve() == latest.resolve(),
+                "is_current": current is not None and child.resolve() == current.resolve(),
+                "mtime": child.stat().st_mtime,
+            }
+        )
+    sessions.sort(
+        key=lambda item: (
+            str(item.get("started_at") or ""),
+            float(item.get("mtime") or 0.0),
+            str(item.get("session_name") or ""),
+        ),
+        reverse=True,
+    )
+    if limit > 0:
+        sessions = sessions[:limit]
+    for item in sessions:
+        item.pop("mtime", None)
+    return sessions
+
+
+def list_session_tasks(
+    session_dir: Union[str, Path],
+    *,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Build a lightweight task catalog from persisted task JSONL files."""
+    base = Path(session_dir)
+    tasks_dir = base / "tasks"
+    if not tasks_dir.exists():
+        return []
+
+    items: list[dict[str, Any]] = []
+    for task_path in sorted(tasks_dir.glob("*.jsonl")):
+        task_id = task_path.stem
+        raw_text = ""
+        task_label = ""
+        status = "running"
+        summary = ""
+        kind = ""
+        priority = 0
+        created_at = 0.0
+        last_timestamp = 0.0
+        entry_count = 0
+        for payload in _iter_jsonl_dicts(task_path):
+            entry_count += 1
+            event = str(payload.get("event") or "")
+            timestamp = float(payload.get("timestamp") or 0.0)
+            if timestamp > 0:
+                last_timestamp = timestamp
+                if created_at <= 0:
+                    created_at = timestamp
+            data = payload.get("data")
+            data = data if isinstance(data, dict) else {}
+            if data.get("task_id"):
+                task_id = str(data.get("task_id") or task_id)
+            if data.get("task_label"):
+                task_label = str(data.get("task_label") or task_label)
+            if event == "task_created":
+                raw_text = str(data.get("raw_text") or raw_text)
+                kind = str(data.get("kind") or kind)
+                priority = int(data.get("priority") or priority or 0)
+                if timestamp > 0:
+                    created_at = timestamp
+            elif event == "task_completed":
+                result = str(data.get("result") or "")
+                if result:
+                    status = result
+                summary = str(data.get("summary") or summary)
+            elif event == "expert_signal" and str(data.get("signal_kind") or "") == "task_complete":
+                result = str(data.get("result") or "")
+                if result:
+                    status = result
+                summary = str(data.get("summary") or summary)
+
+        if not task_id:
+            continue
+        items.append(
+            {
+                "task_id": task_id,
+                "raw_text": raw_text,
+                "label": task_label,
+                "kind": kind,
+                "priority": priority,
+                "status": status,
+                "timestamp": created_at or last_timestamp,
+                "created_at": created_at or last_timestamp,
+                "entry_count": entry_count,
+                "summary": summary,
+                "log_path": str(task_path.resolve()),
+            }
+        )
+    items.sort(
+        key=lambda item: (
+            float(item.get("timestamp") or 0.0),
+            str(item.get("task_id") or ""),
+        ),
+        reverse=True,
+    )
+    if limit > 0:
+        items = items[:limit]
+    return items
+
+
 def read_task_replay_records(
     task_id: str,
     *,
@@ -477,18 +640,7 @@ def read_task_replay_records(
         task_path = Path(base) / "tasks" / f"{_safe_filename(task_id)}.jsonl"
         if not task_path.exists():
             continue
-        items: list[dict[str, Any]] = []
-        with task_path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    payload = json.loads(stripped)
-                except json.JSONDecodeError:
-                    continue
-                if isinstance(payload, dict):
-                    items.append(payload)
+        items = list(_iter_jsonl_dicts(task_path))
         if limit is not None and limit > 0:
             return items[-limit:]
         return items

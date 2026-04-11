@@ -2,10 +2,22 @@
   <div class="diag-panel">
     <h3>Diagnostics</h3>
     <div class="trace-controls">
+      <label class="trace-label" for="session-select">Session</label>
+      <div class="trace-session-row">
+        <select id="session-select" v-model="selectedSessionDir" class="trace-select">
+          <option v-for="session in sessionCatalog" :key="session.session_dir" :value="session.session_dir">
+            {{ formatSessionOption(session) }}
+          </option>
+        </select>
+        <button type="button" class="filter-btn" @click="refreshDiagnostics">刷新</button>
+      </div>
+      <div v-if="selectedSessionMeta" class="task-log-path" :title="selectedSessionMeta.session_dir">
+        🗂 {{ selectedSessionMeta.session_name }} · tasks={{ selectedSessionMeta.task_count }} · records={{ selectedSessionMeta.record_count }}
+      </div>
       <label class="trace-label" for="task-trace-select">Task Trace</label>
       <select id="task-trace-select" v-model="selectedTaskId" class="trace-select">
         <option value="ALL">全部任务</option>
-        <option v-for="task in knownTasks" :key="task.task_id" :value="task.task_id">
+        <option v-for="task in activeTaskCatalog" :key="task.task_id" :value="task.task_id">
           {{ task.label }} · {{ task.raw_text || '未命名任务' }}
         </option>
       </select>
@@ -285,12 +297,31 @@ const benchmarkStats = reactive({})
 const filterLevel = ref('ALL')
 const filterComponent = ref('ALL')
 const selectedTaskId = ref('ALL')
-const knownTasks = ref([])
+const liveTaskCatalog = ref([])
+const sessionCatalog = ref([])
+const sessionTaskCatalog = ref([])
+const selectedSessionDir = ref('')
 const traceEntries = ref([])
 const replayCache = reactive({})
 const replayBundleCache = reactive({})
 const replayRequested = reactive({})
 const replayExpanded = reactive({})
+
+const currentSessionDir = computed(() =>
+  sessionCatalog.value.find((item) => item.is_current)?.session_dir
+  || sessionCatalog.value.find((item) => item.is_latest)?.session_dir
+  || ''
+)
+
+const selectedSessionMeta = computed(() =>
+  sessionCatalog.value.find((item) => item.session_dir === selectedSessionDir.value) || null
+)
+
+const activeTaskCatalog = computed(() => {
+  if (!selectedSessionDir.value) return [...liveTaskCatalog.value]
+  if (selectedSessionDir.value !== currentSessionDir.value) return [...sessionTaskCatalog.value]
+  return mergeCatalogTasks(sessionTaskCatalog.value, liveTaskCatalog.value)
+})
 
 const filteredLogs = computed(() => {
   const minLevel = filterLevel.value === 'ALL' ? 0 : (LEVEL_ORDER[filterLevel.value] || 0)
@@ -303,17 +334,18 @@ const filteredLogs = computed(() => {
 })
 
 const filteredTraceEntries = computed(() => {
+  const replayKey = replayCacheKey(selectedTaskId.value)
   const items = selectedTaskId.value === 'ALL'
     ? traceEntries.value
     : (
-      replayExpanded[selectedTaskId.value]
+      replayExpanded[replayKey]
         ? mergeTraceEntries(
-            replayCache[selectedTaskId.value] || [],
+            replayCache[replayKey] || [],
             traceEntries.value.filter((entry) => entry.taskId === selectedTaskId.value),
           )
         : traceEntries.value.filter((entry) => entry.taskId === selectedTaskId.value)
     )
-  if (selectedTaskId.value !== 'ALL' && replayExpanded[selectedTaskId.value]) {
+  if (selectedTaskId.value !== 'ALL' && replayExpanded[replayKey]) {
     return items.slice(-EXPANDED_TRACE_LIMIT)
   }
   return items.slice(-200)
@@ -321,29 +353,30 @@ const filteredTraceEntries = computed(() => {
 
 const selectedTaskLogPath = computed(() => {
   if (selectedTaskId.value === 'ALL') return null
-  const task = knownTasks.value.find(t => t.task_id === selectedTaskId.value)
+  const task = activeTaskCatalog.value.find(t => t.task_id === selectedTaskId.value)
   return task?.log_path || null
 })
 
 const selectedTaskTriage = computed(() => {
   if (selectedTaskId.value === 'ALL') return null
-  const task = knownTasks.value.find(t => t.task_id === selectedTaskId.value)
+  const task = activeTaskCatalog.value.find(t => t.task_id === selectedTaskId.value)
   return task?.triage || null
 })
 
 const selectedTaskReplayBundle = computed(() => {
   if (selectedTaskId.value === 'ALL') return null
-  return replayBundleCache[selectedTaskId.value] || null
+  return replayBundleCache[replayCacheKey(selectedTaskId.value)] || null
 })
 
 const selectedTaskReplayCount = computed(() => {
   if (selectedTaskId.value === 'ALL') return 0
-  return Array.isArray(replayCache[selectedTaskId.value]) ? replayCache[selectedTaskId.value].length : 0
+  const key = replayCacheKey(selectedTaskId.value)
+  return Array.isArray(replayCache[key]) ? replayCache[key].length : 0
 })
 
 const selectedTaskRawReplayVisible = computed(() => {
   if (selectedTaskId.value === 'ALL') return false
-  return Boolean(replayExpanded[selectedTaskId.value])
+  return Boolean(replayExpanded[replayCacheKey(selectedTaskId.value)])
 })
 
 const displayedBenchmarks = computed(() =>
@@ -366,9 +399,9 @@ function formatTime(ts) {
   return d.toLocaleTimeString()
 }
 
-function normalizeTaskCatalog(tasks) {
+function normalizeCatalogTasks(tasks) {
   registerTaskLabels(tasks)
-  knownTasks.value = [...(tasks || [])]
+  return [...(tasks || [])]
     .sort((a, b) => Number(b?.timestamp || b?.created_at || 0) - Number(a?.timestamp || a?.created_at || 0))
     .map((task) => ({
       ...task,
@@ -377,21 +410,58 @@ function normalizeTaskCatalog(tasks) {
     }))
 }
 
-function mergeKnownTask(task) {
+function mergeCatalogTasks(baseTasks, overlayTasks) {
+  const merged = new Map()
+  for (const task of baseTasks || []) {
+    if (!task?.task_id) continue
+    merged.set(task.task_id, { ...task })
+  }
+  for (const task of overlayTasks || []) {
+    if (!task?.task_id) continue
+    merged.set(task.task_id, {
+      ...(merged.get(task.task_id) || {}),
+      ...task,
+    })
+  }
+  return normalizeCatalogTasks([...merged.values()])
+}
+
+function setLiveTaskCatalog(tasks) {
+  liveTaskCatalog.value = normalizeCatalogTasks(tasks)
+}
+
+function mergeLiveTask(task) {
   if (!task?.task_id) return
   registerTaskLabel(task.task_id)
-  const idx = knownTasks.value.findIndex((item) => item.task_id === task.task_id)
+  const idx = liveTaskCatalog.value.findIndex((item) => item.task_id === task.task_id)
   const next = {
-    ...(idx >= 0 ? knownTasks.value[idx] : {}),
+    ...(idx >= 0 ? liveTaskCatalog.value[idx] : {}),
     ...task,
     label: formatTaskLabel(task.task_id),
-    log_path: task.log_path || (idx >= 0 ? knownTasks.value[idx]?.log_path : null) || null,
+    log_path: task.log_path || (idx >= 0 ? liveTaskCatalog.value[idx]?.log_path : null) || null,
   }
-  if (idx >= 0) knownTasks.value.splice(idx, 1, next)
-  else knownTasks.value.push(next)
-  knownTasks.value = [...knownTasks.value].sort(
-    (a, b) => Number(b?.timestamp || b?.created_at || 0) - Number(a?.timestamp || a?.created_at || 0)
-  )
+  const nextItems = [...liveTaskCatalog.value]
+  if (idx >= 0) nextItems.splice(idx, 1, next)
+  else nextItems.push(next)
+  liveTaskCatalog.value = normalizeCatalogTasks(nextItems)
+}
+
+function formatSessionOption(session) {
+  if (!session) return ''
+  const flags = []
+  if (session.is_current) flags.push('live')
+  else if (session.is_latest) flags.push('latest')
+  const suffix = flags.length ? ` · ${flags.join('/')}` : ''
+  return `${session.session_name}${suffix}`
+}
+
+function refreshDiagnostics() {
+  if (!props.send) return
+  props.send('sync_request')
+}
+
+function replayCacheKey(taskId, sessionDir = selectedSessionDir.value || currentSessionDir.value || '') {
+  return `${sessionDir || 'latest'}::${taskId || ''}`
 }
 
 function resolveTaskId(payload = {}) {
@@ -457,14 +527,19 @@ function formatReplayItem(item) {
 
 function toggleRawReplay(taskId) {
   if (!taskId || taskId === 'ALL') return
-  replayExpanded[taskId] = !replayExpanded[taskId]
+  const key = replayCacheKey(taskId)
+  replayExpanded[key] = !replayExpanded[key]
 }
 
 function ensureReplayRequested(taskId) {
   if (!props.send || !taskId || taskId === 'ALL') return
-  if (replayRequested[taskId]) return
-  const sent = props.send('task_replay_request', { task_id: taskId })
-  if (sent) replayRequested[taskId] = true
+  const key = replayCacheKey(taskId)
+  if (replayRequested[key]) return
+  const sent = props.send('task_replay_request', {
+    task_id: taskId,
+    session_dir: selectedSessionDir.value || currentSessionDir.value || null,
+  })
+  if (sent) replayRequested[key] = true
 }
 
 function prefetchRecentReplays(tasks) {
@@ -486,7 +561,10 @@ function prefetchRecentReplays(tasks) {
 function clearDiagnostics() {
   logEntries.value = []
   traceEntries.value = []
-  knownTasks.value = []
+  liveTaskCatalog.value = []
+  sessionCatalog.value = []
+  sessionTaskCatalog.value = []
+  selectedSessionDir.value = ''
   selectedTaskId.value = 'ALL'
   filterLevel.value = 'ALL'
   filterComponent.value = 'ALL'
@@ -559,13 +637,13 @@ if (props.on) {
   }))
   offHandlers.push(props.on('task_list', (msg) => {
     const tasks = msg.data?.tasks || []
-    normalizeTaskCatalog(tasks)
-    prefetchRecentReplays(knownTasks.value)
+    setLiveTaskCatalog(tasks)
+    prefetchRecentReplays(activeTaskCatalog.value)
   }))
   offHandlers.push(props.on('task_update', (msg) => {
     const task = msg.data || {}
     if (!task.task_id) return
-    mergeKnownTask(task)
+    mergeLiveTask(task)
     registerTaskLabel(task.task_id)
     addTraceEntry({
       timestamp: task.timestamp || msg.timestamp,
@@ -576,6 +654,13 @@ if (props.on) {
       message: `状态更新：${task.status}${task.raw_text ? ` · ${task.raw_text}` : ''}`,
       details: task,
     })
+    const replayKey = replayCacheKey(task.task_id)
+    delete replayRequested[replayKey]
+    delete replayCache[replayKey]
+    delete replayBundleCache[replayKey]
+    if (task.task_id === selectedTaskId.value) {
+      ensureReplayRequested(task.task_id)
+    }
   }))
   offHandlers.push(props.on('query_response', (msg) => {
     const taskId = msg.data?.task_id || null
@@ -624,11 +709,27 @@ if (props.on) {
     const payload = msg.data || {}
     const taskId = payload.task_id
     if (!taskId) return
-    replayBundleCache[taskId] = payload.bundle || null
-    replayCache[taskId] = Array.isArray(payload.entries)
+    const replayKey = replayCacheKey(taskId, payload.session_dir || '')
+    replayBundleCache[replayKey] = payload.bundle || null
+    replayCache[replayKey] = Array.isArray(payload.entries)
       ? payload.entries.map((entry) => traceEntryFromLogRecord(entry, taskId, true))
       : []
-    replayRequested[taskId] = true
+    replayRequested[replayKey] = true
+  }))
+  offHandlers.push(props.on('session_catalog', (msg) => {
+    const payload = msg.data || {}
+    sessionCatalog.value = Array.isArray(payload.sessions) ? payload.sessions : []
+    const selected = payload.selected_session_dir || currentSessionDir.value || ''
+    if (!selectedSessionDir.value || !sessionCatalog.value.some((item) => item.session_dir === selectedSessionDir.value)) {
+      selectedSessionDir.value = selected
+    }
+  }))
+  offHandlers.push(props.on('session_task_catalog', (msg) => {
+    const payload = msg.data || {}
+    sessionTaskCatalog.value = normalizeCatalogTasks(payload.tasks || [])
+    const exists = activeTaskCatalog.value.some((task) => task.task_id === selectedTaskId.value)
+    if (!exists) selectedTaskId.value = 'ALL'
+    prefetchRecentReplays(activeTaskCatalog.value)
   }))
   offHandlers.push(props.on('session_cleared', () => {
     clearDiagnostics()
@@ -653,6 +754,11 @@ onUnmounted(() => {
 watch(selectedTaskId, (taskId) => {
   ensureReplayRequested(taskId)
 })
+
+watch(selectedSessionDir, (sessionDir) => {
+  if (!props.send || !sessionDir) return
+  props.send('session_select', { session_dir: sessionDir })
+})
 </script>
 
 <style scoped>
@@ -667,6 +773,11 @@ watch(selectedTaskId, (taskId) => {
 .trace-label {
   font-size: 12px;
   color: #666;
+}
+.trace-session-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
 }
 .trace-select {
   width: 100%;

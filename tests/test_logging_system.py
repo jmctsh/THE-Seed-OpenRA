@@ -199,6 +199,82 @@ def test_latest_session_dir_resolves_relative_latest_txt() -> None:
     assert resolved == session_dir.resolve()
 
 
+def test_list_persistence_sessions_and_session_tasks() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        session_dir = logging_system.start_persistence_session(
+            base,
+            session_name="session-a",
+            metadata={"source": "unit-test"},
+        )
+        task_path = session_dir / "tasks" / "t_demo.jsonl"
+        task_path.parent.mkdir(parents=True, exist_ok=True)
+        task_path.write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "timestamp": 10.0,
+                            "component": "kernel",
+                            "level": "INFO",
+                            "message": "Task created",
+                            "event": "task_created",
+                            "data": {
+                                "task_id": "t_demo",
+                                "task_label": "004",
+                                "raw_text": "发展科技",
+                                "kind": "managed",
+                                "priority": 60,
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(
+                        {
+                            "timestamp": 12.0,
+                            "component": "kernel",
+                            "level": "INFO",
+                            "message": "Task completed",
+                            "event": "task_completed",
+                            "data": {
+                                "task_id": "t_demo",
+                                "result": "partial",
+                                "summary": "缺少前置，部分完成",
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        logging_system.stop_persistence_session()
+
+        sessions = logging_system.list_persistence_sessions(base)
+        tasks = logging_system.list_session_tasks(session_dir)
+
+    assert len(sessions) == 1
+    assert sessions[0]["session_name"] == "session-a"
+    assert sessions[0]["metadata"]["source"] == "unit-test"
+    assert sessions[0]["is_latest"] is True
+    assert tasks == [
+        {
+            "task_id": "t_demo",
+            "raw_text": "发展科技",
+            "label": "004",
+            "kind": "managed",
+            "priority": 60,
+            "status": "partial",
+            "timestamp": 10.0,
+            "created_at": 10.0,
+            "entry_count": 2,
+            "summary": "缺少前置，部分完成",
+            "log_path": str((session_dir / "tasks" / "t_demo.jsonl").resolve()),
+        }
+    ]
+
+
 def test_benchmark_summary_and_logging_integration() -> None:
     logging_system.install_benchmark_logging()
     try:
@@ -268,6 +344,9 @@ if __name__ == "__main__":
     setup_function()
     test_persistent_log_session_writes_all_and_task_files()
     print("  PASS: persistent_log_session_writes_all_and_task_files")
+    setup_function()
+    test_list_persistence_sessions_and_session_tasks()
+    print("  PASS: list_persistence_sessions_and_session_tasks")
     setup_function()
     test_benchmark_summary_and_logging_integration()
     print("  PASS: benchmark_summary_and_logging_integration")

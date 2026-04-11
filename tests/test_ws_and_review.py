@@ -242,8 +242,11 @@ def test_ws_client_connect_and_inbound():
             self.session_clears += 1
             received_commands.append(f"clear:{client_id}")
 
-        async def on_task_replay_request(self, task_id, client_id):
-            received_commands.append(f"replay:{task_id}:{client_id}")
+        async def on_session_select(self, session_dir, client_id):
+            received_commands.append(f"session:{session_dir}:{client_id}")
+
+        async def on_task_replay_request(self, task_id, client_id, session_dir=None):
+            received_commands.append(f"replay:{task_id}:{session_dir}:{client_id}")
 
     handler = TestHandler()
     server = WSServer(
@@ -273,6 +276,9 @@ def test_ws_client_connect_and_inbound():
                 await ws.send_str(json.dumps({"type": "session_clear"}))
                 await asyncio.sleep(0.05)
 
+                await ws.send_str(json.dumps({"type": "session_select", "session_dir": "/tmp/demo-session"}))
+                await asyncio.sleep(0.05)
+
                 await ws.send_str(json.dumps({"type": "task_replay_request", "task_id": "t9"}))
                 await asyncio.sleep(0.05)
 
@@ -285,7 +291,8 @@ def test_ws_client_connect_and_inbound():
     assert "mode:debug" in received_commands
     assert "restart:baseline.orasav" in received_commands
     assert any(item.startswith("clear:client_") for item in received_commands)
-    assert any(item.startswith("replay:t9:client_") for item in received_commands)
+    assert any(item.startswith("session:/tmp/demo-session:client_") for item in received_commands)
+    assert any(item.startswith("replay:t9:None:client_") for item in received_commands)
     assert handler.session_clears == 1
     print("  PASS: ws_client_connect_and_inbound")
 
@@ -513,6 +520,12 @@ def test_sync_request_pushes_current_state_directly():
                 )
             )
 
+        async def send_session_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_catalog", {"client_id": client_id, "payload": payload}))
+
+        async def send_session_task_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_task_catalog", {"client_id": client_id, "payload": payload}))
+
         async def send_to_client(self, client_id, msg_type, data):
             self.sent.append((msg_type, {"client_id": client_id, "data": data}))
 
@@ -538,6 +551,8 @@ def test_sync_request_pushes_current_state_directly():
     assert ws.sent[1][1]["tasks"][0]["triage"]["state"] == "waiting_player"
     assert "等待玩家回复" in ws.sent[1][1]["tasks"][0]["triage"]["status_line"]
     assert ws.sent[1][1]["pending_questions"][0]["message_id"] == "msg_1"
+    assert ws.sent[2][0] == "session_catalog"
+    assert ws.sent[3][0] == "session_task_catalog"
     print("  PASS: sync_request_pushes_current_state_directly")
 
 
@@ -951,7 +966,7 @@ def test_task_replay_request_returns_persisted_task_log():
             )
 
             async def run():
-                await bridge.on_task_replay_request("t_demo", "client_7")
+                await bridge.on_task_replay_request("t_demo", "client_7", session_dir=str(session_dir))
 
             asyncio.run(run())
         finally:
@@ -961,6 +976,7 @@ def test_task_replay_request_returns_persisted_task_log():
     assert ws.sent[0][1]["client_id"] == "client_7"
     payload = ws.sent[0][1]["payload"]
     assert payload["task_id"] == "t_demo"
+    assert payload["session_dir"] == str(session_dir)
     assert payload["entry_count"] == 7
     assert payload["entries"][1]["data"]["job_id"] == "j_1"
     assert payload["bundle"]["summary"] == "侦察完成，发现目标"
@@ -1000,6 +1016,110 @@ def test_task_replay_request_returns_persisted_task_log():
     assert payload["bundle"]["unit_pipeline"]["unit_reservations"][0]["reservation_id"] == "res_1"
     assert payload["bundle"]["unit_pipeline"]["unit_reservations"][0]["assigned_count"] == 1
     print("  PASS: task_replay_request_returns_persisted_task_log")
+
+
+def test_session_select_returns_catalog_and_task_catalog():
+    class FakeKernel:
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return []
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+        def runtime_state(self):
+            return {}
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[tuple[str, dict[str, Any]]] = []
+
+        async def send_session_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_catalog", {"client_id": client_id, "payload": payload}))
+
+        async def send_session_task_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_task_catalog", {"client_id": client_id, "payload": payload}))
+
+    import tempfile
+    from pathlib import Path
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    ws = FakeWS()
+    bridge.attach_ws_server(ws)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        session_dir = start_persistence_session(tmpdir, session_name="session-select")
+        try:
+            task_path = Path(session_dir) / "tasks" / "t_select.jsonl"
+            task_path.parent.mkdir(parents=True, exist_ok=True)
+            task_path.write_text(
+                json.dumps(
+                    {
+                        "timestamp": 10.0,
+                        "component": "kernel",
+                        "level": "INFO",
+                        "message": "Task created",
+                        "event": "task_created",
+                        "data": {"task_id": "t_select", "raw_text": "探索地图", "priority": 40},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            bridge.log_session_root = tmpdir
+
+            async def run():
+                await bridge.on_session_select(str(session_dir), "client_9")
+
+            asyncio.run(run())
+        finally:
+            stop_persistence_session()
+
+    assert ws.sent[0][0] == "session_catalog"
+    assert ws.sent[0][1]["payload"]["selected_session_dir"] == str(session_dir)
+    assert ws.sent[1][0] == "session_task_catalog"
+    assert ws.sent[1][1]["payload"]["tasks"][0]["task_id"] == "t_select"
+    assert ws.sent[1][1]["payload"]["tasks"][0]["raw_text"] == "探索地图"
+    print("  PASS: session_select_returns_catalog_and_task_catalog")
 
 
 def test_task_replay_bundle_prefers_live_runtime_status_line_for_active_tasks():
@@ -1352,6 +1472,7 @@ if __name__ == "__main__":
     test_runtime_bridge_publish_logs_batches_incrementally()
     test_runtime_bridge_publish_benchmarks_sends_full_snapshot_only_when_changed()
     test_task_replay_request_returns_persisted_task_log()
+    test_session_select_returns_catalog_and_task_catalog()
     test_task_replay_bundle_prefers_live_runtime_status_line_for_active_tasks()
     test_runtime_bridge_sync_runtime_uses_public_kernel_accessors()
     test_world_snapshot_throttled()
