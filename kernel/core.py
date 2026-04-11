@@ -145,6 +145,16 @@ from .player_interaction import (
     submit_player_response as submit_player_response_runtime,
     tick_question_timeouts,
 )
+from .query_views import (
+    active_jobs as active_jobs_runtime,
+    get_task_agent as get_task_agent_runtime,
+    jobs_for_task as jobs_for_task_runtime,
+    list_jobs as list_jobs_runtime,
+    list_player_notifications as list_player_notifications_runtime,
+    list_task_messages as list_task_messages_runtime,
+    list_tasks as list_tasks_runtime,
+    runtime_state as runtime_state_view,
+)
 from .task_questions import PendingQuestionStore
 from task_agent import AgentConfig, TaskAgent, TaskToolHandlers, ToolExecutor, WorldSummary
 from world_model import WorldModel
@@ -813,35 +823,32 @@ class Kernel:
         )
 
     def get_task_agent(self, task_id: str) -> Optional[TaskAgentLike]:
-        runtime = self._task_runtimes.get(task_id)
-        return runtime.agent if runtime else None
+        return get_task_agent_runtime(task_id, task_runtimes=self._task_runtimes)
 
     def jobs_for_task(self, task_id: str) -> list[Job]:
-        jobs = [controller.to_model() for controller in self._jobs.values() if controller.task_id == task_id]
-        jobs.sort(key=lambda item: item.job_id)
-        return jobs
+        return jobs_for_task_runtime(task_id, jobs=self._jobs.values())
 
     def active_jobs(self) -> tuple[BaseJob | _ManagedJob, ...]:
         """Return a read-only snapshot of non-terminal job controllers."""
-        jobs = [controller for controller in self._jobs.values() if not self._is_terminal_status(controller.status)]
-        jobs.sort(key=lambda item: item.job_id)
-        return tuple(jobs)
+        return active_jobs_runtime(
+            jobs=self._jobs.values(),
+            is_terminal_status=self._is_terminal_status,
+        )
 
     def list_tasks(self) -> list[Task]:
-        return sorted(self.tasks.values(), key=lambda item: item.created_at)
+        return list_tasks_runtime(tasks=self.tasks.values())
 
     def list_jobs(self) -> list[Job]:
-        jobs = [controller.to_model() for controller in self._jobs.values()]
-        jobs.sort(key=lambda item: item.job_id)
-        return jobs
+        return list_jobs_runtime(jobs=self._jobs.values())
 
     def list_player_notifications(self) -> list[dict[str, Any]]:
-        return list(self.player_notifications)
+        return list_player_notifications_runtime(
+            player_notifications=self.player_notifications,
+        )
 
     def runtime_state(self) -> dict[str, Any]:
         """Return the latest runtime projection synchronized into WorldModel."""
-        state = self.world_model.runtime_state()
-        return dict(state or {})
+        return runtime_state_view(world_model=self.world_model)
 
     def push_player_notification(
         self,
@@ -861,9 +868,10 @@ class Kernel:
         )
 
     def list_task_messages(self, task_id: Optional[str] = None) -> list[TaskMessage]:
-        if task_id is None:
-            return list(self.task_messages)
-        return [message for message in self.task_messages if message.task_id == task_id]
+        return list_task_messages_runtime(
+            task_id,
+            task_messages=self.task_messages,
+        )
 
     def list_pending_questions(self) -> list[dict[str, Any]]:
         return list(self._question_store.list_pending_questions())
