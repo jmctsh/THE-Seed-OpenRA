@@ -16,6 +16,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import benchmark
+import pytest
 from typing import Any, Optional
 
 from llm import LLMResponse, MockProvider, ToolCall
@@ -33,6 +34,8 @@ from experts.deploy import DeployExpert
 from experts.combat import CombatExpert
 from experts.economy import EconomyExpert
 from openra_api.models import Actor, Location, MapQueryResult, PlayerBaseInfo
+
+pytestmark = pytest.mark.mock_integration
 
 
 # --- Shared mock infrastructure ---
@@ -90,10 +93,13 @@ class SimpleWorldSource:
     def fetch_enemy_actors(self):
         return list(self._enemy)
 
+    def fetch_frozen_enemies(self):
+        return []
+
     def fetch_economy(self):
         return PlayerBaseInfo(Cash=5000, Resources=500, Power=80, PowerDrained=40, PowerProvided=100)
 
-    def fetch_map(self):
+    def fetch_map(self, fields=None):
         return make_map()
 
     def fetch_production_queues(self):

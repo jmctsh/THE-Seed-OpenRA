@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 from urllib.parse import urlparse
 
+import pytest
 import websockets
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -29,6 +30,8 @@ from openra_api.game_api import GameAPI
 from openra_api.models import Actor, TargetsQueryParam
 from openra_api.production_names import production_name_matches
 from unit_registry import normalize_registry_name
+
+pytestmark = pytest.mark.live
 
 
 MAX_SIZE = 10 * 1024 * 1024

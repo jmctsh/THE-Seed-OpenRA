@@ -11,6 +11,8 @@ from typing import Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+
 from benchmark import clear as benchmark_clear
 from benchmark import export_json as benchmark_export_json
 from benchmark import query as benchmark_query
@@ -22,6 +24,8 @@ from models import EventType, TaskKind
 from openra_api.models import Actor, Location, MapQueryResult, PlayerBaseInfo
 from task_agent import AgentConfig
 from world_model import RefreshPolicy, WorldModel
+
+pytestmark = pytest.mark.mock_integration
 
 
 class ScenarioProvider(LLMProvider):
@@ -177,10 +181,13 @@ class ScenarioWorldSource:
             ]
         return []
 
+    def fetch_frozen_enemies(self):
+        return []
+
     def fetch_economy(self) -> PlayerBaseInfo:
         return PlayerBaseInfo(Cash=2000, Resources=1500, Power=100, PowerDrained=20, PowerProvided=120)
 
-    def fetch_map(self) -> MapQueryResult:
+    def fetch_map(self, fields=None) -> MapQueryResult:
         explored = [[False for _ in range(8)] for _ in range(8)]
         visible = [[False for _ in range(8)] for _ in range(8)]
         for x in range(2):
@@ -263,7 +270,8 @@ def test_e2e_t1_recon_flow_and_benchmark() -> None:
         jobs = kernel.list_jobs()
         assert len(jobs) == 1
         assert jobs[0].expert_type == "ReconExpert"
-        assert jobs[0].resources == ["actor:57"]
+        # Resources released on task completion; verify scout was used via move commands
+        assert any(57 in move["actor_ids"] for move in game_api.moves)
         assert kernel.tasks[task.task_id].status.value == "succeeded"
         assert len(game_api.moves) >= 2
 

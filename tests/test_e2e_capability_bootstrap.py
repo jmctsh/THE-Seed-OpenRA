@@ -20,6 +20,8 @@ from openra_api.models import Actor, Location, MapQueryResult, PlayerBaseInfo
 from task_agent import AgentConfig
 from kernel import KernelConfig
 
+pytestmark = pytest.mark.mock_integration
+
 
 class CapabilityBootstrapGameAPI:
     def __init__(self) -> None:

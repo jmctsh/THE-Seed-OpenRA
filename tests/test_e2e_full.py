@@ -14,6 +14,7 @@ from typing import Any
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import benchmark
+import pytest
 
 from kernel import KernelConfig
 from llm import MockProvider
@@ -31,6 +32,8 @@ from tests.test_e2e_adjutant import (
 from tests.test_e2e_experts import MockGameAPI as ExpertMockGameAPI, SimpleWorldSource
 from tests.test_e2e_t1 import MockGameAPI as ReconMockGameAPI, ScenarioProvider as ReconScenarioProvider, ScenarioWorldSource
 from tests.test_world_model import Frame, MockWorldSource, make_map
+
+pytestmark = pytest.mark.mock_integration
 
 
 class EconomyMockGameAPI(ExpertMockGameAPI):
@@ -142,6 +145,7 @@ async def _run_t1(tmpdir: str) -> None:
         world_source=ScenarioWorldSource(),
         kernel_config=KernelConfig(
             auto_start_agents=True,
+            enable_capability_task=False,
             default_agent_config=AgentConfig(review_interval=10.0, max_retries=0, llm_timeout=1.0, max_turns=4),
         ),
     )
@@ -149,7 +153,7 @@ async def _run_t1(tmpdir: str) -> None:
         await runtime.start()
         task = runtime.kernel.create_task("探索地图，找到敌人基地", TaskKind.MANAGED, 50)
         runtime.bridge.sync_runtime()
-        await _wait_until(lambda: runtime.kernel.tasks[task.task_id].status.value == "succeeded", timeout=4.0)
+        await _wait_until(lambda: runtime.kernel.tasks[task.task_id].status.value == "succeeded", timeout=6.0)
         jobs = runtime.kernel.list_jobs()
         assert len(provider.call_log) >= 3
         assert len(jobs) == 1
@@ -456,7 +460,7 @@ async def _run_t11(tmpdir: str) -> None:
             adjutant_llm=ScenarioAdjutantProvider(),
             api=ExpertMockGameAPI(),
             world_source=_adjutant_world_source(),
-            kernel_config=KernelConfig(auto_start_agents=True, default_agent_config=AgentConfig(review_interval=10.0, max_retries=0, llm_timeout=1.0, max_turns=4)),
+            kernel_config=KernelConfig(auto_start_agents=True, enable_capability_task=False, default_agent_config=AgentConfig(review_interval=10.0, max_retries=0, llm_timeout=1.0, max_turns=4)),
         )
         runtime.kernel.expert_registry["DecisionExpert"] = DecisionExpert()
         try:

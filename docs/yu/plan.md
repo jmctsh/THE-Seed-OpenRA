@@ -1,5 +1,5 @@
 ## Current
-Testing reform / signal quality: layered backend gate plus direct-entry startup smoke are now in place (`contract`, `startup_smoke`, `runtime_invariants`, `mock_integration`, plus manual `live`), so the next step is to widen the trustworthy slices without collapsing back into one broad green count.
+Testing reform / signal quality: layered backend gate, direct-entry startup smoke, and E2E classification guardrails are now in place (`contract`, `startup_smoke`, `runtime_invariants`, `mock_integration`, plus manual `live`), so the next step is to widen the trustworthy slices without collapsing back into one broad green count.
 
 ## Queue
 Runtime disconnect degradation: the refresh-storm fix is landed, but the remaining work is to audit any higher-level UX/runtime surfaces that still behave poorly once the game disappears mid-session.
@@ -10,7 +10,7 @@ Unit-reservation contract surfacing: promote `UnitReservation` state from kernel
 Task triage/debug bundle follow-up: expose deterministic `phase` / `waiting_reason` / `blocker` / `highlights` summaries in task list and replay flows so diagnostics answer “what is this task doing now?” before forcing raw log reading.
 Knowledge/planner truth cleanup: keep aligning `experts/knowledge.py` / `experts/planners.py` with the normalized demo capability truth so soft strategy does not overclaim unsupported faction/buildability semantics.
 Historical task debug bundle follow-up: keep improving replay/diagnostics so one task can be triaged from structured highlights instead of raw log scrolling.
-Test-signal audit follow-up: broader capability/diagnostics E2E coverage still remains, but the startup smoke, direct-entry smoke, layered backend gate, bootstrap smoke, and several stale assertion surfaces are now closed.
+Test-signal audit follow-up: broader capability/diagnostics E2E coverage still remains, but the startup smoke, direct-entry smoke, layered backend gate, bootstrap smoke, E2E classification guardrails, and several stale assertion surfaces are now closed.
 Docs hygiene follow-up: archive stale slice/audit notes in `docs/yu` and keep only actively referenced execution docs at the top level.
 
 ## Blocked (optional)

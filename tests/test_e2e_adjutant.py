@@ -21,6 +21,8 @@ from typing import Any, Iterator
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pytest
+
 from adjutant import Adjutant
 from benchmark import clear as benchmark_clear
 from benchmark import export_json as benchmark_export_json
@@ -35,6 +37,8 @@ from openra_api.models import Actor, Location, MapQueryResult, PlayerBaseInfo
 from task_agent import AgentConfig, TaskAgent, ToolExecutor, WorldSummary
 from tests.test_world_model import Frame, MockWorldSource, make_map
 from world_model import RefreshPolicy, WorldModel
+
+pytestmark = pytest.mark.mock_integration
 
 
 @dataclass
