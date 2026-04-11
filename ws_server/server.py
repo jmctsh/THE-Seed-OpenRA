@@ -317,8 +317,8 @@ class WSServer:
             },
         )
 
-    async def send_benchmark(self, benchmark_data: list[dict[str, Any]]) -> None:
-        await self.broadcast("benchmark", {"records": benchmark_data})
+    async def send_benchmark(self, benchmark_data: dict[str, Any]) -> None:
+        await self.broadcast("benchmark", benchmark_data)
 
     async def send_session_cleared(self) -> None:
         await self.broadcast("session_cleared", {"ok": True})
@@ -459,6 +459,9 @@ class WSServer:
         if ws is None:
             return
         try:
-            await ws.send_str(json.dumps(payload, ensure_ascii=False))
+            await asyncio.wait_for(
+                ws.send_str(json.dumps(payload, ensure_ascii=False)),
+                timeout=self._broadcast_send_timeout_s,
+            )
         except Exception:
             self._clients.pop(client_id, None)

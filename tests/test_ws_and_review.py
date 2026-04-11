@@ -1634,6 +1634,27 @@ def test_broadcast_drops_stalled_client_after_timeout():
     print("  PASS: broadcast_drops_stalled_client_after_timeout")
 
 
+def test_send_to_client_drops_stalled_client_after_timeout():
+    """Direct client sends should also time out and evict stalled sockets."""
+    server = WSServer()
+    server._broadcast_send_timeout_s = 0.01
+
+    class _HangingWS:
+        async def send_str(self, payload: str) -> None:
+            del payload
+            await asyncio.sleep(1.0)
+
+    async def run():
+        server._clients = {
+            "slow": _HangingWS(),  # type: ignore[assignment]
+        }
+        await server.send_to_client("slow", "log_entry", {"msg": "tick"})
+
+    asyncio.run(run())
+    assert "slow" not in server._clients
+    print("  PASS: send_to_client_drops_stalled_client_after_timeout")
+
+
 # --- Run all tests ---
 
 if __name__ == "__main__":
@@ -1667,5 +1688,6 @@ if __name__ == "__main__":
     test_other_messages_not_throttled()
     test_broadcast_fanout_is_concurrent()
     test_broadcast_drops_stalled_client_after_timeout()
+    test_send_to_client_drops_stalled_client_after_timeout()
 
     print("\nAll WS + review_interval tests passed!")
