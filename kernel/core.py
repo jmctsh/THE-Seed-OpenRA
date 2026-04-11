@@ -27,7 +27,6 @@ from models import (
     Task,
     TaskKind,
     TaskMessage,
-    TaskMessageType,
     TaskStatus,
     UnitReservation,
     UnitRequest,
@@ -117,6 +116,13 @@ from .session_reset import (
     stop_all_task_runtimes,
 )
 from .signal_delivery import route_expert_signal
+from .task_lifecycle import (
+    cancel_task as cancel_task_runtime,
+    cancel_tasks as cancel_tasks_runtime,
+    close_pending_questions_for_task,
+    complete_task as complete_task_runtime,
+    task_matches_filters,
+)
 from .task_questions import PendingQuestionStore
 from task_agent import AgentConfig, TaskAgent, TaskToolHandlers, ToolExecutor, WorldSummary
 from world_model import WorldModel
@@ -357,36 +363,28 @@ class Kernel:
             return task
 
     def cancel_task(self, task_id: str) -> bool:
-        with bm_span("tool_exec", name="kernel:cancel_task"):
-            task = self.tasks.get(task_id)
-            if task is None:
-                return False
-            if task.status in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.ABORTED, TaskStatus.PARTIAL}:
-                return False
-            for job in list(self._jobs.values()):
-                if job.task_id == task_id and job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}:
-                    self.abort_job(job.job_id)
-            self._release_task_job_resources(task_id)
-            self._close_pending_questions_for_task(task_id)
-            # Cancel any pending unit requests for this task
-            for req in list(self._unit_requests.values()):
-                if req.task_id == task_id and req.status in ("pending", "partial"):
-                    self.cancel_unit_request(req.request_id)
-            task.status = TaskStatus.ABORTED
-            task.timestamp = _now()
-            self._task_actor_groups.pop(task_id, None)
-            stop_task_runtime(self._task_runtimes, task_id)
-            self._sync_world_runtime()
-            slog.info("Task cancelled", event="task_cancelled", task_id=task_id)
-            return True
+        return cancel_task_runtime(
+            task_id=task_id,
+            tasks=self.tasks,
+            jobs=self._jobs,
+            unit_requests=self._unit_requests,
+            task_actor_groups=self._task_actor_groups,
+            task_runtimes=self._task_runtimes,
+            question_store=self._question_store,
+            abort_job=self.abort_job,
+            release_task_job_resources=self._release_task_job_resources,
+            cancel_unit_request=self.cancel_unit_request,
+            stop_task_runtime=stop_task_runtime,
+            sync_world_runtime=self._sync_world_runtime,
+            now=_now,
+        )
 
     def cancel_tasks(self, filters: dict[str, Any]) -> int:
-        with bm_span("tool_exec", name="kernel:cancel_tasks"):
-            count = 0
-            for task in list(self.tasks.values()):
-                if self._task_matches_filters(task, filters):
-                    count += int(self.cancel_task(task.task_id))
-            return count
+        return cancel_tasks_runtime(
+            filters=filters,
+            tasks=self.tasks,
+            cancel_task_fn=self.cancel_task,
+        )
 
     @property
     def capability_task_id(self) -> Optional[str]:
@@ -887,38 +885,23 @@ class Kernel:
                   actor_ids=assigned_ids, fully_fulfilled=fully_fulfilled)
 
     def complete_task(self, task_id: str, result: str, summary: str) -> bool:
-        with bm_span("tool_exec", name="kernel:complete_task", metadata={"result": result}):
-            task = self.tasks.get(task_id)
-            if task is None:
-                return False
-            if result == "succeeded":
-                task.status = TaskStatus.SUCCEEDED
-            elif result == "failed":
-                task.status = TaskStatus.FAILED
-            elif result == "partial":
-                task.status = TaskStatus.PARTIAL
-            else:
-                raise ValueError(f"Unsupported task result: {result}")
-            task.timestamp = _now()
-            for job in list(self._jobs.values()):
-                if job.task_id == task_id and job.status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}:
-                    self.abort_job(job.job_id)
-            self._release_task_job_resources(task_id)
-            self._close_pending_questions_for_task(task_id)
-            # Register TASK_COMPLETE_REPORT before stopping the agent —
-            # appended directly (not via register_task_message which rejects terminal status).
-            self.task_messages.append(TaskMessage(
-                message_id=_gen_id("msg_"),
-                task_id=task_id,
-                type=TaskMessageType.TASK_COMPLETE_REPORT,
-                content=summary,
-                priority=task.priority,
-            ))
-            self._task_actor_groups.pop(task_id, None)
-            stop_task_runtime(self._task_runtimes, task_id)
-            self._sync_world_runtime()
-            slog.info("Task completed", event="task_completed", task_id=task_id, result=result, summary=summary)
-            return True
+        return complete_task_runtime(
+            task_id=task_id,
+            result=result,
+            summary=summary,
+            tasks=self.tasks,
+            jobs=self._jobs,
+            task_messages=self.task_messages,
+            task_actor_groups=self._task_actor_groups,
+            task_runtimes=self._task_runtimes,
+            question_store=self._question_store,
+            abort_job=self.abort_job,
+            release_task_job_resources=self._release_task_job_resources,
+            stop_task_runtime=stop_task_runtime,
+            sync_world_runtime=self._sync_world_runtime,
+            now=_now,
+            gen_id=_gen_id,
+        )
 
     def start_job(self, task_id: str, expert_type: str, config: ExpertConfig) -> Job:
         return start_job_runtime(
@@ -1356,22 +1339,10 @@ class Kernel:
         return [constraint for constraint in self._constraints.values() if constraint.active and constraint.scope == scope]
 
     def _close_pending_questions_for_task(self, task_id: str) -> None:
-        self._question_store.close_for_task(task_id)
+        close_pending_questions_for_task(self._question_store, task_id)
 
     def _task_matches_filters(self, task: Task, filters: dict[str, Any]) -> bool:
-        task_ids = filters.get("task_ids")
-        if task_ids and task.task_id not in set(task_ids):
-            return False
-        kind = filters.get("kind")
-        if kind and task.kind.value != kind:
-            return False
-        priority_below = filters.get("priority_below")
-        if priority_below is not None and task.priority >= int(priority_below):
-            return False
-        status = filters.get("status")
-        if status and task.status.value != status:
-            return False
-        return True
+        return task_matches_filters(task, filters)
 
     def _rebalance_resources(self) -> None:
         requests: list[tuple[int, float, BaseJob | _ManagedJob, ResourceNeed, int]] = []
