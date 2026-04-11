@@ -405,6 +405,16 @@ def _build_unfulfilled_requests(rf: dict[str, Any]) -> str:
             line += f" start>={min_start_package}"
         if reason:
             line += f" 原因:{reason_labels.get(reason, reason)}"
+        if reason == "world_sync_stale":
+            failures = int(r.get("world_sync_consecutive_failures", 0) or 0)
+            threshold = int(r.get("world_sync_failure_threshold", 0) or 0)
+            error = str(r.get("world_sync_last_error", "") or "")
+            if failures:
+                line += f" 同步失败:{failures}"
+                if threshold:
+                    line += f"/{threshold}"
+            if error:
+                line += f" 最近错误:{error}"
         queue_blocked_reason = str(r.get("queue_blocked_reason", "") or "")
         queue_blocked_queue_types = [
             str(item)
@@ -536,6 +546,16 @@ def _build_unit_reservations(rf: dict[str, Any]) -> str:
             line += f" bootstrap={bootstrap_job_id}"
         if bootstrap_task_id:
             line += f" owner={bootstrap_task_id}"
+        if reservation.get("reason") == "world_sync_stale":
+            failures = int(reservation.get("world_sync_consecutive_failures", 0) or 0)
+            threshold = int(reservation.get("world_sync_failure_threshold", 0) or 0)
+            error = str(reservation.get("world_sync_last_error", "") or "")
+            if failures:
+                line += f" sync_fail={failures}"
+                if threshold:
+                    line += f"/{threshold}"
+            if error:
+                line += f" sync_error={error}"
         parts.append(line)
     return "\n".join(parts)
 

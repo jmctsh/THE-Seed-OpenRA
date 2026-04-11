@@ -91,6 +91,9 @@ def build_unfulfilled_request_payloads(
                     for item in list(readiness.get("queue_blocked_queue_types", []) or [])
                     if item
                 ],
+                "world_sync_last_error": str(readiness.get("world_sync_last_error", "") or ""),
+                "world_sync_consecutive_failures": int(readiness.get("world_sync_consecutive_failures", 0) or 0),
+                "world_sync_failure_threshold": int(readiness.get("world_sync_failure_threshold", 0) or 0),
                 "queue_blocked_items": [
                     dict(item)
                     for item in list(readiness.get("queue_blocked_items", []) or [])
@@ -115,6 +118,8 @@ def build_active_reservation_payloads(
         req = requests_by_id.get(reservation.request_id)
         if req is not None and req.status not in ("pending", "partial"):
             continue
+        queue_type = queue_type_for_unit_type(reservation.unit_type)
+        readiness = production_readiness_for(reservation.unit_type, queue_type) if reservation.unit_type and queue_type else {}
         active_reservations.append(
             {
                 "reservation_id": reservation.reservation_id,
@@ -137,7 +142,10 @@ def build_active_reservation_payloads(
                 "bootstrap_task_id": reservation.bootstrap_task_id,
                 "updated_at": reservation.updated_at,
                 "remaining_count": max(reservation.count - reservation_actor_total(reservation), 0),
-                "queue_type": queue_type_for_unit_type(reservation.unit_type),
+                "queue_type": queue_type,
+                "world_sync_last_error": str(readiness.get("world_sync_last_error", "") or ""),
+                "world_sync_consecutive_failures": int(readiness.get("world_sync_consecutive_failures", 0) or 0),
+                "world_sync_failure_threshold": int(readiness.get("world_sync_failure_threshold", 0) or 0),
                 "reason": (
                     request_reason(
                         req,

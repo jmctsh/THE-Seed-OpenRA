@@ -814,6 +814,32 @@ def test_build_unfulfilled_requests_empty():
     assert _build_unfulfilled_requests({"unfulfilled_requests": []}) == ""
 
 
+def test_build_unfulfilled_requests_surfaces_world_sync_detail():
+    result = _build_unfulfilled_requests(
+        {
+            "unfulfilled_requests": [
+                {
+                    "request_id": "r1",
+                    "task_label": "003",
+                    "category": "vehicle",
+                    "count": 1,
+                    "fulfilled": 0,
+                    "hint": "重坦",
+                    "blocking": True,
+                    "reason": "world_sync_stale",
+                    "world_sync_consecutive_failures": 4,
+                    "world_sync_failure_threshold": 3,
+                    "world_sync_last_error": "actors:COMMAND_EXECUTION_ERROR",
+                }
+            ]
+        }
+    )
+
+    assert "世界状态陈旧，暂停下单" in result
+    assert "同步失败:4/3" in result
+    assert "最近错误:actors:COMMAND_EXECUTION_ERROR" in result
+
+
 def test_build_active_production_empty():
     assert _build_active_production({}) == ""
 
@@ -821,6 +847,33 @@ def test_build_active_production_empty():
 def test_build_unit_reservations_empty():
     assert _build_unit_reservations({}) == ""
     assert _build_unit_reservations({"unit_reservations": []}) == ""
+
+
+def test_build_unit_reservations_surfaces_world_sync_detail():
+    result = _build_unit_reservations(
+        {
+            "unit_reservations": [
+                {
+                    "reservation_id": "res_1",
+                    "request_id": "req_1",
+                    "task_label": "003",
+                    "unit_type": "3tnk",
+                    "remaining_count": 1,
+                    "assigned_actor_ids": [],
+                    "produced_actor_ids": [],
+                    "status": "pending",
+                    "blocking": True,
+                    "reason": "world_sync_stale",
+                    "world_sync_consecutive_failures": 5,
+                    "world_sync_failure_threshold": 3,
+                    "world_sync_last_error": "economy:COMMAND_EXECUTION_ERROR",
+                }
+            ]
+        }
+    )
+
+    assert "sync_fail=5/3" in result
+    assert "sync_error=economy:COMMAND_EXECUTION_ERROR" in result
 
 
 def test_build_player_messages_no_events():

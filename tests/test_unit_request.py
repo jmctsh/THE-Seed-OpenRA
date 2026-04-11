@@ -806,6 +806,26 @@ def test_sync_unfulfilled_requests_includes_reservation_metadata():
     assert pending[0]["min_start_package"] == 1
 
 
+def test_sync_unfulfilled_requests_surface_world_sync_detail_when_stale():
+    kernel, world = make_kernel_with_base()
+    for actor in world.find_actors(owner="self", idle_only=True, category="vehicle"):
+        world.bind_resource(f"actor:{actor.actor_id}", "other_job")
+
+    world.state.stale = True
+    world._consecutive_refresh_failures = 4
+    world._last_refresh_error = "actors:COMMAND_EXECUTION_ERROR"
+
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+    kernel.register_unit_request(task.task_id, "vehicle", 1, "high", "重坦")
+    pending = kernel.world_model.compute_runtime_facts(task.task_id)["unfulfilled_requests"]
+
+    assert len(pending) == 1
+    assert pending[0]["reason"] == "world_sync_stale"
+    assert pending[0]["world_sync_last_error"] == "actors:COMMAND_EXECUTION_ERROR"
+    assert pending[0]["world_sync_consecutive_failures"] == 4
+    assert pending[0]["world_sync_failure_threshold"] == world.stale_failure_threshold
+
+
 def test_runtime_state_exposes_active_unit_reservations():
     """Kernel runtime_state should expose active reservation summaries."""
     kernel, world = make_kernel_with_base()
@@ -827,6 +847,26 @@ def test_runtime_state_exposes_active_unit_reservations():
     assert reservations[0]["blocking"] is True
     assert reservations[0]["min_start_package"] == 1
     assert reservations[0]["reason"] in {"bootstrap_in_progress", "waiting_dispatch", "missing_prerequisite"}
+
+
+def test_runtime_state_unit_reservations_surface_world_sync_detail_when_stale():
+    kernel, world = make_kernel_with_base()
+    for actor in world.find_actors(owner="self", idle_only=True, category="vehicle"):
+        world.bind_resource(f"actor:{actor.actor_id}", "other_job")
+
+    world.state.stale = True
+    world._consecutive_refresh_failures = 5
+    world._last_refresh_error = "economy:COMMAND_EXECUTION_ERROR"
+
+    task = kernel.create_task("进攻", TaskKind.MANAGED, 50)
+    kernel.register_unit_request(task.task_id, "vehicle", 1, "high", "重坦")
+    reservations = kernel.world_model.query("runtime_state")["unit_reservations"]
+
+    assert len(reservations) == 1
+    assert reservations[0]["reason"] == "world_sync_stale"
+    assert reservations[0]["world_sync_last_error"] == "economy:COMMAND_EXECUTION_ERROR"
+    assert reservations[0]["world_sync_consecutive_failures"] == 5
+    assert reservations[0]["world_sync_failure_threshold"] == world.stale_failure_threshold
 
 
 def test_runtime_state_hides_fulfilled_reservations() -> None:
