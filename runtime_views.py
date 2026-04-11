@@ -133,6 +133,45 @@ class RuntimeStateSnapshot:
     unit_reservations: list[dict[str, Any]] = field(default_factory=list)
     timestamp: float = 0.0
 
+    @classmethod
+    def from_mapping(cls, raw: Any) -> "RuntimeStateSnapshot":
+        if isinstance(raw, cls):
+            return raw
+        if not isinstance(raw, dict):
+            return cls()
+
+        def _to_dict_map(key: str) -> dict[str, Any]:
+            source = raw.get(key)
+            if not isinstance(source, dict):
+                return {}
+            return {
+                str(item_key): dict(item_value) if isinstance(item_value, dict) else item_value
+                for item_key, item_value in source.items()
+            }
+
+        try:
+            timestamp = float(raw.get("timestamp", 0.0) or 0.0)
+        except Exception:
+            timestamp = 0.0
+
+        return cls(
+            active_tasks=_to_dict_map("active_tasks"),
+            active_jobs=_to_dict_map("active_jobs"),
+            resource_bindings=_to_dict_map("resource_bindings"),
+            constraints=[
+                dict(item)
+                for item in list(raw.get("constraints", []) or [])
+                if isinstance(item, dict)
+            ],
+            capability_status=CapabilityStatusSnapshot.from_mapping(raw.get("capability_status")),
+            unit_reservations=[
+                dict(item)
+                for item in list(raw.get("unit_reservations", []) or [])
+                if isinstance(item, dict)
+            ],
+            timestamp=timestamp,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "active_tasks": dict(self.active_tasks),

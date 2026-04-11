@@ -39,6 +39,7 @@ from openra_state.data.dataset import demo_base_progression
 from runtime_views import (
     BattlefieldSnapshot,
     CapabilityStatusSnapshot,
+    RuntimeStateSnapshot,
     TaskTriageInputs,
     TaskTriageSnapshot,
 )
@@ -733,7 +734,8 @@ class Adjutant:
     def _collect_coordinator_inputs(self) -> dict[str, Any]:
         world_summary = self._get_world_summary()
         runtime_state = self._runtime_state_snapshot()
-        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
+        runtime_snapshot = RuntimeStateSnapshot.from_mapping(runtime_state)
+        capability_status = runtime_snapshot.capability_status
         runtime_facts: dict[str, Any] = {}
         compute_runtime_facts = getattr(self.world_model, "compute_runtime_facts", None)
         if callable(compute_runtime_facts):
@@ -752,7 +754,7 @@ class Adjutant:
         return {
             "world_summary": world_summary,
             "battlefield": battlefield,
-            "runtime_state": runtime_state,
+            "runtime_state": runtime_snapshot.to_dict(),
             "capability_status": capability_status,
             "runtime_facts": runtime_facts,
             "world_sync": self.world_model.refresh_health(),
@@ -782,8 +784,9 @@ class Adjutant:
     def _coordinator_snapshot(self, collected_inputs: dict[str, Any]) -> dict[str, Any]:
         inputs = dict(collected_inputs or {})
         battlefield = dict(inputs.get("battlefield") or {})
-        runtime_state = dict(inputs.get("runtime_state") or {})
-        capability_status = CapabilityStatusSnapshot.from_mapping(inputs.get("capability_status"))
+        runtime_snapshot = RuntimeStateSnapshot.from_mapping(inputs.get("runtime_state"))
+        runtime_state = runtime_snapshot.to_dict()
+        capability_status = runtime_snapshot.capability_status
         runtime_facts = dict(inputs.get("runtime_facts") or {})
         ready_queue_items = []
         for item in list(runtime_facts.get("ready_queue_items", []) or [])[:3]:
@@ -847,8 +850,8 @@ class Adjutant:
             },
             "recommended_posture": battlefield.get("recommended_posture", "maintain_posture"),
             "world_sync": dict(inputs.get("world_sync") or {}),
-            "active_task_count": len(runtime_state.get("active_tasks", {}) or {}),
-            "reservation_count": battlefield.get("reservation_count", len(runtime_state.get("unit_reservations", []) or [])),
+            "active_task_count": len(runtime_snapshot.active_tasks),
+            "reservation_count": battlefield.get("reservation_count", len(runtime_snapshot.unit_reservations)),
         }
 
     @staticmethod
@@ -1980,8 +1983,8 @@ class Adjutant:
         cap_id = getattr(self.kernel, "capability_task_id", None)
         if not cap_id:
             return None
-        runtime_state = self._runtime_state_snapshot()
-        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
+        runtime_snapshot = RuntimeStateSnapshot.from_mapping(self._runtime_state_snapshot())
+        capability_status = runtime_snapshot.capability_status
         recent_directives = list(capability_status.recent_directives)
         normalized_text = re.sub(r"\s+", "", text.strip())
         if recent_directives:
@@ -1998,8 +2001,8 @@ class Adjutant:
         ok = self.kernel.inject_player_message(cap_id, text)
         if not ok:
             return None
-        runtime_state = self._runtime_state_snapshot()
-        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
+        runtime_snapshot = RuntimeStateSnapshot.from_mapping(self._runtime_state_snapshot())
+        capability_status = runtime_snapshot.capability_status
         slog.info("Merged economy command to Capability", event="capability_merge",
                   capability_task_id=cap_id, text=text)
         phase = capability_status.phase
@@ -2975,8 +2978,9 @@ class Adjutant:
         task_messages = list(snapshot.get("task_messages") or [])
         jobs_by_task = dict(snapshot.get("jobs_by_task") or {})
         collected_inputs = dict(snapshot.get("coordinator_inputs") or {})
-        runtime_state = dict(collected_inputs.get("runtime_state") or {})
-        runtime_tasks = dict(runtime_state.get("active_tasks") or {})
+        runtime_snapshot = RuntimeStateSnapshot.from_mapping(collected_inputs.get("runtime_state"))
+        runtime_state = runtime_snapshot.to_dict()
+        runtime_tasks = dict(runtime_snapshot.active_tasks)
         capability_status = CapabilityStatusSnapshot.from_mapping(collected_inputs.get("capability_status"))
         coordinator_snapshot = self._coordinator_snapshot(collected_inputs)
         world_sync = dict((coordinator_snapshot.get("world_sync") or {}))

@@ -14,7 +14,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from models.enums import TaskMessageType
-from runtime_views import CapabilityStatusSnapshot, TaskTriageInputs, TaskTriageSnapshot
+from runtime_views import (
+    CapabilityStatusSnapshot,
+    RuntimeStateSnapshot,
+    TaskTriageInputs,
+    TaskTriageSnapshot,
+)
 
 
 _TERMINAL_STATUS_LINE = {
@@ -220,8 +225,8 @@ def task_to_dict(
 ) -> dict[str, Any]:
     """Task + jobs -> dashboard dict with shared triage."""
     task_id = getattr(task, "task_id", "")
-    runtime_tasks = runtime_state.get("active_tasks") if isinstance(runtime_state, dict) else {}
-    runtime_task = runtime_tasks.get(task_id) if isinstance(runtime_tasks, dict) else None
+    runtime_snapshot = RuntimeStateSnapshot.from_mapping(runtime_state)
+    runtime_task = runtime_snapshot.active_tasks.get(task_id)
     log_path = str(log_session_dir / "tasks" / f"{task_id}.jsonl") if log_session_dir else None
     triage = build_task_triage_from_artifacts(
         task=task,
@@ -298,7 +303,7 @@ def build_task_triage(
     task_id = str(getattr(task, "task_id", ""))
     status = str(getattr(getattr(task, "status", None), "value", getattr(task, "status", "")) or "")
     runtime_task = dict(runtime_task or {})
-    runtime_state = dict(runtime_state or {})
+    runtime_snapshot = RuntimeStateSnapshot.from_mapping(runtime_state)
     inputs = inputs or TaskTriageInputs(
         world_sync=dict(world_sync or {}),
         pending_question=pending_question,
@@ -325,7 +330,7 @@ def build_task_triage(
 
     active_jobs = [
         info
-        for info in (runtime_state.get("active_jobs") or {}).values()
+        for info in runtime_snapshot.active_jobs.values()
         if isinstance(info, dict) and str(info.get("task_id", "")) == task_id
     ]
     waiting_jobs = [job for job in active_jobs if str(job.get("status", "")) == "waiting"]
@@ -336,7 +341,7 @@ def build_task_triage(
 
     reservations = [
         reservation
-        for reservation in (runtime_state.get("unit_reservations") or [])
+        for reservation in runtime_snapshot.unit_reservations
         if isinstance(reservation, dict) and str(reservation.get("task_id", "")) == task_id
     ]
     reservation_ids = [
@@ -346,8 +351,7 @@ def build_task_triage(
     ]
 
     capability_status = CapabilityStatusSnapshot()
-    raw_capability_status = runtime_state.get("capability_status")
-    candidate_capability = CapabilityStatusSnapshot.from_mapping(raw_capability_status)
+    candidate_capability = runtime_snapshot.capability_status
     task_label = str(getattr(task, "label", "") or runtime_task.get("label", "") or "")
     if candidate_capability.matches_task(task_id, task_label, is_capability=is_capability):
         capability_status = candidate_capability

@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from runtime_views import (
     BattlefieldSnapshot,
     CapabilityStatusSnapshot,
+    RuntimeStateSnapshot,
     TaskTriageSnapshot,
     build_battlefield_snapshot,
     build_runtime_state_snapshot,
@@ -54,6 +55,30 @@ def test_build_runtime_state_snapshot_accepts_capability_snapshot_object() -> No
     assert snapshot["capability_status"]["label"] == "001"
     assert snapshot["capability_status"]["phase"] == "fulfilling"
     print("  PASS: build_runtime_state_snapshot_accepts_capability_snapshot_object")
+
+
+def test_runtime_state_snapshot_from_mapping_normalizes_capability_and_lists() -> None:
+    snapshot = RuntimeStateSnapshot.from_mapping(
+        {
+            "active_tasks": {"t1": {"label": "001"}},
+            "active_jobs": {"j1": {"task_id": "t1", "expert_type": "ReconExpert"}},
+            "resource_bindings": {"actor:1": "j1"},
+            "constraints": [{"constraint_id": "c1"}],
+            "capability_status": {"task_id": "t_cap", "phase": "dispatch"},
+            "unit_reservations": [{"reservation_id": "r1", "task_id": "t1"}],
+            "timestamp": "12.5",
+        }
+    )
+
+    assert snapshot.active_tasks["t1"]["label"] == "001"
+    assert snapshot.active_jobs["j1"]["expert_type"] == "ReconExpert"
+    assert snapshot.resource_bindings["actor:1"] == "j1"
+    assert snapshot.constraints[0]["constraint_id"] == "c1"
+    assert snapshot.capability_status.task_id == "t_cap"
+    assert snapshot.capability_status.phase == "dispatch"
+    assert snapshot.unit_reservations[0]["reservation_id"] == "r1"
+    assert snapshot.timestamp == 12.5
+    print("  PASS: runtime_state_snapshot_from_mapping_normalizes_capability_and_lists")
 
 
 def test_build_battlefield_snapshot_normalizes_numeric_fields() -> None:
@@ -166,6 +191,7 @@ if __name__ == "__main__":
     print("Running runtime_views tests...\n")
     test_build_runtime_state_snapshot_normalizes_capability_status()
     test_build_runtime_state_snapshot_accepts_capability_snapshot_object()
+    test_runtime_state_snapshot_from_mapping_normalizes_capability_and_lists()
     test_build_battlefield_snapshot_normalizes_numeric_fields()
     test_battlefield_snapshot_from_mapping_normalizes_query_payload()
     test_task_triage_snapshot_from_mapping_normalizes_fields()
