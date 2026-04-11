@@ -4,33 +4,44 @@
       <h3>Tasks</h3>
     </div>
     <div v-if="!tasks.length" class="empty">无活跃任务</div>
-    <div v-for="task in tasks" :key="task.task_id" :class="['task-card', task.status]">
+    <div v-for="task in tasks" :key="task.task_id" :class="['task-card', task.status, { capability: task.is_capability }]">
       <div class="task-header">
+        <button
+          class="expand-btn"
+          :title="isTaskExpanded(task) ? '折叠任务详情' : '展开任务详情'"
+          @click="toggleTaskExpanded(task.task_id)"
+        >{{ isTaskExpanded(task) ? '▾' : '▸' }}</button>
+        <span v-if="task.is_capability" class="capability-badge">常驻</span>
         <span class="task-id" :title="task.task_id">{{ displayTaskLabel(task.task_id) }}</span>
         <span :class="['status-badge', task.status]">{{ task.status }}</span>
         <button
-          v-if="!isTerminalTask(task)"
+          v-if="!isTerminalTask(task) && !task.is_capability"
           class="cancel-btn"
           :title="`取消任务 ${displayTaskLabel(task.task_id)}`"
           @click="cancelTask(task)"
         >✕</button>
       </div>
       <div class="task-text">{{ task.raw_text }}</div>
-      <div class="task-meta">
-        优先级: {{ task.priority }} · {{ formatTimeAgo(task.timestamp) }}
+      <div v-if="isTaskExpanded(task)" class="task-details">
+        <div class="task-meta">
+          优先级: {{ task.priority }} · {{ formatTimeAgo(task.timestamp) }}
+        </div>
+        <div v-if="getTaskStatusLine(task)" class="task-hint">
+          {{ getTaskStatusLine(task) }}
+        </div>
+        <div v-if="task.jobs?.length" class="task-jobs">
+          <div class="task-jobs-title">Experts · {{ task.job_count }}</div>
+          <div v-for="job in task.jobs" :key="job.job_id" class="job-row">
+            <span class="job-expert">{{ job.expert_type }}</span>
+            <span :class="['job-status', job.status]">{{ job.status }}</span>
+          </div>
+          <div v-for="job in task.jobs" :key="`${job.job_id}-summary`" class="job-summary">
+            {{ job.summary }}
+          </div>
+        </div>
       </div>
-      <div v-if="getTaskStatusLine(task)" class="task-hint">
+      <div v-else-if="getTaskStatusLine(task)" class="task-collapsed-hint">
         {{ getTaskStatusLine(task) }}
-      </div>
-      <div v-if="task.jobs?.length" class="task-jobs">
-        <div class="task-jobs-title">Experts · {{ task.job_count }}</div>
-        <div v-for="job in task.jobs" :key="job.job_id" class="job-row">
-          <span class="job-expert">{{ job.expert_type }}</span>
-          <span :class="['job-status', job.status]">{{ job.status }}</span>
-        </div>
-        <div v-for="job in task.jobs" :key="`${job.job_id}-summary`" class="job-summary">
-          {{ job.summary }}
-        </div>
       </div>
     </div>
 
@@ -64,11 +75,15 @@ const props = defineProps({
 const tasks = ref([])
 const pendingQuestions = ref([])
 const hiddenTaskIds = ref(loadHiddenTaskIds())
+const expandedTaskState = ref({})
 let latestTaskList = []
 let clearUiHandler = null
 
 function sortTasksNewestFirst(items) {
   return [...items].sort((a, b) => {
+    // Capability tasks always at top
+    if (a?.is_capability && !b?.is_capability) return -1
+    if (!a?.is_capability && b?.is_capability) return 1
     const aTime = Number(a?.timestamp || a?.created_at || 0)
     const bTime = Number(b?.timestamp || b?.created_at || 0)
     return bTime - aTime
@@ -83,12 +98,27 @@ function normalizeTasks(items) {
   registerTaskLabels(items)
   const hidden = hiddenTaskIds.value
   return sortTasksNewestFirst(
-    (items || []).filter((task) => !hidden.has(task.task_id) || !isTerminalTask(task))
+    (items || []).filter((task) => task.is_capability || !hidden.has(task.task_id) || !isTerminalTask(task))
   )
 }
 
 function displayTaskLabel(taskId) {
   return formatTaskLabel(taskId)
+}
+
+function isTaskExpanded(task) {
+  const explicit = expandedTaskState.value[task.task_id]
+  if (typeof explicit === 'boolean') return explicit
+  return !isTerminalTask(task)
+}
+
+function toggleTaskExpanded(taskId) {
+  const task = latestTaskList.find((item) => item.task_id === taskId)
+  if (!task) return
+  expandedTaskState.value = {
+    ...expandedTaskState.value,
+    [taskId]: !isTaskExpanded(task),
+  }
 }
 
 function clearHistory() {
@@ -185,7 +215,29 @@ onUnmounted(() => {
 .task-card.pending { border-left: 3px solid #ff9800; }
 .task-card.succeeded { border-left: 3px solid #2196f3; opacity: 0.6; }
 .task-card.failed { border-left: 3px solid #f44336; opacity: 0.6; }
+.task-card.capability { border: 1px solid #7c4dff; border-left: 3px solid #7c4dff; background: #f3f0ff; }
+.capability-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #7c4dff;
+  color: white;
+  font-weight: 600;
+  flex-shrink: 0;
+}
 .task-header { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+.expand-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #607d8b;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.expand-btn:hover { color: #263238; }
+.task-details { margin-top: 4px; }
 .cancel-btn {
   margin-left: auto;
   padding: 1px 6px;
@@ -211,6 +263,12 @@ onUnmounted(() => {
   border-radius: 4px;
   background: #fff8e1;
   color: #8a6d3b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.task-collapsed-hint {
+  margin-top: 4px;
+  color: #78909c;
   font-size: 11px;
   line-height: 1.4;
 }
