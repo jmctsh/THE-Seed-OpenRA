@@ -1552,14 +1552,18 @@ class Adjutant:
                 "reason": "world_sync_stale",
             }
 
-        payload = self.world_model.query("my_actors", {"category": "mcv"})
-        actors = list((payload or {}).get("actors", [])) if isinstance(payload, dict) else []
-        if actors:
+        deploy_truth = self._deploy_truth_snapshot()
+        if deploy_truth["ambiguous"]:
+            return {
+                "type": "command",
+                "ok": False,
+                "response_text": "基地车状态同步中，请稍后重试",
+                "routing": "rule",
+                "reason": "deploy_truth_ambiguous",
+            }
+        if deploy_truth["mcv_actors"]:
             return None
-
-        base_payload = self.world_model.query("my_actors", {"type": "建造厂"})
-        bases = list((base_payload or {}).get("actors", [])) if isinstance(base_payload, dict) else []
-        if bases:
+        if deploy_truth["has_construction_yard"]:
             return {
                 "type": "command",
                 "ok": True,
@@ -1749,6 +1753,47 @@ class Adjutant:
     def _looks_like_attack_command(normalized: str) -> bool:
         lowered = normalized.lower()
         return any(keyword in normalized or keyword in lowered for keyword in _ATTACK_KEYWORDS)
+
+    def _deploy_truth_snapshot(self) -> dict[str, Any]:
+        payload = self.world_model.query("my_actors", {"category": "mcv"})
+        mcv_actors = list((payload or {}).get("actors", [])) if isinstance(payload, dict) else []
+        base_payload = self.world_model.query("my_actors", {"type": "建造厂"})
+        bases = list((base_payload or {}).get("actors", [])) if isinstance(base_payload, dict) else []
+
+        facts_mcv_count: Optional[int] = None
+        facts_has_construction_yard: Optional[bool] = None
+        compute_runtime_facts = getattr(self.world_model, "compute_runtime_facts", None)
+        if callable(compute_runtime_facts):
+            try:
+                runtime_facts = compute_runtime_facts("__adjutant__", include_buildable=False) or {}
+            except Exception:
+                logger.exception("Failed to compute deploy runtime facts")
+            else:
+                if "mcv_count" in runtime_facts:
+                    try:
+                        facts_mcv_count = int(runtime_facts.get("mcv_count", 0) or 0)
+                    except (TypeError, ValueError):
+                        facts_mcv_count = 0
+                if "has_construction_yard" in runtime_facts:
+                    facts_has_construction_yard = bool(runtime_facts.get("has_construction_yard", False))
+
+        query_mcv_count = len(mcv_actors)
+        query_has_construction_yard = bool(bases)
+        # Only escalate when runtime facts say an MCV exists but the actor query
+        # cannot produce a concrete actor id. That is the unsafe case for both
+        # short-circuiting and direct deploy routing.
+        ambiguous = facts_mcv_count is not None and facts_mcv_count > 0 and query_mcv_count <= 0
+        has_construction_yard = (
+            facts_has_construction_yard
+            if facts_has_construction_yard is not None
+            else query_has_construction_yard
+        )
+        return {
+            "mcv_actors": mcv_actors,
+            "mcv_count": facts_mcv_count if facts_mcv_count is not None else query_mcv_count,
+            "has_construction_yard": bool(has_construction_yard),
+            "ambiguous": ambiguous,
+        }
 
     def _world_sync_is_stale(self) -> bool:
         refresh_health = getattr(self.world_model, "refresh_health", None)
@@ -2383,12 +2428,12 @@ class Adjutant:
             return RuleMatchResult(expert_type=step.expert_type, config=step.config, reason=step.reason)
         if self._world_sync_is_stale():
             raise RuntimeError("当前游戏状态同步异常，请稍后重试")
-        payload = self.world_model.query("my_actors", {"category": "mcv"})
-        actors = list((payload or {}).get("actors", [])) if isinstance(payload, dict) else []
+        deploy_truth = self._deploy_truth_snapshot()
+        if deploy_truth["ambiguous"]:
+            raise RuntimeError("基地车状态同步中，请稍后重试")
+        actors = list(deploy_truth["mcv_actors"])
         if not actors:
-            base_payload = self.world_model.query("my_actors", {"type": "建造厂"})
-            bases = list((base_payload or {}).get("actors", [])) if isinstance(base_payload, dict) else []
-            if bases:
+            if deploy_truth["has_construction_yard"]:
                 raise RuntimeError("建造厂已存在，当前无基地车可部署")
             raise RuntimeError("当前没有可部署的基地车")
         actor = actors[0]

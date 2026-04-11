@@ -388,6 +388,13 @@ class MockWorldModel:
                 ],
                 "timestamp": time.time(),
             }
+        if query_type == "my_actors" and params == {"type": "建造厂"}:
+            return {
+                "actors": [
+                    {"actor_id": 130, "type": "建造厂", "position": [520, 420]},
+                ],
+                "timestamp": time.time(),
+            }
         if query_type == "find_actors":
             owner = (params or {}).get("owner")
             name = (params or {}).get("name")
@@ -933,6 +940,12 @@ def test_deploy_without_mcv_but_with_construction_yard_returns_immediate_feedbac
                 return {"actors": [{"actor_id": 130, "type": "建造厂"}], "timestamp": time.time()}
             return super().query(query_type, params)
 
+        def compute_runtime_facts(self, task_id, include_buildable=False):
+            facts = super().compute_runtime_facts(task_id, include_buildable=include_buildable)
+            facts["mcv_count"] = 0
+            facts["has_construction_yard"] = True
+            return facts
+
     mock_llm = MockProvider(responses=[])
     kernel = MockKernel()
     wm = AlreadyDeployedWorldModel()
@@ -960,6 +973,12 @@ def test_deploy_without_mcv_returns_missing_feedback():
             if query_type == "my_actors" and params in ({"category": "mcv"}, {"type": "建造厂"}):
                 return {"actors": [], "timestamp": time.time()}
             return super().query(query_type, params)
+
+        def compute_runtime_facts(self, task_id, include_buildable=False):
+            facts = super().compute_runtime_facts(task_id, include_buildable=include_buildable)
+            facts["mcv_count"] = 0
+            facts["has_construction_yard"] = False
+            return facts
 
     mock_llm = MockProvider(responses=[])
     kernel = MockKernel()
@@ -1020,6 +1039,74 @@ def test_deploy_feedback_refuses_stale_world_assertions():
     assert kernel.created_tasks == []
     assert kernel.started_jobs == []
     print("  PASS: deploy_feedback_refuses_stale_world_assertions")
+
+
+def test_deploy_feedback_uses_runtime_facts_for_construction_yard_truth():
+    class RuntimeFactMismatchWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            if query_type == "my_actors" and params == {"category": "mcv"}:
+                return {"actors": [], "timestamp": time.time()}
+            if query_type == "my_actors" and params == {"type": "建造厂"}:
+                return {"actors": [{"actor_id": 130, "type": "建造厂"}], "timestamp": time.time()}
+            return super().query(query_type, params)
+
+        def compute_runtime_facts(self, task_id, *, include_buildable=False):
+            del task_id, include_buildable
+            return {"mcv_count": 0, "has_construction_yard": False}
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = RuntimeFactMismatchWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("展开基地车")
+        assert result["type"] == "command"
+        assert result["ok"] is False
+        assert result["routing"] == "rule"
+        assert result["reason"] == "rule_deploy_missing_mcv"
+        assert "没有可部署的基地车" in result["response_text"]
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.created_tasks == []
+    assert kernel.started_jobs == []
+    print("  PASS: deploy_feedback_uses_runtime_facts_for_construction_yard_truth")
+
+
+def test_deploy_feedback_refuses_ambiguous_mcv_truth():
+    class AmbiguousDeployWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            if query_type == "my_actors" and params == {"category": "mcv"}:
+                return {"actors": [], "timestamp": time.time()}
+            if query_type == "my_actors" and params == {"type": "建造厂"}:
+                return {"actors": [], "timestamp": time.time()}
+            return super().query(query_type, params)
+
+        def compute_runtime_facts(self, task_id, *, include_buildable=False):
+            del task_id, include_buildable
+            return {"mcv_count": 1, "has_construction_yard": False}
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = AmbiguousDeployWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("展开基地车")
+        assert result["type"] == "command"
+        assert result["ok"] is False
+        assert result["routing"] == "rule"
+        assert result["reason"] == "deploy_truth_ambiguous"
+        assert "状态同步中" in result["response_text"]
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.created_tasks == []
+    assert kernel.started_jobs == []
+    print("  PASS: deploy_feedback_refuses_ambiguous_mcv_truth")
 
 
 def test_stale_world_blocks_rule_routed_build_and_skips_llm():
@@ -2413,6 +2500,8 @@ if __name__ == "__main__":
     test_deploy_without_mcv_but_with_construction_yard_returns_immediate_feedback()
     test_deploy_without_mcv_returns_missing_feedback()
     test_deploy_feedback_refuses_stale_world_assertions()
+    test_deploy_feedback_uses_runtime_facts_for_construction_yard_truth()
+    test_deploy_feedback_refuses_ambiguous_mcv_truth()
     test_stale_world_blocks_rule_routed_build_and_skips_llm()
     test_stale_world_blocks_query_and_skips_llm()
     test_stale_world_blocks_classified_command_without_task_creation()
