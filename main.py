@@ -11,7 +11,6 @@ import asyncio
 import faulthandler
 from dataclasses import dataclass
 import importlib.util
-import json
 import logging
 import os
 from pathlib import Path
@@ -28,6 +27,7 @@ from typing import Any, Optional
 import benchmark
 
 from adjutant import Adjutant, AdjutantConfig, NotificationManager
+from dashboard_publish import DashboardPublisher
 from experts.base import ExecutionExpert
 from experts.combat import CombatExpert
 from experts.deploy import DeployExpert
@@ -192,19 +192,17 @@ class RuntimeBridge(InboundHandler):
 
         self._registered_agents: set[str] = set()
         self._registered_jobs: set[str] = set()
-        self._task_fingerprints: dict[str, tuple[Any, ...]] = {}
-        self._task_message_offset = 0
-        self._notification_manager: Optional[NotificationManager] = None
-        self._log_offset = 0
-        self._benchmark_offset = 0
-        self._log_publish_batch_size = 200
-        self._recent_responses: list[dict[str, Any]] = []
-        self._publish_lock = asyncio.Lock()
-        self._publish_task: Optional[asyncio.Task[Any]] = None
         self.log_session_root = "Logs/runtime"
+        self._publisher = DashboardPublisher(
+            kernel=self.kernel,
+            adjutant=self.adjutant,
+            dashboard_payload_builder=lambda: self._build_dashboard_payload(),
+            task_payload_builder=lambda task, jobs, **kwargs: self._task_to_dict(task, jobs, **kwargs),
+        )
 
     def attach_ws_server(self, ws_server: Optional[WSServer]) -> None:
         self.ws_server = ws_server
+        self._publisher.attach_ws_server(ws_server)
 
     def attach_runtime(self, runtime: ApplicationRuntime) -> None:
         self.runtime = runtime
@@ -246,27 +244,11 @@ class RuntimeBridge(InboundHandler):
                 self._registered_jobs.discard(job_id)
 
     async def publish_dashboard(self) -> None:
-        if self.ws_server is None or not self.ws_server.is_running:
-            return
-        async with self._publish_lock:
-            await self._broadcast_current_dashboard()
-            await self._publish_task_updates()
-            await self._publish_task_messages()
-            await self._publish_notifications()
-            await self._publish_logs()
-            await self._publish_benchmarks()
+        await self._publisher.publish_all()
 
     def on_tick(self, tick_number: int, now: float) -> None:
         self.sync_runtime()
-        if self.ws_server is None or not self.ws_server.is_running:
-            return
-        if self._publish_task is not None and not self._publish_task.done():
-            return
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-        self._publish_task = loop.create_task(self.publish_dashboard())
+        self._publisher.schedule_publish()
 
     async def on_command_submit(self, text: str, client_id: str) -> None:
         del client_id
@@ -363,12 +345,7 @@ class RuntimeBridge(InboundHandler):
         self.kernel.reset_session()
         if self.adjutant is not None:
             self.adjutant.clear_dialogue_history()
-        self._recent_responses.clear()
-        self._task_fingerprints.clear()
-        self._task_message_offset = 0
-        self._notification_manager = None  # reset so new manager is created on next publish
-        self._log_offset = 0
-        self._benchmark_offset = 0
+        self._publisher.clear_runtime_state()
         self.sync_runtime()
         if self.ws_server is not None and self.ws_server.is_running:
             await self.ws_server.send_session_cleared()
@@ -416,115 +393,50 @@ class RuntimeBridge(InboundHandler):
             return
         await self.runtime.restart_game(save_path=save_path)
 
+    @property
+    def _log_offset(self) -> int:
+        return self._publisher.log_offset
+
+    @_log_offset.setter
+    def _log_offset(self, value: int) -> None:
+        self._publisher.log_offset = int(value)
+
+    @property
+    def _benchmark_offset(self) -> int:
+        return self._publisher.benchmark_offset
+
+    @_benchmark_offset.setter
+    def _benchmark_offset(self, value: int) -> None:
+        self._publisher.benchmark_offset = int(value)
+
+    @property
+    def _log_publish_batch_size(self) -> int:
+        return self._publisher.log_publish_batch_size
+
+    @_log_publish_batch_size.setter
+    def _log_publish_batch_size(self, value: int) -> None:
+        self._publisher.log_publish_batch_size = int(value)
+
     async def _publish_task_updates(self) -> None:
-        assert self.ws_server is not None
-        runtime_state = self.kernel.runtime_state()
-        for task in self.kernel.list_tasks():
-            payload = self._task_to_dict(
-                task,
-                self.kernel.jobs_for_task(task.task_id),
-                runtime_state=runtime_state,
-            )
-            fingerprint = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-            if self._task_fingerprints.get(task.task_id) == fingerprint:
-                continue
-            self._task_fingerprints[task.task_id] = fingerprint
-            await self.ws_server.send_task_update(payload)
+        await self._publisher.publish_task_updates()
 
     async def _publish_task_messages(self) -> None:
-        assert self.ws_server is not None
-        task_messages = self.kernel.list_task_messages()
-        new_messages = task_messages[self._task_message_offset :]
-        self._task_message_offset = len(task_messages)
-        for message in new_messages:
-            payload: dict[str, Any] = {
-                "type": message.type.value,
-                "content": message.content,
-                "task_id": message.task_id,
-                "message_id": message.message_id,
-                "timestamp": message.timestamp,
-            }
-            if message.options is not None:
-                payload["options"] = message.options
-            if message.timeout_s is not None:
-                payload["timeout_s"] = message.timeout_s
-            if message.default_option is not None:
-                payload["default_option"] = message.default_option
-            await self.ws_server.send_task_message(payload)
-            if self.adjutant is not None:
-                if message.type == TaskMessageType.TASK_COMPLETE_REPORT:
-                    task_obj = next((t for t in self.kernel.list_tasks() if t.task_id == message.task_id), None)
-                    if task_obj is not None:
-                        self.adjutant.notify_task_completed(
-                            label=getattr(task_obj, "label", message.task_id),
-                            raw_text=task_obj.raw_text,
-                            result=task_obj.status.value,
-                            summary=message.content,
-                            task_id=message.task_id,
-                        )
-                elif message.type in (TaskMessageType.TASK_WARNING, TaskMessageType.TASK_INFO):
-                    self.adjutant.notify_task_message(
-                        task_id=message.task_id,
-                        message_type=message.type.value,
-                        content=message.content,
-                    )
+        await self._publisher.publish_task_messages()
 
     async def _publish_notifications(self) -> None:
-        assert self.ws_server is not None
-        if self._notification_manager is None:
-            self._notification_manager = NotificationManager(
-                kernel=self.kernel,
-                sink=self.ws_server.send_player_notification,
-            )
-        await self._notification_manager.poll_and_push()
+        await self._publisher.publish_notifications()
 
     async def _publish_logs(self) -> None:
-        assert self.ws_server is not None
-        new_records = log_records_from(self._log_offset, limit=self._log_publish_batch_size)
-        self._log_offset += len(new_records)
-        for record in new_records:
-            # Frontend diagnostics should see runtime debug logs too. Keep benchmark
-            # traffic on the separate benchmark channel to avoid flooding the log pane.
-            if record.component == "benchmark":
-                continue
-            await self.ws_server.send_log_entry(record.to_dict())
+        await self._publisher.publish_logs()
 
     async def _publish_benchmarks(self) -> None:
-        assert self.ws_server is not None
-        new_records = benchmark.records_from(self._benchmark_offset)
-        if not new_records:
-            return
-        self._benchmark_offset += len(new_records)
-        await self.ws_server.send_benchmark(
-            {
-                "records": [record.to_dict() for record in new_records],
-                "replace": False,
-            }
-        )
+        await self._publisher.publish_benchmarks()
 
     async def _broadcast_current_dashboard(self) -> None:
-        assert self.ws_server is not None
-        dashboard = self._build_dashboard_payload()
-        await self.ws_server.send_world_snapshot(
-            dashboard["world_snapshot"]
-        )
-        await self.ws_server.send_task_list(
-            dashboard["tasks"],
-            pending_questions=dashboard["pending_questions"],
-        )
+        await self._publisher.broadcast_current_dashboard()
 
     async def _send_current_dashboard_to_client(self, client_id: str) -> None:
-        assert self.ws_server is not None
-        dashboard = self._build_dashboard_payload()
-        await self.ws_server.send_world_snapshot_to_client(
-            client_id,
-            dashboard["world_snapshot"],
-        )
-        await self.ws_server.send_task_list_to_client(
-            client_id,
-            dashboard["tasks"],
-            pending_questions=dashboard["pending_questions"],
-        )
+        await self._publisher.send_current_dashboard_to_client(client_id)
 
     async def _emit_notification(
         self,
@@ -533,16 +445,7 @@ class RuntimeBridge(InboundHandler):
         *,
         data: Optional[dict[str, Any]] = None,
     ) -> None:
-        if self.ws_server is None or not self.ws_server.is_running:
-            return
-        await self.ws_server.send_player_notification(
-            {
-                "type": notification_type,
-                "content": content,
-                "icon": "ℹ",
-                "data": dict(data or {}),
-            }
-        )
+        await self._publisher.emit_notification(notification_type, content, data=data)
 
     async def _emit_adjutant_response(
         self,
@@ -552,70 +455,15 @@ class RuntimeBridge(InboundHandler):
         ok: bool = True,
         extra: Optional[dict[str, Any]] = None,
     ) -> None:
-        if self.ws_server is None or not self.ws_server.is_running:
-            return
-        payload = {
-            "answer": answer,
-            "response_type": response_type,
-            "ok": ok,
-        }
-        if extra:
-            payload.update(extra)
-        payload["timestamp"] = time.time()
-        self._recent_responses.append(dict(payload))
-        if len(self._recent_responses) > 100:
-            self._recent_responses = self._recent_responses[-100:]
-        await self.ws_server.send_query_response(payload)
+        await self._publisher.emit_adjutant_response(
+            answer,
+            response_type=response_type,
+            ok=ok,
+            extra=extra,
+        )
 
     async def _replay_history(self, client_id: str) -> None:
-        if self.ws_server is None or not self.ws_server.is_running:
-            return
-
-        history_logs = [
-            record.to_dict()
-            for record in log_records_from(0, limit=self._log_offset)
-            if record.component != "benchmark"
-        ][-500:]
-        for entry in history_logs:
-            await self.ws_server.send_to_client(client_id, "log_entry", entry)
-
-        benchmark_history = [record.to_dict() for record in benchmark.records_from(0)]
-        if benchmark_history:
-            await self.ws_server.send_to_client(
-                client_id,
-                "benchmark",
-                {
-                    "records": benchmark_history,
-                    "replace": True,
-                },
-            )
-
-        for message in self.kernel.list_task_messages()[-100:]:
-            if message.type == TaskMessageType.TASK_QUESTION:
-                continue
-            icon = {
-                TaskMessageType.TASK_INFO: "ℹ",
-                TaskMessageType.TASK_WARNING: "⚠",
-                TaskMessageType.TASK_COMPLETE_REPORT: "✓",
-            }.get(message.type, "ℹ")
-            await self.ws_server.send_to_client(
-                client_id,
-                "player_notification",
-                {
-                    "type": message.type.value,
-                    "content": message.content,
-                    "icon": icon,
-                    "task_id": message.task_id,
-                    "message_id": message.message_id,
-                    "timestamp": message.timestamp,
-                },
-            )
-
-        for notification in self.kernel.list_player_notifications()[-100:]:
-            await self.ws_server.send_to_client(client_id, "player_notification", notification)
-
-        for response in self._recent_responses[-100:]:
-            await self.ws_server.send_to_client(client_id, "query_response", response)
+        await self._publisher.replay_history(client_id)
 
     def _default_log_session_dir(self) -> Optional[Path]:
         return current_session_dir() or latest_session_dir(self.log_session_root)

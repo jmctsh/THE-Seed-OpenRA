@@ -1,0 +1,278 @@
+"""WebSocket/dashboard publish helpers extracted from RuntimeBridge."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import time
+from typing import Any, Callable, Optional
+
+import benchmark
+
+from adjutant import Adjutant, NotificationManager
+from logging_system import records_from as log_records_from
+from models import TaskMessageType
+from ws_server import WSServer
+
+
+class DashboardPublisher:
+    """Owns dashboard publish state and websocket fanout helpers."""
+
+    def __init__(
+        self,
+        *,
+        kernel: Any,
+        adjutant: Optional[Adjutant],
+        ws_server: Optional[WSServer] = None,
+        dashboard_payload_builder: Callable[[], dict[str, Any]],
+        task_payload_builder: Callable[..., dict[str, Any]],
+    ) -> None:
+        self.kernel = kernel
+        self.adjutant = adjutant
+        self.ws_server = ws_server
+        self._dashboard_payload_builder = dashboard_payload_builder
+        self._task_payload_builder = task_payload_builder
+
+        self.task_fingerprints: dict[str, str] = {}
+        self.task_message_offset = 0
+        self.notification_manager: Optional[NotificationManager] = None
+        self.log_offset = 0
+        self.benchmark_offset = 0
+        self.log_publish_batch_size = 200
+        self.recent_responses: list[dict[str, Any]] = []
+        self.publish_lock = asyncio.Lock()
+        self.publish_task: Optional[asyncio.Task[Any]] = None
+
+    def attach_ws_server(self, ws_server: Optional[WSServer]) -> None:
+        self.ws_server = ws_server
+
+    def schedule_publish(self) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        if self.publish_task is not None and not self.publish_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self.publish_task = loop.create_task(self.publish_all())
+
+    def clear_runtime_state(self) -> None:
+        if self.publish_task is not None and not self.publish_task.done():
+            self.publish_task.cancel()
+        self.publish_task = None
+        self.task_fingerprints.clear()
+        self.task_message_offset = 0
+        self.notification_manager = None
+        self.log_offset = 0
+        self.benchmark_offset = 0
+        self.recent_responses.clear()
+
+    async def publish_all(self) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        async with self.publish_lock:
+            await self.broadcast_current_dashboard()
+            await self.publish_task_updates()
+            await self.publish_task_messages()
+            await self.publish_notifications()
+            await self.publish_logs()
+            await self.publish_benchmarks()
+
+    async def publish_task_updates(self) -> None:
+        assert self.ws_server is not None
+        runtime_state = self.kernel.runtime_state()
+        for task in self.kernel.list_tasks():
+            payload = self._task_payload_builder(
+                task,
+                self.kernel.jobs_for_task(task.task_id),
+                runtime_state=runtime_state,
+            )
+            fingerprint = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+            if self.task_fingerprints.get(task.task_id) == fingerprint:
+                continue
+            self.task_fingerprints[task.task_id] = fingerprint
+            await self.ws_server.send_task_update(payload)
+
+    async def publish_task_messages(self) -> None:
+        assert self.ws_server is not None
+        task_messages = self.kernel.list_task_messages()
+        new_messages = task_messages[self.task_message_offset :]
+        self.task_message_offset = len(task_messages)
+        for message in new_messages:
+            payload: dict[str, Any] = {
+                "type": message.type.value,
+                "content": message.content,
+                "task_id": message.task_id,
+                "message_id": message.message_id,
+                "timestamp": message.timestamp,
+            }
+            if message.options is not None:
+                payload["options"] = message.options
+            if message.timeout_s is not None:
+                payload["timeout_s"] = message.timeout_s
+            if message.default_option is not None:
+                payload["default_option"] = message.default_option
+            await self.ws_server.send_task_message(payload)
+            if self.adjutant is None:
+                continue
+            if message.type == TaskMessageType.TASK_COMPLETE_REPORT:
+                task_obj = next((t for t in self.kernel.list_tasks() if t.task_id == message.task_id), None)
+                if task_obj is not None:
+                    self.adjutant.notify_task_completed(
+                        label=getattr(task_obj, "label", message.task_id),
+                        raw_text=task_obj.raw_text,
+                        result=task_obj.status.value,
+                        summary=message.content,
+                        task_id=message.task_id,
+                    )
+            elif message.type in (TaskMessageType.TASK_WARNING, TaskMessageType.TASK_INFO):
+                self.adjutant.notify_task_message(
+                    task_id=message.task_id,
+                    message_type=message.type.value,
+                    content=message.content,
+                )
+
+    async def publish_notifications(self) -> None:
+        assert self.ws_server is not None
+        if self.notification_manager is None:
+            self.notification_manager = NotificationManager(
+                kernel=self.kernel,
+                sink=self.ws_server.send_player_notification,
+            )
+        await self.notification_manager.poll_and_push()
+
+    async def publish_logs(self) -> None:
+        assert self.ws_server is not None
+        new_records = log_records_from(self.log_offset, limit=self.log_publish_batch_size)
+        self.log_offset += len(new_records)
+        for record in new_records:
+            if record.component == "benchmark":
+                continue
+            await self.ws_server.send_log_entry(record.to_dict())
+
+    async def publish_benchmarks(self) -> None:
+        assert self.ws_server is not None
+        new_records = benchmark.records_from(self.benchmark_offset)
+        if not new_records:
+            return
+        self.benchmark_offset += len(new_records)
+        await self.ws_server.send_benchmark(
+            {
+                "records": [record.to_dict() for record in new_records],
+                "replace": False,
+            }
+        )
+
+    async def broadcast_current_dashboard(self) -> None:
+        assert self.ws_server is not None
+        dashboard = self._dashboard_payload_builder()
+        await self.ws_server.send_world_snapshot(dashboard["world_snapshot"])
+        await self.ws_server.send_task_list(
+            dashboard["tasks"],
+            pending_questions=dashboard["pending_questions"],
+        )
+
+    async def send_current_dashboard_to_client(self, client_id: str) -> None:
+        assert self.ws_server is not None
+        dashboard = self._dashboard_payload_builder()
+        await self.ws_server.send_world_snapshot_to_client(
+            client_id,
+            dashboard["world_snapshot"],
+        )
+        await self.ws_server.send_task_list_to_client(
+            client_id,
+            dashboard["tasks"],
+            pending_questions=dashboard["pending_questions"],
+        )
+
+    async def emit_notification(
+        self,
+        notification_type: str,
+        content: str,
+        *,
+        data: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        await self.ws_server.send_player_notification(
+            {
+                "type": notification_type,
+                "content": content,
+                "icon": "ℹ",
+                "data": dict(data or {}),
+            }
+        )
+
+    async def emit_adjutant_response(
+        self,
+        answer: str,
+        *,
+        response_type: str,
+        ok: bool = True,
+        extra: Optional[dict[str, Any]] = None,
+    ) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        payload = {
+            "answer": answer,
+            "response_type": response_type,
+            "ok": ok,
+        }
+        if extra:
+            payload.update(extra)
+        payload["timestamp"] = time.time()
+        self.recent_responses.append(dict(payload))
+        if len(self.recent_responses) > 100:
+            self.recent_responses = self.recent_responses[-100:]
+        await self.ws_server.send_query_response(payload)
+
+    async def replay_history(self, client_id: str) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+
+        history_logs = [
+            record.to_dict()
+            for record in log_records_from(0, limit=self.log_offset)
+            if record.component != "benchmark"
+        ][-500:]
+        for entry in history_logs:
+            await self.ws_server.send_to_client(client_id, "log_entry", entry)
+
+        benchmark_history = [record.to_dict() for record in benchmark.records_from(0)]
+        if benchmark_history:
+            await self.ws_server.send_to_client(
+                client_id,
+                "benchmark",
+                {
+                    "records": benchmark_history,
+                    "replace": True,
+                },
+            )
+
+        for message in self.kernel.list_task_messages()[-100:]:
+            if message.type == TaskMessageType.TASK_QUESTION:
+                continue
+            icon = {
+                TaskMessageType.TASK_INFO: "ℹ",
+                TaskMessageType.TASK_WARNING: "⚠",
+                TaskMessageType.TASK_COMPLETE_REPORT: "✓",
+            }.get(message.type, "ℹ")
+            await self.ws_server.send_to_client(
+                client_id,
+                "player_notification",
+                {
+                    "type": message.type.value,
+                    "content": message.content,
+                    "icon": icon,
+                    "task_id": message.task_id,
+                    "message_id": message.message_id,
+                    "timestamp": message.timestamp,
+                },
+            )
+
+        for notification in self.kernel.list_player_notifications()[-100:]:
+            await self.ws_server.send_to_client(client_id, "player_notification", notification)
+
+        for response in self.recent_responses[-100:]:
+            await self.ws_server.send_to_client(client_id, "query_response", response)

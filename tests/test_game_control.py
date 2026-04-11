@@ -76,14 +76,14 @@ class _BridgePublishWS:
     def __init__(self) -> None:
         self.is_running = True
         self.log_entries: list[dict[str, Any]] = []
-        self.benchmarks: list[list[dict[str, Any]]] = []
+        self.benchmarks: list[dict[str, Any]] = []
         self.client_messages: list[tuple[str, str, dict[str, Any]]] = []
         self.session_cleared = 0
 
     async def send_log_entry(self, payload: dict[str, Any]) -> None:
         self.log_entries.append(payload)
 
-    async def send_benchmark(self, payload: list[dict[str, Any]]) -> None:
+    async def send_benchmark(self, payload: dict[str, Any]) -> None:
         self.benchmarks.append(payload)
 
     async def send_to_client(self, client_id: str, msg_type: str, payload: dict[str, Any]) -> None:
@@ -91,6 +91,12 @@ class _BridgePublishWS:
 
     async def send_session_cleared(self) -> None:
         self.session_cleared += 1
+
+    async def send_session_catalog_to_client(self, client_id: str, payload: dict[str, Any]) -> None:
+        del client_id, payload
+
+    async def send_session_task_catalog_to_client(self, client_id: str, payload: dict[str, Any]) -> None:
+        del client_id, payload
 
 
 class _BridgeAdjutant:
@@ -371,7 +377,8 @@ def test_runtime_bridge_publishes_logs_and_benchmarks_incrementally() -> None:
         await bridge._publish_benchmarks()
 
         assert [entry["message"] for entry in ws.log_entries] == ["one", "two"]
-        assert [entry["name"] for entry in ws.benchmarks[0]] == ["a", "b"]
+        assert [entry["name"] for entry in ws.benchmarks[0]["records"]] == ["a", "b"]
+        assert ws.benchmarks[0]["replace"] is False
 
         logger.info("three", event="e3")
         with benchmark.span("tool_exec", name="c"):
@@ -382,7 +389,7 @@ def test_runtime_bridge_publishes_logs_and_benchmarks_incrementally() -> None:
 
         assert [entry["message"] for entry in ws.log_entries] == ["one", "two", "three"]
         assert len(ws.benchmarks) == 2
-        assert [entry["name"] for entry in ws.benchmarks[1]] == ["a", "b", "c"]
+        assert [entry["name"] for entry in ws.benchmarks[1]["records"]] == ["c"]
 
         logger.info("four", event="e4")
         logger.info("five", event="e5")
@@ -432,20 +439,22 @@ def test_runtime_bridge_session_clear_resets_benchmark_publish_state() -> None:
             pass
         await bridge._publish_benchmarks()
         assert bridge._benchmark_offset == 1
-        assert len(ws.benchmarks[-1]) == 1
+        assert len(ws.benchmarks[-1]["records"]) == 1
 
         await bridge.on_session_clear("client-1")
         assert kernel.reset_calls == 1
         assert bridge._benchmark_offset == 0
         assert ws.session_cleared == 1
         assert benchmark.records() == []
-        assert logging_system.records() == []
+        records = logging_system.records()
+        assert len(records) == 1
+        assert records[0].event == "log_session_rotated"
 
         with benchmark.span("tool_exec", name="after-clear"):
             pass
         await bridge._publish_benchmarks()
         assert bridge._benchmark_offset == 1
-        assert [entry["name"] for entry in ws.benchmarks[-1]] == ["after-clear"]
+        assert [entry["name"] for entry in ws.benchmarks[-1]["records"]] == ["after-clear"]
 
     logging_system.clear()
     benchmark.clear()
