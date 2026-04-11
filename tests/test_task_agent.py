@@ -1119,6 +1119,33 @@ def test_normal_context_redacts_capability_planning_hints() -> None:
     print("  PASS: normal_context_redacts_capability_planning_hints")
 
 
+def test_normal_context_surfaces_world_sync_staleness_human_readably() -> None:
+    runtime_facts = {
+        "world_sync_stale": True,
+        "world_sync_consecutive_failures": 3,
+        "world_sync_total_failures": 5,
+        "world_sync_last_error": "COMMAND_EXECUTION_ERROR",
+    }
+    packet = build_context_packet(
+        task=make_task(),
+        jobs=[make_job()],
+        world_summary=make_world(),
+        runtime_facts=runtime_facts,
+    )
+    msg = context_to_message(packet, is_capability=False)
+    assert "[世界同步]" in msg["content"]
+    assert "stale=true" in msg["content"]
+    assert "failures=3/5" in msg["content"]
+    assert "COMMAND_EXECUTION_ERROR" in msg["content"]
+    print("  PASS: normal_context_surfaces_world_sync_staleness_human_readably")
+
+
+def test_system_prompt_includes_world_sync_fail_closed_rule() -> None:
+    assert "[世界同步]" in SYSTEM_PROMPT
+    assert "世界状态同步异常" in SYSTEM_PROMPT
+    print("  PASS: system_prompt_includes_world_sync_fail_closed_rule")
+
+
 def test_capability_context_exposes_phase_and_blocker_blocks() -> None:
     """Capability context should make phase and blockers explicit."""
     packet = build_context_packet(

@@ -838,6 +838,22 @@ def _build_capability_world_sync(rf: dict[str, Any]) -> str:
     return line
 
 
+def _build_ordinary_world_sync(rf: dict[str, Any]) -> str:
+    """Expose stale-world status for ordinary tasks in human-readable form."""
+    if not rf:
+        return ""
+    stale = bool(rf.get("world_sync_stale", False))
+    failures = int(rf.get("world_sync_consecutive_failures", 0) or 0)
+    total = int(rf.get("world_sync_total_failures", 0) or 0)
+    error = str(rf.get("world_sync_last_error", "") or "")
+    if not stale and failures <= 0 and not error:
+        return ""
+    line = f"[世界同步] stale={'true' if stale else 'false'} failures={failures}/{total}"
+    if error:
+        line += f" error={error}"
+    return line
+
+
 def _readiness_reason_label(reason: str, *, queue_blocked_reason: str = "") -> str:
     key = str(reason or "").strip().lower()
     if key == "world_sync_stale":
@@ -1215,6 +1231,10 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
             mil_line = _compact_military(ws.get("military", {}))
             map_line = _compact_map(ws.get("map", {}))
             lines.append(f"[世界] {eco_line} | {mil_line} | {map_line}")
+
+        ordinary_world_sync_block = _build_ordinary_world_sync(packet.runtime_facts or {})
+        if ordinary_world_sync_block:
+            lines.append(ordinary_world_sync_block)
 
         # Enemy intel
         enemy_intel = packet.runtime_facts.get("enemy_intel", {}) if packet.runtime_facts else {}
