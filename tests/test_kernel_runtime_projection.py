@@ -8,12 +8,25 @@ from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from kernel.runtime_projection import build_capability_status_snapshot
+from kernel.runtime_projection import (
+    build_active_jobs_projection,
+    build_active_tasks_projection,
+    build_capability_status_snapshot,
+    build_job_stats_by_task,
+)
 from models import JobStatus, Task, TaskKind, TaskStatus, UnitRequest
 
 
 class _Controller:
-    def __init__(self, task_id: str, expert_type: str, status: JobStatus) -> None:
+    def __init__(
+        self,
+        task_id: str,
+        expert_type: str,
+        status: JobStatus,
+        *,
+        job_id: str = "job_1",
+    ) -> None:
+        self.job_id = job_id
         self.task_id = task_id
         self.expert_type = expert_type
         self._status = status
@@ -162,3 +175,65 @@ def test_build_capability_status_snapshot_tracks_producer_disabled() -> None:
     assert snapshot.producer_disabled_count == 1
     assert snapshot.dispatch_request_count == 1
     print("  PASS: build_capability_status_snapshot_tracks_producer_disabled")
+
+
+def test_runtime_projection_helpers_build_active_rows_and_job_stats() -> None:
+    active_task = Task(
+        task_id="t_active",
+        raw_text="侦察",
+        kind=TaskKind.MANAGED,
+        priority=60,
+        status=TaskStatus.RUNNING,
+        label="001",
+    )
+    finished_task = Task(
+        task_id="t_done",
+        raw_text="完成任务",
+        kind=TaskKind.MANAGED,
+        priority=30,
+        status=TaskStatus.SUCCEEDED,
+        label="002",
+    )
+    controllers = [
+        _Controller("t_active", "ReconExpert", JobStatus.RUNNING, job_id="job_run"),
+        _Controller("t_active", "ReconExpert", JobStatus.FAILED, job_id="job_fail"),
+        _Controller("t_done", "CombatExpert", JobStatus.SUCCEEDED, job_id="job_done"),
+    ]
+
+    active_tasks = build_active_tasks_projection(
+        tasks=[active_task, finished_task],
+        active_actor_ids_for=lambda task_id: [11, 12] if task_id == "t_active" else [99],
+    )
+    active_jobs = build_active_jobs_projection(controllers)
+    job_stats = build_job_stats_by_task(controllers)
+
+    assert active_tasks == {
+        "t_active": {
+            "raw_text": "侦察",
+            "label": "001",
+            "kind": TaskKind.MANAGED.value,
+            "priority": 60,
+            "status": TaskStatus.RUNNING.value,
+            "is_capability": False,
+            "active_actor_ids": [11, 12],
+            "active_group_size": 2,
+        }
+    }
+    assert active_jobs == {
+        "job_run": {
+            "task_id": "t_active",
+            "expert_type": "ReconExpert",
+            "status": JobStatus.RUNNING.value,
+        }
+    }
+    assert job_stats == {
+        "t_active": {
+            "failed_count": 1,
+            "expert_attempts": {"ReconExpert": 2},
+        },
+        "t_done": {
+            "failed_count": 0,
+            "expert_attempts": {"CombatExpert": 1},
+        },
+    }
+    print("  PASS: runtime_projection_helpers_build_active_rows_and_job_stats")

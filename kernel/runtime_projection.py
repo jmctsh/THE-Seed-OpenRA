@@ -2,10 +2,75 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterable, Optional
+from collections.abc import Callable, Iterable
+from typing import Any, Optional, Protocol
 
 from models import JobStatus, Task, TaskStatus, UnitRequest
 from runtime_views import CapabilityStatusSnapshot
+
+
+class ControllerLike(Protocol):
+    job_id: str
+    task_id: str
+    expert_type: str
+
+    def to_model(self) -> Any:
+        ...
+
+
+def build_job_stats_by_task(controllers: Iterable[ControllerLike]) -> dict[str, Any]:
+    """Build per-task expert attempt/failure counters for runtime facts."""
+    job_stats: dict[str, Any] = {}
+    for controller in controllers:
+        task_id = controller.task_id
+        expert_type = controller.expert_type
+        status = controller.to_model().status
+        stats = job_stats.setdefault(task_id, {"failed_count": 0, "expert_attempts": {}})
+        stats["expert_attempts"][expert_type] = stats["expert_attempts"].get(expert_type, 0) + 1
+        if status == JobStatus.FAILED:
+            stats["failed_count"] += 1
+    return job_stats
+
+
+def build_active_tasks_projection(
+    *,
+    tasks: Iterable[Task],
+    active_actor_ids_for: Callable[[str], list[int]],
+) -> dict[str, dict[str, Any]]:
+    """Build active-task runtime rows exported to world/runtime surfaces."""
+    projection: dict[str, dict[str, Any]] = {}
+    terminal = {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.ABORTED, TaskStatus.PARTIAL}
+    for task in tasks:
+        if task.status in terminal:
+            continue
+        active_actor_ids = active_actor_ids_for(task.task_id)
+        projection[task.task_id] = {
+            "raw_text": task.raw_text,
+            "label": task.label,
+            "kind": task.kind.value,
+            "priority": task.priority,
+            "status": task.status.value,
+            "is_capability": bool(getattr(task, "is_capability", False)),
+            "active_actor_ids": active_actor_ids,
+            "active_group_size": len(active_actor_ids),
+        }
+    return projection
+
+
+def build_active_jobs_projection(controllers: Iterable[ControllerLike]) -> dict[str, dict[str, Any]]:
+    """Build active-job runtime rows exported to world/runtime surfaces."""
+    projection: dict[str, dict[str, Any]] = {}
+    terminal = {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}
+    for controller in controllers:
+        status = controller.to_model().status
+        if status in terminal:
+            continue
+        projection[controller.job_id] = {
+            "task_id": controller.task_id,
+            "expert_type": controller.expert_type,
+            "status": status.value,
+        }
+    return projection
 
 
 def build_capability_status_snapshot(

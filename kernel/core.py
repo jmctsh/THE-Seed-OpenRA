@@ -82,7 +82,12 @@ from .unit_request_lifecycle import (
     release_ready_task_requests,
     task_has_blocking_wait,
 )
-from .runtime_projection import build_capability_status_snapshot
+from .runtime_projection import (
+    build_active_jobs_projection,
+    build_active_tasks_projection,
+    build_capability_status_snapshot,
+    build_job_stats_by_task,
+)
 from .task_coordination import (
     build_other_active_tasks,
     build_task_world_summary,
@@ -1283,20 +1288,7 @@ class Kernel:
             self._resource_loss_notified.discard(controller.job_id)
 
     def _sync_world_runtime(self) -> None:
-        # Compute per-task job stats including terminal jobs (for runtime_facts).
-        job_stats: dict[str, Any] = {}
-        for controller in self._jobs.values():
-            tid = controller.task_id
-            etype = controller.expert_type
-            status = controller.to_model().status
-            stats = job_stats.setdefault(tid, {"failed_count": 0, "expert_attempts": {}})
-            stats["expert_attempts"][etype] = stats["expert_attempts"].get(etype, 0) + 1
-            if status == JobStatus.FAILED:
-                stats["failed_count"] += 1
-
-        # Serialize pending/partial unit requests for Capability context.
-        # Also include requests with bootstrap_job_id (production in progress).
-
+        job_stats = build_job_stats_by_task(self._jobs.values())
         unfulfilled = build_unfulfilled_request_payloads(
             self._unit_requests.values(),
             reservation_for_request=self._reservation_for_request,
@@ -1336,29 +1328,11 @@ class Kernel:
         )
 
         self.world_model.set_runtime_state(
-            active_tasks={
-                task.task_id: {
-                    "raw_text": task.raw_text,
-                    "label": task.label,
-                    "kind": task.kind.value,
-                    "priority": task.priority,
-                    "status": task.status.value,
-                    "is_capability": bool(getattr(task, "is_capability", False)),
-                    "active_actor_ids": (active_actor_ids := self.task_active_actor_ids(task.task_id)),
-                    "active_group_size": len(active_actor_ids),
-                }
-                for task in self.tasks.values()
-                if task.status not in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.ABORTED, TaskStatus.PARTIAL}
-            },
-            active_jobs={
-                controller.job_id: {
-                    "task_id": controller.task_id,
-                    "expert_type": controller.expert_type,
-                    "status": controller.to_model().status.value,
-                }
-                for controller in self._jobs.values()
-                if controller.to_model().status not in {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.ABORTED}
-            },
+            active_tasks=build_active_tasks_projection(
+                tasks=self.tasks.values(),
+                active_actor_ids_for=self.task_active_actor_ids,
+            ),
+            active_jobs=build_active_jobs_projection(self._jobs.values()),
             resource_bindings=dict(self.world_model.resource_bindings),
             constraints=list(self._constraints.values()),
             job_stats_by_task=job_stats,
