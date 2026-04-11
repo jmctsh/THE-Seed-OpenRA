@@ -31,7 +31,6 @@ from models import (
     TaskStatus,
     UnitReservation,
     UnitRequest,
-    validate_job_config,
 )
 from openra_state.data.dataset import (
     _CATEGORY_TO_ACTOR_CATEGORY,
@@ -104,7 +103,14 @@ from .task_runtime_ops import (
     release_task_job_resources as release_task_runtime_job_resources,
     stop_task_runtime,
 )
-from .resource_need_inference import build_resource_needs
+from .job_lifecycle import (
+    abort_job as abort_job_runtime,
+    patch_job as patch_job_runtime,
+    pause_job as pause_job_runtime,
+    require_job,
+    resume_job as resume_job_runtime,
+    start_job as start_job_runtime,
+)
 from .session_reset import (
     abort_and_release_all_jobs,
     clear_kernel_runtime_collections,
@@ -915,63 +921,55 @@ class Kernel:
             return True
 
     def start_job(self, task_id: str, expert_type: str, config: ExpertConfig) -> Job:
-        with bm_span("tool_exec", name="kernel:start_job", metadata={"expert_type": expert_type}):
-            task = self._require_task(task_id)
-            validate_job_config(expert_type, config)
-            controller = self._make_job_controller(task_id, expert_type, config)
-            self._jobs[controller.job_id] = controller
-            self._resource_needs[controller.job_id] = build_resource_needs(controller, config)
-            task.status = TaskStatus.RUNNING
-            task.timestamp = _now()
-            slog.info("Job started", event="job_started", task_id=task_id, job_id=controller.job_id, expert_type=expert_type, config=config)
-            self._rebalance_resources()
-            self._sync_world_runtime()
-            return controller.to_model()
+        return start_job_runtime(
+            task_id=task_id,
+            expert_type=expert_type,
+            config=config,
+            tasks=self.tasks,
+            jobs=self._jobs,
+            resource_needs=self._resource_needs,
+            make_job_controller=self._make_job_controller,
+            now=_now,
+            rebalance_resources=self._rebalance_resources,
+            sync_world_runtime=self._sync_world_runtime,
+        )
 
     def abort_job(self, job_id: str) -> bool:
-        with bm_span("tool_exec", name="kernel:abort_job"):
-            controller = self._jobs.get(job_id)
-            if controller is None:
-                return False
-            controller.abort()
-            self._release_job_resources(controller)
-            self._resource_loss_notified.discard(job_id)
-            self._rebalance_resources()
-            self._sync_world_runtime()
-            slog.warn("Job aborted by Kernel", event="job_aborted", job_id=job_id, task_id=controller.task_id)
-            return True
+        return abort_job_runtime(
+            job_id=job_id,
+            jobs=self._jobs,
+            resource_loss_notified=self._resource_loss_notified,
+            release_job_resources=self._release_job_resources,
+            rebalance_resources=self._rebalance_resources,
+            sync_world_runtime=self._sync_world_runtime,
+        )
 
     def patch_job(self, job_id: str, params: dict[str, Any]) -> bool:
-        with bm_span("tool_exec", name="kernel:patch_job"):
-            controller = self._require_job(job_id)
-            controller.patch(params)
-            # Refresh resource needs in case config changed (e.g. scout_count).
-            config = getattr(controller, "config", None)
-            if config is not None:
-                self._resource_needs[job_id] = build_resource_needs(controller, config)
-            self._rebalance_resources()
-            self._sync_world_runtime()
-            return True
+        return patch_job_runtime(
+            job_id=job_id,
+            params=params,
+            jobs=self._jobs,
+            resource_needs=self._resource_needs,
+            rebalance_resources=self._rebalance_resources,
+            sync_world_runtime=self._sync_world_runtime,
+        )
 
     def pause_job(self, job_id: str) -> bool:
-        with bm_span("tool_exec", name="kernel:pause_job"):
-            controller = self._require_job(job_id)
-            if self._is_terminal_status(controller.status):
-                return False
-            controller.pause()
-            self._sync_world_runtime()
-            return True
+        return pause_job_runtime(
+            job_id=job_id,
+            jobs=self._jobs,
+            is_terminal_status=self._is_terminal_status,
+            sync_world_runtime=self._sync_world_runtime,
+        )
 
     def resume_job(self, job_id: str) -> bool:
-        with bm_span("tool_exec", name="kernel:resume_job"):
-            controller = self._require_job(job_id)
-            if self._is_terminal_status(controller.status):
-                return False
-            controller.resume()
-            self._rebalance_resources()
-            self._sync_world_runtime()
-            slog.info("Job resumed by Kernel", event="job_resumed", job_id=job_id, task_id=controller.task_id)
-            return True
+        return resume_job_runtime(
+            job_id=job_id,
+            jobs=self._jobs,
+            is_terminal_status=self._is_terminal_status,
+            rebalance_resources=self._rebalance_resources,
+            sync_world_runtime=self._sync_world_runtime,
+        )
 
     def route_event(self, event: Event) -> None:
         with bm_span("tool_exec", name=f"kernel:route_event:{event.type.value}"):
@@ -1265,10 +1263,7 @@ class Kernel:
         return task
 
     def _require_job(self, job_id: str) -> BaseJob | _ManagedJob:
-        controller = self._jobs.get(job_id)
-        if controller is None:
-            raise KeyError(f"Unknown job_id: {job_id}")
-        return controller
+        return require_job(job_id, jobs=self._jobs)
 
     def _release_job_resources(self, controller: BaseJob | _ManagedJob) -> None:
         release_job_runtime_resources(
