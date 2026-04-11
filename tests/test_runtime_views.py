@@ -10,6 +10,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from runtime_views import (
     BattlefieldSnapshot,
     CapabilityStatusSnapshot,
+    TaskTriageSnapshot,
     build_battlefield_snapshot,
     build_runtime_state_snapshot,
 )
@@ -142,10 +143,30 @@ def test_battlefield_snapshot_from_mapping_normalizes_query_payload() -> None:
     print("  PASS: battlefield_snapshot_from_mapping_normalizes_query_payload")
 
 
+def test_task_triage_snapshot_from_mapping_normalizes_fields() -> None:
+    snapshot = TaskTriageSnapshot.from_mapping(
+        {
+            "phase": "dispatch",
+            "active_expert": "ReconExpert",
+            "active_group_size": "2",
+            "reservation_ids": ["r1", None, "r2"],
+            "world_stale": 1,
+        }
+    )
+
+    assert snapshot.phase == "dispatch"
+    assert snapshot.active_expert == "ReconExpert"
+    assert snapshot.active_group_size == 2
+    assert snapshot.reservation_ids == ["r1", "r2"]
+    assert snapshot.world_stale is True
+    print("  PASS: task_triage_snapshot_from_mapping_normalizes_fields")
+
+
 if __name__ == "__main__":
     print("Running runtime_views tests...\n")
     test_build_runtime_state_snapshot_normalizes_capability_status()
     test_build_runtime_state_snapshot_accepts_capability_snapshot_object()
     test_build_battlefield_snapshot_normalizes_numeric_fields()
     test_battlefield_snapshot_from_mapping_normalizes_query_payload()
+    test_task_triage_snapshot_from_mapping_normalizes_fields()
     print("\nAll runtime_views tests passed!")

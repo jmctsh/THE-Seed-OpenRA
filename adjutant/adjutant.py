@@ -36,7 +36,12 @@ from models import (
 from openra_api.models import Actor as GameActor
 from openra_api.production_names import normalize_production_name, production_name_variants
 from openra_state.data.dataset import demo_base_progression
-from runtime_views import BattlefieldSnapshot, CapabilityStatusSnapshot, TaskTriageInputs
+from runtime_views import (
+    BattlefieldSnapshot,
+    CapabilityStatusSnapshot,
+    TaskTriageInputs,
+    TaskTriageSnapshot,
+)
 from task_triage import (
     build_task_triage_from_artifacts,
     capability_blocker_status_text,
@@ -471,12 +476,12 @@ class Adjutant:
         triage: Optional[dict[str, Any]] = None,
     ) -> str:
         runtime_task = dict(runtime_task or {})
-        triage = dict(triage or {})
+        triage_snapshot = TaskTriageSnapshot.from_mapping(triage)
 
         if bool(runtime_task.get("is_capability")):
             return "economy"
 
-        active_expert = str(triage.get("active_expert", "") or runtime_task.get("active_expert", "") or "")
+        active_expert = str(triage_snapshot.active_expert or runtime_task.get("active_expert", "") or "")
         expert_domain = {
             "EconomyExpert": "economy",
             "DeployExpert": "economy",
@@ -486,16 +491,14 @@ class Adjutant:
         if expert_domain:
             return expert_domain
 
-        phase = str(triage.get("phase", "") or runtime_task.get("phase", "") or "")
+        phase = str(triage_snapshot.phase or runtime_task.get("phase", "") or "")
         if phase in {"dispatch", "bootstrapping", "fulfilling"}:
             return "economy"
 
-        active_group_size = int(
-            triage.get("active_group_size", runtime_task.get("active_group_size", 0)) or 0
-        )
+        active_group_size = int(triage_snapshot.active_group_size or runtime_task.get("active_group_size", 0) or 0)
         if active_group_size > 0:
-            blocking_reason = str(triage.get("blocking_reason", "") or "")
-            waiting_reason = str(triage.get("waiting_reason", "") or "")
+            blocking_reason = triage_snapshot.blocking_reason
+            waiting_reason = triage_snapshot.waiting_reason
             if waiting_reason == "unit_reservation":
                 if any(hint in task_text for hint in _INFO_RECON_HINTS):
                     return "recon"
@@ -506,19 +509,25 @@ class Adjutant:
 
         return self._task_domain(task_text)
 
-    def _score_info_target(self, text: str, task: Any, battlefield_snapshot: dict[str, Any]) -> int:
+    def _score_info_target(
+        self,
+        text: str,
+        task: Any,
+        battlefield_snapshot: BattlefieldSnapshot | dict[str, Any],
+    ) -> int:
         task_text = self._task_text(task)
         if not task_text:
             return 0
 
+        snapshot = BattlefieldSnapshot.from_mapping(battlefield_snapshot)
         text_domain = self._classify_text_domain(text)
         task_domain = self._task_domain(task_text)
         score = 0
 
         if text_domain != "general":
             score += 3 if text_domain == task_domain else -1
-        focus = battlefield_snapshot.get("focus", "general")
-        disposition = battlefield_snapshot.get("disposition", "unknown")
+        focus = snapshot.focus
+        disposition = snapshot.disposition
         if focus == task_domain:
             score += 2
         elif focus != "general" and task_domain != "general":
@@ -541,7 +550,7 @@ class Adjutant:
         text: str,
         classification: ClassificationResult,
         context: AdjutantContext,
-        battlefield_snapshot: dict[str, Any],
+        battlefield_snapshot: BattlefieldSnapshot | dict[str, Any],
     ) -> Optional[Any]:
         if classification.target_task_id:
             target = self._find_task_by_label(classification.target_task_id)
