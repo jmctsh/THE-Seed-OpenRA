@@ -14,10 +14,8 @@ from experts.planners import query_planner as run_planner_query
 from llm import LLMProvider
 from logging_system import get_logger
 from models import (
-    CombatJobConfig,
     Constraint,
     ConstraintEnforcement,
-    EngagementMode,
     Event,
     EventType,
     ExpertConfig,
@@ -95,6 +93,11 @@ from .task_coordination import (
     set_task_actor_group,
     task_active_actor_ids as collect_task_active_actor_ids,
     task_has_running_actor_job as has_running_actor_job,
+)
+from .defend_base_auto_response import (
+    active_task_jobs as collect_active_task_jobs,
+    ensure_defend_base_task,
+    ensure_immediate_defend_base_job,
 )
 from .task_questions import PendingQuestionStore
 from runtime_views import CapabilityStatusSnapshot
@@ -1747,76 +1750,33 @@ class Kernel:
     _DEFEND_BASE_COOLDOWN_S = 10.0
 
     def _ensure_defend_base_task(self) -> Optional[Task]:
-        # Return existing active task if one exists.
-        for task in self.tasks.values():
-            if task.raw_text == "defend_base" and task.status not in {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.ABORTED, TaskStatus.PARTIAL}:
-                return task
-        # Cooldown: don't create a new task if one was recently created (even if it failed).
-        now = _now()
-        if now - self._defend_base_last_created < self._DEFEND_BASE_COOLDOWN_S:
-            return None
-        self._defend_base_last_created = now
-        return self.create_task("defend_base", TaskKind.MANAGED, 80)
+        task, last_created = ensure_defend_base_task(
+            self.tasks.values(),
+            last_created=self._defend_base_last_created,
+            now=_now(),
+            cooldown_s=self._DEFEND_BASE_COOLDOWN_S,
+            create_task=self.create_task,
+        )
+        self._defend_base_last_created = last_created
+        return task
 
     def _active_task_jobs(self, task_id: str, *, expert_type: Optional[str] = None) -> list[BaseJob | _ManagedJob]:
-        jobs: list[BaseJob | _ManagedJob] = []
-        for controller in self._jobs.values():
-            if controller.task_id != task_id:
-                continue
-            if expert_type is not None and controller.expert_type != expert_type:
-                continue
-            if self._is_terminal_status(controller.status):
-                continue
-            jobs.append(controller)
-        jobs.sort(key=lambda item: item.job_id)
-        return jobs
-
-    def _resolve_defend_base_target_position(self, event: Event) -> Optional[tuple[int, int]]:
-        if event.position is not None:
-            return (int(event.position[0]), int(event.position[1]))
-
-        if event.actor_id is not None:
-            actor = self.world_model.state.actors.get(event.actor_id)
-            if actor is not None:
-                return (int(actor.position[0]), int(actor.position[1]))
-
-        buildings = self.world_model.find_actors(owner="self", category="building")
-        if buildings:
-            x = round(sum(actor.position[0] for actor in buildings) / len(buildings))
-            y = round(sum(actor.position[1] for actor in buildings) / len(buildings))
-            return (int(x), int(y))
-
-        actors = self.world_model.find_actors(owner="self")
-        if actors:
-            x = round(sum(actor.position[0] for actor in actors) / len(actors))
-            y = round(sum(actor.position[1] for actor in actors) / len(actors))
-            return (int(x), int(y))
-
-        return None
+        return collect_active_task_jobs(
+            self._jobs,
+            task_id,
+            expert_type=expert_type,
+            is_terminal_status=self._is_terminal_status,
+        )
 
     def _ensure_immediate_defend_base_job(self, task: Task, event: Event) -> None:
-        target_position = self._resolve_defend_base_target_position(event)
-        if target_position is None:
-            return
-
-        existing_jobs = self._active_task_jobs(task.task_id, expert_type="CombatExpert")
-        if existing_jobs:
-            for controller in existing_jobs:
-                current_target = getattr(controller.config, "target_position", None)
-                if current_target != target_position:
-                    controller.patch({"target_position": target_position})
-            self._sync_world_runtime()
-            return
-
-        self.start_job(
-            task.task_id,
-            "CombatExpert",
-            CombatJobConfig(
-                target_position=target_position,
-                engagement_mode=EngagementMode.HOLD,
-                max_chase_distance=12,
-                retreat_threshold=0.4,
-            ),
+        ensure_immediate_defend_base_job(
+            task,
+            event,
+            world_model=self.world_model,
+            jobs=self._jobs,
+            is_terminal_status=self._is_terminal_status,
+            start_job=self.start_job,
+            sync_world_runtime=self._sync_world_runtime,
         )
 
     def _handle_base_under_attack_auto_response(self, event: Event) -> None:
