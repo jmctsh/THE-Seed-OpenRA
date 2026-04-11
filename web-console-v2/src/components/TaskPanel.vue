@@ -57,7 +57,7 @@
 </template>
 
 <script setup>
-import { ref, defineProps, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { formatTimeAgo } from '../composables/useTimeAgo.js'
 import {
   clearTaskUiState,
