@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from openra_state.data.dataset import (
+    dataset_unit_type_for,
     demo_capability_unit_type_for,
     demo_faction_hint_for_unit_types,
     demo_mobile_scout_unit_type,
@@ -42,7 +43,9 @@ def _planner_faction_hint(params: dict[str, Any], my_actors: list[dict[str, Any]
             actor.get("name"),
             actor.get("display_name"),
         ):
-            unit_type = demo_capability_unit_type_for(str(raw or ""))
+            unit_type = dataset_unit_type_for(str(raw or ""))
+            if unit_type is None:
+                unit_type = demo_capability_unit_type_for(str(raw or ""))
             if unit_type:
                 unit_types.append(unit_type)
                 break

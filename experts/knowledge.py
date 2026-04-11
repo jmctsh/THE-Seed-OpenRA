@@ -138,6 +138,13 @@ _COUNTER_TABLE: tuple[dict[str, Any], ...] = (
                 "reason": "vehicle_heavy_counter_heavy_tank",
                 "display_name": "重坦",
             },
+            {
+                "unit_type": "e3",
+                "queue_type": "Infantry",
+                "reason": "vehicle_heavy_counter_rocket_infantry",
+                "display_name": "火箭兵",
+                "factions": ("allied",),
+            },
         ),
     },
 )
@@ -218,15 +225,37 @@ def display_name_for(unit_type: str) -> str:
     return unit_type
 
 
-def _counter_candidate_allowed(unit_type: str, faction: str | None) -> bool:
+def _normalize_faction_name(faction: str | None) -> str | None:
+    key = str(faction or "").strip().lower()
+    if not key:
+        return None
+    if key in {"allied", "allies"}:
+        return "allied"
+    if key in {"soviet", "soviets"}:
+        return "soviet"
+    return key
+
+
+def _counter_candidate_allowed(candidate: dict[str, Any], faction: str | None) -> bool:
+    unit_type = str(candidate.get("unit_type") or "").lower()
     truth = demo_capability_truth_for(unit_type)
     if truth is None or not truth.in_demo_roster:
         return False
+    normalized_faction = _normalize_faction_name(faction)
+    explicit_factions = tuple(
+        normalized
+        for normalized in (
+            _normalize_faction_name(item) for item in tuple(candidate.get("factions") or ())
+        )
+        if normalized
+    )
+    if explicit_factions:
+        return normalized_faction in explicit_factions
     if truth.faction is None:
         return True
-    if not faction:
+    if not normalized_faction:
         return False
-    return truth.faction == str(faction).lower()
+    return truth.faction == normalized_faction
 
 
 def counter_recommendation(
@@ -250,7 +279,7 @@ def counter_recommendation(
         ratio = category_counts.get(cat, 0) / total
         if ratio >= rule["threshold_ratio"]:
             for candidate in rule["candidates"]:
-                if not _counter_candidate_allowed(candidate["unit_type"], faction):
+                if not _counter_candidate_allowed(candidate, faction):
                     continue
                 return {
                     "unit_type": candidate["unit_type"],

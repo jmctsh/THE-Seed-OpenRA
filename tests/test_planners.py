@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from experts.planners import ProductionAdvisor, query_planner
+from experts.planners import ProductionAdvisor, _planner_faction_hint, query_planner
 from experts.knowledge import (
     opening_build_order,
     tech_prerequisites_for,
@@ -237,6 +237,63 @@ def test_production_advisor_counter_vehicle_heavy() -> None:
     assert recommendation["unit_type"] == "v2rl"
     assert recommendation["reason"] == "vehicle_heavy_counter_v2"
     print("  PASS: production_advisor_counter_vehicle_heavy")
+
+
+def test_production_advisor_counter_vehicle_heavy_allied() -> None:
+    """Vehicle-heavy enemy on Allied side falls back to demo-safe rocket infantry."""
+    planner = ProductionAdvisor()
+
+    enemy = [{"actor_id": i, "category": "vehicle"} for i in range(5)]
+    enemy += [{"actor_id": 10, "category": "infantry"}]
+
+    proposal = planner.plan(
+        "ProductionAdvisor",
+        {"intent": "attack", "faction": "allied"},
+        make_world_state(
+            enemy_actors=enemy,
+            my_actors=[{"actor_id": 1, "name": "矿场", "display_name": "矿场", "category": "building"}],
+        ),
+    )
+
+    recommendation = proposal["recommendation"]
+    assert recommendation["action"] == "produce"
+    assert recommendation["unit_type"] == "e3"
+    assert recommendation["reason"] == "vehicle_heavy_counter_rocket_infantry"
+    print("  PASS: production_advisor_counter_vehicle_heavy_allied")
+
+
+def test_planner_faction_hint_uses_dataset_truth_for_allied_units() -> None:
+    """Allied-only non-demo ids should still infer the Allied side."""
+    my_actors = [
+        {"actor_id": 1, "unit_type": "tent", "display_name": "兵营", "category": "building"},
+        {"actor_id": 2, "unit_type": "2tnk", "display_name": "中型坦克", "category": "vehicle"},
+    ]
+    assert _planner_faction_hint({}, my_actors) == "allied"
+    print("  PASS: planner_faction_hint_uses_dataset_truth_for_allied_units")
+
+
+def test_production_advisor_infers_allied_faction_without_explicit_param() -> None:
+    """Allied-only observed units must not leak into Soviet counter recommendations."""
+    planner = ProductionAdvisor()
+
+    enemy = [{"actor_id": i, "category": "vehicle"} for i in range(5)]
+    enemy += [{"actor_id": 10, "category": "infantry"}]
+    my_actors = [
+        {"actor_id": 1, "unit_type": "tent", "display_name": "兵营", "category": "building"},
+        {"actor_id": 2, "unit_type": "2tnk", "display_name": "中型坦克", "category": "vehicle"},
+    ]
+
+    proposal = planner.plan(
+        "ProductionAdvisor",
+        {"intent": "attack"},
+        make_world_state(enemy_actors=enemy, my_actors=my_actors),
+    )
+
+    recommendation = proposal["recommendation"]
+    assert recommendation["action"] == "produce"
+    assert recommendation["unit_type"] == "e3"
+    assert recommendation["reason"] == "vehicle_heavy_counter_rocket_infantry"
+    print("  PASS: production_advisor_infers_allied_faction_without_explicit_param")
 
 
 def test_opening_build_order_allied() -> None:

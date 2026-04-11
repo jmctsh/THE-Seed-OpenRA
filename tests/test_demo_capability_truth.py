@@ -67,6 +67,7 @@ def test_demo_truth_overrides_keep_shared_infantry_faction_neutral() -> None:
     assert e6.faction is None
     assert e6.in_demo_roster is False
     assert demo_faction_hint_for_unit_types(["e1", "e3"]) is None
+    assert demo_faction_hint_for_unit_types(["tent", "2tnk"]) == "allied"
     assert demo_faction_hint_for_unit_types(["e1", "3tnk"]) == "soviet"
     print("  PASS: demo_truth_overrides_keep_shared_infantry_faction_neutral")
 
@@ -247,6 +248,7 @@ def test_counter_recommendation_stays_within_demo_roster() -> None:
     assert counter_recommendation(air_heavy, faction="soviet")["unit_type"] == "ftrk"
     assert counter_recommendation(inf_heavy)["unit_type"] == "e3"
     assert counter_recommendation(vehicle_heavy) is None
+    assert counter_recommendation(vehicle_heavy, faction="allied")["unit_type"] == "e3"
     assert counter_recommendation(vehicle_heavy, faction="soviet")["unit_type"] == "v2rl"
     print("  PASS: counter_recommendation_stays_within_demo_roster")
 

@@ -731,6 +731,10 @@ def demo_faction_restriction_for(unit_type: str) -> str | None:
     """Return allied/soviet restriction or None when both factions can build it."""
     truth = demo_capability_truth_for(unit_type)
     if truth is not None:
+        if truth.faction == "allies":
+            return "allied"
+        if truth.faction == "soviets":
+            return "soviet"
         return truth.faction
     entry = dataset_entry(unit_type)
     if entry is None:
@@ -738,6 +742,10 @@ def demo_faction_restriction_for(unit_type: str) -> str | None:
     faction = (entry.faction or "Both").lower()
     if faction == "both":
         return None
+    if faction == "allies":
+        return "allied"
+    if faction == "soviets":
+        return "soviet"
     return faction
 
 
