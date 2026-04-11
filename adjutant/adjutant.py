@@ -735,7 +735,6 @@ class Adjutant:
         world_summary = self._get_world_summary()
         runtime_state = self._runtime_state_snapshot()
         runtime_snapshot = RuntimeStateSnapshot.from_mapping(runtime_state)
-        capability_status = runtime_snapshot.capability_status
         runtime_facts: dict[str, Any] = {}
         compute_runtime_facts = getattr(self.world_model, "compute_runtime_facts", None)
         if callable(compute_runtime_facts):
@@ -755,7 +754,6 @@ class Adjutant:
             "world_summary": world_summary,
             "battlefield": battlefield,
             "runtime_state": runtime_snapshot.to_dict(),
-            "capability_status": capability_status,
             "runtime_facts": runtime_facts,
             "world_sync": self.world_model.refresh_health(),
         }
@@ -1113,20 +1111,15 @@ class Adjutant:
         task: Any,
         runtime_task: dict[str, Any],
         runtime_state: dict[str, Any],
-        capability_status: CapabilityStatusSnapshot | dict[str, Any],
         inputs: TaskTriageInputs,
         task_messages: list[Any],
         pending_questions: list[dict[str, Any]],
         jobs: list[Any],
     ) -> dict[str, Any]:
-        runtime_state = dict(runtime_state or {})
-        capability_snapshot = CapabilityStatusSnapshot.from_mapping(capability_status)
-        if capability_snapshot.task_id or capability_snapshot.task_label or capability_snapshot.phase:
-            runtime_state["capability_status"] = capability_snapshot.to_dict()
         return build_task_triage_from_artifacts(
             task=task,
             runtime_task=runtime_task,
-            runtime_state=runtime_state,
+            runtime_state=dict(runtime_state or {}),
             task_id=str(getattr(task, "task_id", "") or ""),
             jobs=jobs,
             world_sync=dict(inputs.world_sync or {}),
@@ -2981,7 +2974,6 @@ class Adjutant:
         runtime_snapshot = RuntimeStateSnapshot.from_mapping(collected_inputs.get("runtime_state"))
         runtime_state = runtime_snapshot.to_dict()
         runtime_tasks = dict(runtime_snapshot.active_tasks)
-        capability_status = CapabilityStatusSnapshot.from_mapping(collected_inputs.get("capability_status"))
         coordinator_snapshot = self._coordinator_snapshot(collected_inputs)
         world_sync = dict((coordinator_snapshot.get("world_sync") or {}))
         active_tasks = []
@@ -3016,7 +3008,6 @@ class Adjutant:
                 t,
                 runtime_task,
                 runtime_state,
-                capability_status,
                 triage_inputs,
                 task_messages,
                 pending_questions,
