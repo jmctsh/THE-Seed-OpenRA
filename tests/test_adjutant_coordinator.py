@@ -58,6 +58,57 @@ class _Kernel:
         return "t_cap"
 
 
+class _KernelWithRuntimeState(_Kernel):
+    def runtime_state(self):
+        return {
+            "active_tasks": {
+                "t_cap": {
+                    "label": "001",
+                    "raw_text": "发展经济",
+                    "status": "running",
+                    "is_capability": True,
+                    "active_group_size": 0,
+                },
+                "t_recon": {
+                    "label": "002",
+                    "raw_text": "探索地图",
+                    "status": "running",
+                    "is_capability": False,
+                    "active_group_size": 0,
+                    "active_actor_ids": [],
+                },
+                "t_combat": {
+                    "label": "003",
+                    "raw_text": "攻击敌人",
+                    "status": "running",
+                    "is_capability": False,
+                    "active_group_size": 3,
+                    "active_actor_ids": [11, 12, 13],
+                },
+            },
+            "active_jobs": {
+                "j_cap_1": {"task_id": "t_cap", "expert_type": "EconomyExpert", "status": "running", "job_id": "j_cap_1"},
+                "j_recon_1": {"task_id": "t_recon", "expert_type": "ReconExpert", "status": "waiting", "job_id": "j_recon_1"},
+                "j_combat_1": {"task_id": "t_combat", "expert_type": "CombatExpert", "status": "running", "job_id": "j_combat_1"},
+            },
+            "capability_status": {
+                "task_id": "t_cap",
+                "label": "001",
+                "status": "running",
+                "phase": "dispatch",
+                "blocker": "pending_requests_waiting_dispatch",
+                "active_job_types": ["EconomyExpert"],
+                "pending_request_count": 3,
+                "bootstrapping_request_count": 1,
+                "blocking_request_count": 2,
+            },
+            "unit_reservations": [
+                {"reservation_id": "res_1", "task_id": "t_recon"},
+            ],
+            "timestamp": time.time(),
+        }
+
+
 class _WorldModel:
     def __init__(self) -> None:
         self.state = SimpleNamespace(
@@ -497,6 +548,17 @@ def test_build_context_collects_coordinator_inputs_once() -> None:
     print("  PASS: build_context_collects_coordinator_inputs_once")
 
 
+def test_build_context_prefers_kernel_runtime_state_over_world_query() -> None:
+    world_model = _WorldModelCountingCalls()
+    context = Adjutant(llm=MockProvider(), kernel=_KernelWithRuntimeState(), world_model=world_model)._build_context("继续")
+
+    assert context.coordinator_snapshot["capability"]["phase"] == "dispatch"
+    assert world_model.query_counts.get("runtime_state", 0) == 0
+    assert world_model.query_counts.get("battlefield_snapshot") == 1
+    assert world_model.compute_runtime_facts_count == 1
+    print("  PASS: build_context_prefers_kernel_runtime_state_over_world_query")
+
+
 def test_build_context_uses_shared_triage_inputs_for_questions_and_warnings() -> None:
     kernel = _Kernel()
     kernel.list_pending_questions = lambda: [{
@@ -710,6 +772,7 @@ if __name__ == "__main__":
     test_build_context_includes_task_triage_fields()
     test_build_context_prefers_runtime_domain_over_generic_task_text()
     test_build_context_collects_coordinator_inputs_once()
+    test_build_context_prefers_kernel_runtime_state_over_world_query()
     test_build_context_uses_shared_triage_inputs_for_questions_and_warnings()
     test_build_context_surfaces_prerequisite_gap_blocker_text()
     test_coordinator_hints_merge_capability_followup_on_prerequisite_gap()
