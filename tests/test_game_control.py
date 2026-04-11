@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
+import logging
 import os
 from pathlib import Path
 import socket
@@ -20,7 +22,7 @@ import game_control
 import main as main_module
 from llm import MockProvider
 from main import ApplicationRuntime, RuntimeBridge, RuntimeConfig
-from models import Event, Task, TaskKind, TaskMessage, TaskMessageType
+from models import Event, Task, TaskKind, TaskMessage, TaskMessageType, TaskStatus
 from tests.test_world_model import MockWorldSource, make_frames
 
 
@@ -599,6 +601,105 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
 
     asyncio.run(run())
     print("  PASS: application_runtime_ws_startup_smoke_and_background_publish")
+
+
+@pytest.mark.startup_smoke
+def test_main_entry_direct_start_smoke_covers_enable_voice_and_task_message_publish(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class _DirectEntryRuntime(main_module.ApplicationRuntime):
+        created: list["_DirectEntryRuntime"] = []
+
+        def __init__(self, *, config: RuntimeConfig) -> None:
+            super().__init__(
+                config=config,
+                task_llm=MockProvider([]),
+                adjutant_llm=MockProvider([]),
+                api=_CloseTrackingAPI(),
+                world_source=MockWorldSource(make_frames()),
+            )
+            self.notification_spy = _BridgeNotificationAdjutant()
+            self.bridge.adjutant = self.notification_spy
+            self.captured_voice_enabled = self.ws_server.config.voice_enabled if self.ws_server is not None else None
+            type(self).created.append(self)
+
+        async def start(self) -> None:
+            await super().start()
+            task = self.kernel.create_task("建造电厂", TaskKind.MANAGED, 50)
+            task.label = "001"
+            self.kernel.register_task_message(
+                TaskMessage(
+                    message_id="m_info",
+                    task_id=task.task_id,
+                    type=TaskMessageType.TASK_INFO,
+                    content="电力不足，等待恢复",
+                )
+            )
+            self.kernel.register_task_message(
+                TaskMessage(
+                    message_id="m_done",
+                    task_id=task.task_id,
+                    type=TaskMessageType.TASK_COMPLETE_REPORT,
+                    content="电厂已建成",
+                )
+            )
+            task.status = TaskStatus.SUCCEEDED
+            await self.bridge._publisher.publish_all()
+            await self.stop()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ws_port = _free_tcp_port()
+        monkeypatch.setattr(main_module, "ApplicationRuntime", _DirectEntryRuntime)
+        monkeypatch.delenv("DASHSCOPE_API_KEY", raising=False)
+        monkeypatch.delenv("QWEN_API_KEY", raising=False)
+        caplog.set_level(logging.WARNING, logger="ws_server.server")
+
+        exit_code = main_module.main(
+            [
+                "--llm-provider",
+                "mock",
+                "--llm-model",
+                "mock",
+                "--adjutant-llm-provider",
+                "mock",
+                "--adjutant-llm-model",
+                "mock",
+                "--skip-game-api-check",
+                "--enable-voice",
+                "--ws-host",
+                "127.0.0.1",
+                "--ws-port",
+                str(ws_port),
+                "--benchmark-records-path",
+                str(Path(tmpdir) / "benchmark_records.json"),
+                "--benchmark-summary-path",
+                str(Path(tmpdir) / "benchmark_summary.json"),
+                "--log-export-path",
+                str(Path(tmpdir) / "runtime_logs.json"),
+                "--log-session-root",
+                str(Path(tmpdir) / "logs"),
+            ]
+        )
+
+    assert exit_code == 0
+    runtime = _DirectEntryRuntime.created[-1]
+    assert runtime.captured_voice_enabled is True
+    assert {
+        "task_id": runtime.notification_spy.messages[0]["task_id"],
+        "message_type": TaskMessageType.TASK_INFO.value,
+        "content": "电力不足，等待恢复",
+    } in runtime.notification_spy.messages
+    assert {
+        "label": "001",
+        "raw_text": "建造电厂",
+        "result": TaskStatus.SUCCEEDED.value,
+        "summary": "电厂已建成",
+        "task_id": runtime.notification_spy.completed[0]["task_id"],
+    } in runtime.notification_spy.completed
+    if importlib.util.find_spec("dashscope") is None:
+        assert any("Voice subsystem:" in record.message for record in caplog.records), caplog.messages
+    print("  PASS: main_entry_direct_start_smoke_covers_enable_voice_and_task_message_publish")
 
 
 def test_runtime_bridge_session_clear_resets_benchmark_publish_state() -> None:
