@@ -1109,6 +1109,170 @@ def test_deploy_feedback_refuses_ambiguous_mcv_truth():
     print("  PASS: deploy_feedback_refuses_ambiguous_mcv_truth")
 
 
+def test_deploy_feedback_refuses_malformed_mcv_query_payload():
+    class MalformedMcvWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            if query_type == "my_actors" and params == {"category": "mcv"}:
+                return {
+                    "actors": [{"actor_id": "ghost", "category": "mcv", "position": [500, 400]}],
+                    "timestamp": time.time(),
+                }
+            if query_type == "my_actors" and params == {"type": "建造厂"}:
+                return {"actors": [], "timestamp": time.time()}
+            return super().query(query_type, params)
+
+        def compute_runtime_facts(self, task_id, *, include_buildable=False):
+            del task_id, include_buildable
+            return {"mcv_count": 1, "has_construction_yard": False}
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = MalformedMcvWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("展开基地车")
+        assert result["type"] == "command"
+        assert result["ok"] is False
+        assert result["routing"] == "rule"
+        assert result["reason"] == "deploy_truth_ambiguous"
+        assert "状态同步中" in result["response_text"]
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.created_tasks == []
+    assert kernel.started_jobs == []
+    print("  PASS: deploy_feedback_refuses_malformed_mcv_query_payload")
+
+
+def test_deploy_feedback_ignores_untrusted_construction_yard_payload():
+    class UntrustedConstructionYardWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            if query_type == "my_actors" and params == {"category": "mcv"}:
+                return {"actors": [], "timestamp": time.time()}
+            if query_type == "my_actors" and params == {"type": "建造厂"}:
+                return {
+                    "actors": [{"actor_id": "stale-yard", "type": "建造厂", "position": [520, 420]}],
+                    "timestamp": time.time(),
+                }
+            return super().query(query_type, params)
+
+        def compute_runtime_facts(self, task_id, *, include_buildable=False):
+            del task_id, include_buildable
+            return {"mcv_count": 0}
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = UntrustedConstructionYardWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("部署基地车")
+        assert result["type"] == "command"
+        assert result["ok"] is False
+        assert result["routing"] == "rule"
+        assert result["reason"] == "rule_deploy_missing_mcv"
+        assert "没有可部署的基地车" in result["response_text"]
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.created_tasks == []
+    assert kernel.started_jobs == []
+    print("  PASS: deploy_feedback_ignores_untrusted_construction_yard_payload")
+
+
+def test_deploy_feedback_refuses_unsynced_world_truth():
+    class UnsyncedWorldModel(MockWorldModel):
+        def refresh_health(self):
+            return {
+                "stale": False,
+                "consecutive_failures": 0,
+                "total_failures": 0,
+                "last_error": None,
+                "failure_threshold": 3,
+                "timestamp": 0.0,
+            }
+
+        def query(self, query_type, params=None):
+            if query_type == "my_actors":
+                return {
+                    "actors": [{"actor_id": 130, "type": "建造厂", "display_name": "建造厂", "category": "building"}],
+                    "timestamp": 0.0,
+                }
+            return super().query(query_type, params)
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = UnsyncedWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("展开基地车")
+        assert result["type"] == "command"
+        assert result["ok"] is False
+        assert result["routing"] == "rule"
+        assert result["reason"] == "deploy_truth_ambiguous"
+        assert "状态同步中" in result["response_text"]
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.created_tasks == []
+    assert kernel.started_jobs == []
+    print("  PASS: deploy_feedback_refuses_unsynced_world_truth")
+
+
+def test_deploy_feedback_uses_atomic_actor_snapshot_for_short_circuit():
+    class SplitDeployTruthWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            if query_type == "my_actors" and not params:
+                return {
+                    "actors": [
+                        {
+                            "actor_id": 99,
+                            "type": "mcv",
+                            "display_name": "基地车",
+                            "category": "mcv",
+                            "position": [500, 400],
+                        }
+                    ],
+                    "timestamp": time.time(),
+                }
+            if query_type == "my_actors" and params == {"category": "mcv"}:
+                return {"actors": [], "timestamp": time.time()}
+            if query_type == "my_actors" and params == {"type": "建造厂"}:
+                return {
+                    "actors": [{"actor_id": 130, "type": "建造厂", "display_name": "建造厂", "category": "building"}],
+                    "timestamp": time.time(),
+                }
+            return super().query(query_type, params)
+
+        def compute_runtime_facts(self, task_id, *, include_buildable=False):
+            del task_id, include_buildable
+            return {"mcv_count": 1, "has_construction_yard": False}
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = SplitDeployTruthWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("展开基地车")
+        assert result["type"] == "command"
+        assert result["ok"] is True
+        assert result["routing"] == "nlu"
+        assert result["expert_type"] == "DeployExpert"
+        assert result["nlu_route_intent"] == "deploy_mcv"
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.started_jobs[0]["config"].actor_id == 99
+    print("  PASS: deploy_feedback_uses_atomic_actor_snapshot_for_short_circuit")
+
+
 def test_deploy_feedback_treats_sentence_final_particles_as_query():
     class AlreadyDeployedWorldModel(MockWorldModel):
         def query(self, query_type, params=None):

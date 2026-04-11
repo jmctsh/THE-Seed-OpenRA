@@ -34,7 +34,11 @@ from models import (
     TaskMessageType,
 )
 from openra_api.models import Actor as GameActor
-from openra_api.production_names import normalize_production_name, production_name_variants
+from openra_api.production_names import (
+    normalize_production_name,
+    production_name_matches,
+    production_name_variants,
+)
 from openra_state.data.dataset import demo_base_progression
 from runtime_views import (
     BattlefieldSnapshot,
@@ -334,6 +338,41 @@ class Adjutant:
                     actor["position"] = [x, y]
             trusted.append(actor)
         return trusted
+
+    def _query_self_actor_snapshot(self) -> list[dict[str, Any]]:
+        payload = self.world_model.query("my_actors")
+        if isinstance(payload, dict) and isinstance(payload.get("actors"), list):
+            return self._trusted_query_actors(payload)
+
+        merged: dict[int, dict[str, Any]] = {}
+        for query_payload in (
+            self.world_model.query("my_actors", {"category": "mcv"}),
+            self.world_model.query("my_actors", {"type": "建造厂"}),
+        ):
+            for actor in self._trusted_query_actors(query_payload):
+                merged[int(actor["actor_id"])] = dict(actor)
+        return list(merged.values())
+
+    @staticmethod
+    def _is_construction_yard_actor(actor: dict[str, Any]) -> bool:
+        return production_name_matches(
+            "建造厂",
+            str(actor.get("type") or ""),
+            str(actor.get("name") or ""),
+            str(actor.get("display_name") or ""),
+        )
+
+    @staticmethod
+    def _is_mcv_actor(actor: dict[str, Any]) -> bool:
+        category = str(actor.get("category") or "")
+        if category == "mcv":
+            return True
+        return production_name_matches(
+            "基地车",
+            str(actor.get("type") or ""),
+            str(actor.get("name") or ""),
+            str(actor.get("display_name") or ""),
+        )
 
     def _battlefield_snapshot(
         self,
@@ -1793,10 +1832,12 @@ class Adjutant:
         return any(keyword in normalized or keyword in lowered for keyword in _ATTACK_KEYWORDS)
 
     def _deploy_truth_snapshot(self) -> dict[str, Any]:
-        payload = self.world_model.query("my_actors", {"category": "mcv"})
-        mcv_actors = self._trusted_query_actors(payload)
-        base_payload = self.world_model.query("my_actors", {"type": "建造厂"})
-        bases = self._trusted_query_actors(base_payload)
+        actor_snapshot = self._query_self_actor_snapshot()
+        mcv_actors = [
+            dict(actor)
+            for actor in actor_snapshot
+            if self._is_mcv_actor(actor)
+        ]
 
         facts_mcv_count: Optional[int] = None
         facts_has_construction_yard: Optional[bool] = None
@@ -1816,11 +1857,28 @@ class Adjutant:
                     facts_has_construction_yard = bool(runtime_facts.get("has_construction_yard", False))
 
         query_mcv_count = len(mcv_actors)
-        query_has_construction_yard = bool(bases)
+        query_has_construction_yard = any(
+            self._is_construction_yard_actor(actor) for actor in actor_snapshot
+        )
         # Only escalate when runtime facts say an MCV exists but the actor query
         # cannot produce a concrete actor id. That is the unsafe case for both
         # short-circuiting and direct deploy routing.
-        ambiguous = facts_mcv_count is not None and facts_mcv_count != query_mcv_count
+        ambiguous = False
+        refresh_health = getattr(self.world_model, "refresh_health", None)
+        if callable(refresh_health):
+            try:
+                health = refresh_health() or {}
+            except Exception:
+                logger.exception("Failed to read world refresh health")
+                ambiguous = True
+            else:
+                try:
+                    if float(health.get("timestamp") or 0.0) <= 0.0:
+                        ambiguous = True
+                except (TypeError, ValueError):
+                    ambiguous = True
+        if not ambiguous and facts_mcv_count is not None and facts_mcv_count != query_mcv_count:
+            ambiguous = True
         has_construction_yard = (
             facts_has_construction_yard
             if facts_has_construction_yard is not None
