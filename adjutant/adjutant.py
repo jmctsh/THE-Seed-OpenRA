@@ -314,10 +314,10 @@ class Adjutant:
             return BattlefieldSnapshot.from_mapping(query_snapshot).to_dict()
 
         summary = world_summary if isinstance(world_summary, dict) else self._get_world_summary()
-        runtime_state = dict(runtime_state or {})
+        runtime_snapshot = RuntimeStateSnapshot.from_mapping(runtime_state)
         runtime_facts = dict(runtime_facts or {})
-        capability_status = CapabilityStatusSnapshot.from_mapping(runtime_state.get("capability_status"))
-        active_tasks = dict(runtime_state.get("active_tasks") or {})
+        capability_status = runtime_snapshot.capability_status
+        active_tasks = dict(runtime_snapshot.active_tasks)
         economy = summary.get("economy", {}) if isinstance(summary, dict) else {}
         military = summary.get("military", {}) if isinstance(summary, dict) else {}
         game_map = summary.get("map", {}) if isinstance(summary, dict) else {}
@@ -351,7 +351,7 @@ class Adjutant:
         free_combat_units = max(total_combat_units - committed_combat_units, 0)
         pending_request_count = int(capability_status.pending_request_count or 0)
         bootstrapping_request_count = int(capability_status.bootstrapping_request_count or 0)
-        reservation_count = len(list(runtime_state.get("unit_reservations") or []))
+        reservation_count = len(runtime_snapshot.unit_reservations)
         has_production = any(
             int(runtime_facts.get(field, 0) or 0) > 0
             for field in ("barracks_count", "war_factory_count", "airfield_count")
