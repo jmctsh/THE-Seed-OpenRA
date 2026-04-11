@@ -129,6 +129,23 @@
         <summary>Lifecycle · {{ selectedTaskReplayBundle.lifecycle_events.length }}</summary>
         <pre class="trace-details">{{ formatJsonBlock(selectedTaskReplayBundle.lifecycle_events) }}</pre>
       </details>
+      <details
+        v-if="selectedTaskReplayBundle.unit_pipeline?.unfulfilled_requests?.length || selectedTaskReplayBundle.unit_pipeline?.unit_reservations?.length"
+        class="replay-detail"
+      >
+        <summary>
+          Unit Pipeline · req={{ selectedTaskReplayBundle.unit_pipeline?.unfulfilled_requests?.length || 0 }}
+          · res={{ selectedTaskReplayBundle.unit_pipeline?.unit_reservations?.length || 0 }}
+        </summary>
+        <div v-if="selectedTaskReplayBundle.unit_pipeline?.unfulfilled_requests?.length" class="replay-detail-card">
+          <div class="replay-heading">Requests</div>
+          <pre class="trace-details">{{ formatJsonBlock(selectedTaskReplayBundle.unit_pipeline.unfulfilled_requests) }}</pre>
+        </div>
+        <div v-if="selectedTaskReplayBundle.unit_pipeline?.unit_reservations?.length" class="replay-detail-card">
+          <div class="replay-heading">Reservations</div>
+          <pre class="trace-details">{{ formatJsonBlock(selectedTaskReplayBundle.unit_pipeline.unit_reservations) }}</pre>
+        </div>
+      </details>
       <div v-if="selectedTaskReplayBundle.tools?.length" class="replay-section">
         <div class="replay-heading">Tools</div>
         <div class="replay-tags">

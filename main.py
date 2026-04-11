@@ -667,6 +667,7 @@ class RuntimeBridge(InboundHandler):
                 "lifecycle_events": [],
                 "expert_runs": [],
                 "llm_turns": [],
+                "unit_pipeline": {"unfulfilled_requests": [], "unit_reservations": []},
                 "blockers": [],
                 "highlights": [],
                 "player_visible": [],
@@ -1093,6 +1094,103 @@ class RuntimeBridge(InboundHandler):
                 "tools": latest_llm_input.get("tools") or [],
             }
 
+        def _compact_request(item: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "request_id": str(item.get("request_id") or ""),
+                "reservation_id": str(item.get("reservation_id") or ""),
+                "task_id": str(item.get("task_id") or ""),
+                "task_label": str(item.get("task_label") or ""),
+                "unit_type": str(item.get("unit_type") or ""),
+                "queue_type": str(item.get("queue_type") or ""),
+                "count": int(item.get("count", 0) or 0),
+                "fulfilled": int(item.get("fulfilled", 0) or 0),
+                "remaining_count": int(item.get("remaining_count", 0) or 0),
+                "blocking": bool(item.get("blocking", True)),
+                "min_start_package": int(item.get("min_start_package", 1) or 1),
+                "bootstrap_job_id": str(item.get("bootstrap_job_id") or ""),
+                "bootstrap_task_id": str(item.get("bootstrap_task_id") or ""),
+                "reservation_status": str(item.get("reservation_status") or ""),
+                "reason": str(item.get("reason") or ""),
+                "disabled_producers": list(item.get("disabled_producers") or []),
+            }
+
+        def _compact_reservation(item: dict[str, Any]) -> dict[str, Any]:
+            assigned = list(item.get("assigned_actor_ids") or [])
+            produced = list(item.get("produced_actor_ids") or [])
+            return {
+                "reservation_id": str(item.get("reservation_id") or ""),
+                "request_id": str(item.get("request_id") or ""),
+                "task_id": str(item.get("task_id") or ""),
+                "task_label": str(item.get("task_label") or ""),
+                "unit_type": str(item.get("unit_type") or ""),
+                "queue_type": str(item.get("queue_type") or ""),
+                "count": int(item.get("count", 0) or 0),
+                "remaining_count": int(item.get("remaining_count", 0) or 0),
+                "status": str(item.get("status") or ""),
+                "blocking": bool(item.get("blocking", True)),
+                "min_start_package": int(item.get("min_start_package", 1) or 1),
+                "start_released": bool(item.get("start_released", False)),
+                "bootstrap_job_id": str(item.get("bootstrap_job_id") or ""),
+                "bootstrap_task_id": str(item.get("bootstrap_task_id") or ""),
+                "reason": str(item.get("reason") or ""),
+                "assigned_count": len(assigned),
+                "produced_count": len(produced),
+            }
+
+        unit_pipeline = {"unfulfilled_requests": [], "unit_reservations": []}
+        latest_runtime_facts = (
+            latest_context_packet.get("runtime_facts")
+            if isinstance(latest_context_packet, dict)
+            else {}
+        )
+        latest_requests = latest_runtime_facts.get("unfulfilled_requests") if isinstance(latest_runtime_facts, dict) else None
+        latest_reservations = latest_runtime_facts.get("unit_reservations") if isinstance(latest_runtime_facts, dict) else None
+        if isinstance(latest_requests, list):
+            unit_pipeline["unfulfilled_requests"] = [
+                _compact_request(item)
+                for item in latest_requests
+                if isinstance(item, dict) and str(item.get("task_id") or "") == task_id
+            ]
+        if isinstance(latest_reservations, list):
+            unit_pipeline["unit_reservations"] = [
+                _compact_reservation(item)
+                for item in latest_reservations
+                if isinstance(item, dict) and str(item.get("task_id") or "") == task_id
+            ]
+        if live_task is not None and (
+            not unit_pipeline["unfulfilled_requests"] or not unit_pipeline["unit_reservations"]
+        ):
+            compute_runtime_facts = getattr(self.world_model, "compute_runtime_facts", None)
+            if callable(compute_runtime_facts):
+                try:
+                    current_runtime_facts = compute_runtime_facts(task_id, include_buildable=False)
+                except Exception:
+                    current_runtime_facts = {}
+                if not unit_pipeline["unfulfilled_requests"]:
+                    current_requests = current_runtime_facts.get("unfulfilled_requests")
+                    if isinstance(current_requests, list):
+                        unit_pipeline["unfulfilled_requests"] = [
+                            _compact_request(item)
+                            for item in current_requests
+                            if isinstance(item, dict) and str(item.get("task_id") or "") == task_id
+                        ]
+                if not unit_pipeline["unit_reservations"]:
+                    current_reservations = current_runtime_facts.get("unit_reservations")
+                    if isinstance(current_reservations, list):
+                        unit_pipeline["unit_reservations"] = [
+                            _compact_reservation(item)
+                            for item in current_reservations
+                            if isinstance(item, dict) and str(item.get("task_id") or "") == task_id
+                        ]
+        if not unit_pipeline["unit_reservations"]:
+            runtime_reservations = runtime_state.get("unit_reservations") if isinstance(runtime_state, dict) else None
+            if isinstance(runtime_reservations, list):
+                unit_pipeline["unit_reservations"] = [
+                    _compact_reservation(item)
+                    for item in runtime_reservations
+                    if isinstance(item, dict) and str(item.get("task_id") or "") == task_id
+                ]
+
         return {
             "task_id": task_id,
             "summary": summary,
@@ -1117,6 +1215,7 @@ class RuntimeBridge(InboundHandler):
                 }
                 for turn in llm_turns
             ],
+            "unit_pipeline": unit_pipeline,
             "blockers": _dedupe(blockers, limit=4),
             "highlights": _dedupe(highlights, limit=6),
             "player_visible": _dedupe(player_visible, limit=5),

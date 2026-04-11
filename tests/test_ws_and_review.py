@@ -832,7 +832,51 @@ def test_task_replay_request_returns_persisted_task_log():
                                         "recent_events": [{"event": "job_started"}],
                                         "other_active_tasks": [{"task_id": "t_other"}],
                                         "open_decisions": [{"kind": "need_target"}],
-                                        "runtime_facts": {"cash": 5000, "power_drained": 100},
+                                        "runtime_facts": {
+                                            "cash": 5000,
+                                            "power_drained": 100,
+                                            "unfulfilled_requests": [
+                                                {
+                                                    "request_id": "req_1",
+                                                    "reservation_id": "res_1",
+                                                    "task_id": "t_demo",
+                                                    "task_label": "007",
+                                                    "unit_type": "3tnk",
+                                                    "queue_type": "Vehicle",
+                                                    "count": 2,
+                                                    "fulfilled": 1,
+                                                    "remaining_count": 1,
+                                                    "blocking": True,
+                                                    "min_start_package": 1,
+                                                    "bootstrap_job_id": "j_boot",
+                                                    "bootstrap_task_id": "t_cap",
+                                                    "reservation_status": "partial",
+                                                    "reason": "bootstrap_in_progress",
+                                                    "disabled_producers": ["weap"],
+                                                }
+                                            ],
+                                            "unit_reservations": [
+                                                {
+                                                    "reservation_id": "res_1",
+                                                    "request_id": "req_1",
+                                                    "task_id": "t_demo",
+                                                    "task_label": "007",
+                                                    "unit_type": "3tnk",
+                                                    "queue_type": "Vehicle",
+                                                    "count": 2,
+                                                    "remaining_count": 1,
+                                                    "status": "partial",
+                                                    "blocking": True,
+                                                    "min_start_package": 1,
+                                                    "start_released": False,
+                                                    "bootstrap_job_id": "j_boot",
+                                                    "bootstrap_task_id": "t_cap",
+                                                    "reason": "bootstrap_in_progress",
+                                                    "assigned_actor_ids": [10],
+                                                    "produced_actor_ids": [11],
+                                                }
+                                            ],
+                                        },
                                     },
                                 },
                             },
@@ -933,7 +977,12 @@ def test_task_replay_request_returns_persisted_task_log():
     assert payload["bundle"]["current_runtime"] is None
     assert payload["bundle"]["debug"]["latest_context"]["job_count"] == 1
     assert payload["bundle"]["debug"]["latest_context"]["signal_count"] == 1
-    assert payload["bundle"]["debug"]["latest_context"]["runtime_fact_keys"] == ["cash", "power_drained"]
+    assert payload["bundle"]["debug"]["latest_context"]["runtime_fact_keys"] == [
+        "cash",
+        "power_drained",
+        "unfulfilled_requests",
+        "unit_reservations",
+    ]
     assert payload["bundle"]["debug"]["latest_llm_input"]["message_count"] == 2
     assert payload["bundle"]["debug"]["latest_llm_input"]["tool_count"] == 1
     assert payload["bundle"]["debug"]["latest_llm_input"]["attempt"] == 2
@@ -947,6 +996,9 @@ def test_task_replay_request_returns_persisted_task_log():
     assert payload["bundle"]["llm_turns"][0]["response_text"] == "先查询世界状态"
     assert payload["bundle"]["llm_turns"][0]["reasoning_content"] == "需要先确认当前侦察态势"
     assert payload["bundle"]["llm_turns"][0]["input_messages"][0]["role"] == "system"
+    assert payload["bundle"]["unit_pipeline"]["unfulfilled_requests"][0]["request_id"] == "req_1"
+    assert payload["bundle"]["unit_pipeline"]["unit_reservations"][0]["reservation_id"] == "res_1"
+    assert payload["bundle"]["unit_pipeline"]["unit_reservations"][0]["assigned_count"] == 1
     print("  PASS: task_replay_request_returns_persisted_task_log")
 
 

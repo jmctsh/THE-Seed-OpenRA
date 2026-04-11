@@ -155,6 +155,7 @@ TaskAgentFactory = Callable[[Task, ToolExecutor, Callable[[str], list[Job]], Cal
 @dataclass(slots=True)
 class KernelConfig:
     auto_start_agents: bool = True
+    enable_capability_task: bool = True
     default_agent_config: AgentConfig = field(default_factory=AgentConfig)
 
 
@@ -175,6 +176,7 @@ class _ManagedJob:
         self.config = config
         self.resources: list[str] = []
         self.status = JobStatus.RUNNING
+        self.tick_interval: float = 1.0
         self._paused = False
         self._signal_callback = signal_callback
         self._timestamp = _now()
@@ -206,6 +208,10 @@ class _ManagedJob:
     def abort(self) -> None:
         self.status = JobStatus.ABORTED
         self._timestamp = _now()
+
+    def do_tick(self) -> None:
+        """No-op tick — _ManagedJob is a placeholder until a real Expert is attached."""
+        pass
 
     def on_resource_granted(self, resources: list[str]) -> None:
         self.resources.extend(resources)
@@ -1549,10 +1555,17 @@ class Kernel:
                 continue
             reservation = self._reservation_for_request(req)
             unit_type = reservation.unit_type if reservation is not None else ""
+            queue_type = _queue_type_for_unit_type(unit_type)
+            readiness = (
+                self.world_model.production_readiness_for(unit_type, queue_type=queue_type)
+                if unit_type and queue_type
+                else {}
+            )
             unfulfilled.append(
                 {
                     "request_id": req.request_id,
                     "reservation_id": (self._request_reservations.get(req.request_id) or ""),
+                    "task_id": req.task_id,
                     "task_label": req.task_label,
                     "task_summary": req.task_summary,
                     "category": req.category,
@@ -1567,10 +1580,11 @@ class Kernel:
                     "start_released": req.start_released,
                     "bootstrap_job_id": req.bootstrap_job_id,
                     "bootstrap_task_id": req.bootstrap_task_id,
-                    "queue_type": _queue_type_for_unit_type(unit_type),
+                    "queue_type": queue_type,
                     "prerequisites": demo_prerequisites_for(unit_type) if unit_type else [],
                     "reservation_status": reservation.status.value if reservation is not None else "",
                     "reason": self._request_reason(req, reservation, unit_type),
+                    "disabled_producers": list(readiness.get("disabled_producers", [])),
                 }
             )
         if unfulfilled:

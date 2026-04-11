@@ -756,6 +756,7 @@ def test_sync_unfulfilled_requests_includes_reservation_metadata():
     assert len(pending) == 1
     assert pending[0]["request_id"] == req.request_id
     assert pending[0]["reservation_id"].startswith("res_")
+    assert pending[0]["task_id"] == task.task_id
     assert pending[0]["unit_type"] == "3tnk"
     assert pending[0]["queue_type"] == "Vehicle"
     assert pending[0]["prerequisites"] == ["fix", "weap"]
