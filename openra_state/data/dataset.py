@@ -863,7 +863,7 @@ def filter_demo_capability_ready_items(ready_items: list[dict]) -> list[dict]:
             continue
         normalized = dict(item)
         normalized["unit_type"] = canonical
-        normalized.setdefault("display_name", truth.display_name)
+        normalized["display_name"] = truth.display_name
         filtered.append(normalized)
     return filtered
 

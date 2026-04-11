@@ -188,7 +188,7 @@ def test_capability_context_distinguishes_issue_now_from_prereq_truth():
     assert "[前置已满足但当前受阻]" in msg["content"]
     assert "proc(矿场)=低电" in msg["content"]
     assert "barr(兵营)=队列有已完成未放置条目" in msg["content"]
-    assert "成品:电厂" in msg["content"]
+    assert "成品:发电厂" in msg["content"]
     assert "[前置已满足]" in msg["content"]
 
 

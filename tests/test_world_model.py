@@ -1298,6 +1298,93 @@ def test_runtime_facts_exposes_ready_queue_items_and_capability_context_renders_
     assert "Vehicle: 重型坦克 owner=30" in msg["content"], msg["content"]
 
 
+def test_capability_context_fails_closed_when_world_model_knows_allied_faction() -> None:
+    from task_agent import WorldSummary, build_context_packet, context_to_message
+    from models import Task, TaskKind
+
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="发电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=3, type="矿场", faction="自己", position=Location(12, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=4, type="战车工厂", faction="自己", position=Location(13, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=5, type="tent", faction="自己", position=Location(14, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=6, type="2tnk", faction="自己", position=Location(15, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=5000, Resources=0, Power=200, PowerDrained=120, PowerProvided=200),
+        map_info=make_map(0.1, 0.05),
+        queues={},
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+
+    facts = wm.compute_runtime_facts("t_cap", include_buildable=True)
+    summary = wm.world_summary()
+    task = Task(task_id="t_cap", raw_text="发展经济", kind=TaskKind.MANAGED, priority=80)
+    task.is_capability = True
+    packet = build_context_packet(
+        task=task,
+        jobs=[],
+        runtime_facts=facts,
+        world_summary=WorldSummary(
+            economy=summary.get("economy", {}),
+            military=summary.get("military", {}),
+            map=summary.get("map", {}),
+            known_enemy=summary.get("known_enemy", {}),
+        ),
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "[能力真值] faction=allied 当前 demo capability roster 未覆盖该阵营" in msg["content"], msg["content"]
+    assert "[可立即下单]" not in msg["content"], msg["content"]
+    assert "[基地推进]" not in msg["content"], msg["content"]
+
+
+def test_capability_context_suppresses_low_power_nudge_with_ready_power_from_world_model() -> None:
+    from task_agent import WorldSummary, build_context_packet, context_to_message
+    from models import Task, TaskKind
+
+    source = MockWorldSource([Frame(
+        self_actors=[
+            Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            Actor(actor_id=2, type="电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+        ],
+        enemy_actors=[],
+        economy=PlayerBaseInfo(Cash=2000, Resources=0, Power=50, PowerDrained=80, PowerProvided=50),
+        map_info=make_map(0.1, 0.05),
+        queues={
+            "Building": {
+                "queue_type": "Building",
+                "items": [{"name": "powr", "done": True, "paused": False, "status": "done", "owner_actor_id": 1}],
+                "has_ready_item": True,
+            }
+        },
+    )])
+    wm = WorldModel(source)
+    wm.refresh(force=True)
+
+    facts = wm.compute_runtime_facts("t_cap", include_buildable=True)
+    summary = wm.world_summary()
+    task = Task(task_id="t_cap", raw_text="发展经济", kind=TaskKind.MANAGED, priority=80)
+    task.is_capability = True
+    packet = build_context_packet(
+        task=task,
+        jobs=[],
+        runtime_facts=facts,
+        world_summary=WorldSummary(
+            economy=summary.get("economy", {}),
+            military=summary.get("military", {}),
+            map=summary.get("map", {}),
+            known_enemy=summary.get("known_enemy", {}),
+        ),
+    )
+    msg = context_to_message(packet, is_capability=True)
+    assert "[待处理已就绪条目]" in msg["content"], msg["content"]
+    assert "Building: 发电厂 owner=1" in msg["content"], msg["content"]
+    assert "[队列阻塞] 有已完成未放置条目" in msg["content"], msg["content"]
+    assert "⚡低电力" not in msg["content"], msg["content"]
+
+
 def test_runtime_facts_feasibility_derive_from_buildable_truth() -> None:
     source = MockWorldSource([Frame(
         self_actors=[
