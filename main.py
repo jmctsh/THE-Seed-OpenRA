@@ -201,13 +201,15 @@ class RuntimeBridge(InboundHandler):
             runtime_state = kwargs.get("runtime_state")
             if runtime_state is None:
                 runtime_state = self.kernel.runtime_state()
+            world_sync = self._world_sync_health()
             return build_live_task_payload(
                 task,
                 jobs or [],
                 runtime_state=runtime_state,
                 list_pending_questions=self.kernel.list_pending_questions,
                 list_task_messages=self.kernel.list_task_messages,
-                world_stale=self._world_is_stale(),
+                world_sync=world_sync,
+                world_stale=bool(world_sync.get("stale", False)),
                 log_session_dir=current_session_dir(),
             )
 
@@ -513,13 +515,19 @@ class RuntimeBridge(InboundHandler):
         }
 
     def _world_is_stale(self) -> bool:
+        return bool(self._world_sync_health().get("stale", False))
+
+    def _world_sync_health(self) -> dict[str, Any]:
         refresh_health = getattr(self.world_model, "refresh_health", None)
         if not callable(refresh_health):
-            return False
+            return {"stale": False}
         try:
-            return bool(refresh_health().get("stale", False))
+            health = refresh_health() or {}
+            if isinstance(health, dict):
+                return dict(health)
+            return {"stale": False}
         except Exception:
-            return False
+            return {"stale": False}
 
 
 class ApplicationRuntime:

@@ -138,6 +138,9 @@ describe('TaskPanel', () => {
             blocking_reason: 'missing_prerequisite',
             reservation_ids: ['res_1'],
             world_stale: true,
+            world_sync_failures: 3,
+            world_sync_failure_threshold: 2,
+            world_sync_error: 'actors:COMMAND_EXECUTION_ERROR',
           },
           jobs: [],
           job_count: 0,
@@ -151,5 +154,7 @@ describe('TaskPanel', () => {
     expect(wrapper.text()).toContain('blocker=missing_prerequisite')
     expect(wrapper.text()).toContain('reservations=1')
     expect(wrapper.text()).toContain('world=stale')
+    expect(wrapper.text()).toContain('sync_fail=3/2')
+    expect(wrapper.text()).toContain('sync=actors:COMMAND_EXECUTION_ERROR')
   })
 })

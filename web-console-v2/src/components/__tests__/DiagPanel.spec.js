@@ -48,6 +48,9 @@ describe('DiagPanel', () => {
             blocking_reason: 'missing_prerequisite',
             reservation_ids: ['res_1', 'res_2'],
             world_stale: true,
+            world_sync_failures: 2,
+            world_sync_failure_threshold: 3,
+            world_sync_error: 'actors:COMMAND_EXECUTION_ERROR',
           },
         },
       ],
@@ -62,6 +65,8 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('blocker=missing_prerequisite')
     expect(wrapper.text()).toContain('reservations=2')
     expect(wrapper.text()).toContain('world=stale')
+    expect(wrapper.text()).toContain('sync_fail=2/3')
+    expect(wrapper.text()).toContain('sync=actors:COMMAND_EXECUTION_ERROR')
   })
 
   it('renders structured triage fields inside the replay current-runtime summary', async () => {
@@ -109,6 +114,9 @@ describe('DiagPanel', () => {
             blocking_reason: 'missing_prerequisite',
             reservation_ids: ['res_1'],
             active_expert: 'EconomyExpert',
+            world_sync_failures: 4,
+            world_sync_failure_threshold: 3,
+            world_sync_error: 'economy disconnected',
           },
         },
       },
@@ -125,5 +133,31 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('blocker=missing_prerequisite')
     expect(wrapper.text()).toContain('reservations=1')
     expect(wrapper.text()).toContain('expert=EconomyExpert')
+    expect(wrapper.text()).toContain('sync_fail=4/3')
+    expect(wrapper.text()).toContain('sync=economy disconnected')
+  })
+
+  it('renders world-sync stale details from world_snapshot', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('world_snapshot', {
+      stale: true,
+      consecutive_refresh_failures: 5,
+      failure_threshold: 3,
+      last_refresh_error: 'actors:COMMAND_EXECUTION_ERROR',
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('世界状态同步异常')
+    expect(wrapper.text()).toContain('world=stale')
+    expect(wrapper.text()).toContain('failures=5/3')
+    expect(wrapper.text()).toContain('threshold=3')
+    expect(wrapper.text()).toContain('error=actors:COMMAND_EXECUTION_ERROR')
   })
 })

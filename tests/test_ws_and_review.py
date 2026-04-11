@@ -2002,6 +2002,43 @@ def test_build_live_task_payload_uses_latest_info_when_no_other_triage_signal():
     print("  PASS: build_live_task_payload_uses_latest_info_when_no_other_triage_signal")
 
 
+def test_build_live_task_payload_surfaces_world_sync_failure_detail():
+    class FakeTask:
+        task_id = "t_sync"
+        raw_text = "展开基地车"
+        kind = type("Kind", (), {"value": "managed"})()
+        priority = 50
+        status = type("Status", (), {"value": "running"})()
+        timestamp = 123.0
+        created_at = 120.0
+        label = "003"
+        is_capability = False
+
+    payload = build_live_task_payload(
+        FakeTask(),
+        [],
+        runtime_state={},
+        list_pending_questions=lambda: [],
+        list_task_messages=lambda task_id: [],
+        world_sync={
+            "stale": True,
+            "consecutive_failures": 4,
+            "failure_threshold": 3,
+            "last_error": "actors:COMMAND_EXECUTION_ERROR",
+        },
+        log_session_dir=None,
+    )
+
+    assert payload["triage"]["state"] == "degraded"
+    assert payload["triage"]["world_stale"] is True
+    assert payload["triage"]["world_sync_failures"] == 4
+    assert payload["triage"]["world_sync_failure_threshold"] == 3
+    assert payload["triage"]["world_sync_error"] == "actors:COMMAND_EXECUTION_ERROR"
+    assert "failures=4/3" in payload["triage"]["status_line"]
+    assert "actors:COMMAND_EXECUTION_ERROR" in payload["triage"]["status_line"]
+    print("  PASS: build_live_task_payload_surfaces_world_sync_failure_detail")
+
+
 def test_build_live_task_payload_capability_triage_surfaces_blocker_detail():
     class FakeTask:
         task_id = "t_cap"

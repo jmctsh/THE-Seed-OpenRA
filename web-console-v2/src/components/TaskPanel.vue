@@ -174,6 +174,12 @@ function getTaskStatusLine(task) {
   return getLegacyTaskWaitingHint(task)
 }
 
+function formatWorldSyncError(error) {
+  const text = String(error || '').trim()
+  if (!text) return ''
+  return text.length > 32 ? `${text.slice(0, 29)}...` : text
+}
+
 function getTaskTriageMeta(task) {
   const triage = task?.triage || {}
   const items = []
@@ -182,6 +188,12 @@ function getTaskTriageMeta(task) {
   const reservationCount = Array.isArray(triage.reservation_ids) ? triage.reservation_ids.length : 0
   if (reservationCount) items.push(`reservations=${reservationCount}`)
   if (triage.world_stale) items.push('world=stale')
+  if (triage.world_sync_failures) {
+    const threshold = Number(triage.world_sync_failure_threshold || 0)
+    items.push(`sync_fail=${triage.world_sync_failures}${threshold ? `/${threshold}` : ''}`)
+  }
+  const syncError = formatWorldSyncError(triage.world_sync_error)
+  if (syncError) items.push(`sync=${syncError}`)
   return items
 }
 

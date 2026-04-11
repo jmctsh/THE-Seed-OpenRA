@@ -463,6 +463,9 @@ class TaskTriageSnapshot:
     active_job_id: str = ""
     reservation_ids: list[str] = field(default_factory=list)
     world_stale: bool = False
+    world_sync_error: str = ""
+    world_sync_failures: int = 0
+    world_sync_failure_threshold: int = 0
     active_group_size: int = 0
 
     @classmethod
@@ -471,6 +474,13 @@ class TaskTriageSnapshot:
             return raw
         if not isinstance(raw, dict):
             return cls()
+
+        def _to_int(key: str) -> int:
+            try:
+                return int(raw.get(key, 0) or 0)
+            except Exception:
+                return 0
+
         return cls(
             state=str(raw.get("state") or ""),
             phase=str(raw.get("phase") or ""),
@@ -485,7 +495,10 @@ class TaskTriageSnapshot:
                 if item is not None and str(item)
             ],
             world_stale=bool(raw.get("world_stale", False)),
-            active_group_size=int(raw.get("active_group_size", 0) or 0),
+            world_sync_error=str(raw.get("world_sync_error") or ""),
+            world_sync_failures=_to_int("world_sync_failures"),
+            world_sync_failure_threshold=_to_int("world_sync_failure_threshold"),
+            active_group_size=_to_int("active_group_size"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -499,6 +512,9 @@ class TaskTriageSnapshot:
             "active_job_id": self.active_job_id,
             "reservation_ids": list(self.reservation_ids),
             "world_stale": self.world_stale,
+            "world_sync_error": self.world_sync_error,
+            "world_sync_failures": self.world_sync_failures,
+            "world_sync_failure_threshold": self.world_sync_failure_threshold,
             "active_group_size": self.active_group_size,
         }
 

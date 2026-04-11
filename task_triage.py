@@ -74,6 +74,37 @@ def _remaining_count(item: dict[str, Any]) -> int:
     return max(count - fulfilled, 0)
 
 
+def _world_sync_error_text(world_sync: dict[str, Any]) -> str:
+    raw = str(
+        world_sync.get("last_error")
+        or world_sync.get("last_refresh_error")
+        or world_sync.get("error")
+        or ""
+    ).strip()
+    if not raw:
+        return ""
+    compact = " ".join(raw.split())
+    return f"{compact[:77]}..." if len(compact) > 80 else compact
+
+
+def _world_sync_failure_count(world_sync: dict[str, Any]) -> int:
+    for key in ("consecutive_failures", "consecutive_refresh_failures", "failures"):
+        try:
+            value = int(world_sync.get(key, 0) or 0)
+        except Exception:
+            value = 0
+        if value > 0:
+            return value
+    return 0
+
+
+def _world_sync_failure_threshold(world_sync: dict[str, Any]) -> int:
+    try:
+        return max(int(world_sync.get("failure_threshold", 0) or 0), 0)
+    except Exception:
+        return 0
+
+
 def _capability_blocker_detail(
     *,
     blocker: str,
@@ -427,7 +458,8 @@ def task_to_dict(
     runtime_state: dict[str, Any],
     pending_questions: list[Any],
     task_messages: list[Any],
-    world_stale: bool,
+    world_sync: Optional[dict[str, Any]] = None,
+    world_stale: Optional[bool] = None,
     log_session_dir: Optional[Path] = None,
 ) -> dict[str, Any]:
     """Task + jobs -> dashboard dict with shared triage."""
@@ -441,7 +473,11 @@ def task_to_dict(
         runtime_state=runtime_state,
         task_id=str(task_id or ""),
         jobs=jobs,
-        world_sync={"stale": world_stale},
+        world_sync=(
+            dict(world_sync or {})
+            if world_sync is not None
+            else {"stale": bool(world_stale)}
+        ),
         pending_questions=pending_questions,
         task_messages=task_messages,
     ).to_dict()
@@ -469,7 +505,8 @@ def build_live_task_payload(
     runtime_state: Optional[dict[str, Any]],
     list_pending_questions: Callable[[], list[Any]],
     list_task_messages: Callable[..., list[Any]],
-    world_stale: bool,
+    world_sync: Optional[dict[str, Any]] = None,
+    world_stale: Optional[bool] = None,
     log_session_dir: Optional[Path] = None,
 ) -> dict[str, Any]:
     """Build a dashboard/task payload from live runtime providers."""
@@ -485,6 +522,7 @@ def build_live_task_payload(
         runtime_state=runtime_state,
         pending_questions=list_pending_questions(),
         task_messages=task_messages,
+        world_sync=world_sync,
         world_stale=world_stale,
         log_session_dir=log_session_dir,
     )
@@ -577,16 +615,30 @@ def build_task_triage(
         )
 
     if bool(world_sync.get("stale")):
+        world_sync_error = _world_sync_error_text(world_sync)
+        world_sync_failures = _world_sync_failure_count(world_sync)
+        world_sync_failure_threshold = _world_sync_failure_threshold(world_sync)
+        status_line = "世界状态同步异常，等待恢复"
+        if world_sync_failures:
+            if world_sync_failure_threshold:
+                status_line += f" | failures={world_sync_failures}/{world_sync_failure_threshold}"
+            else:
+                status_line += f" | failures={world_sync_failures}"
+        if world_sync_error:
+            status_line += f" | {world_sync_error}"
         return TaskTriageSnapshot(
             state="degraded",
             phase="world_sync",
-            status_line="世界状态同步异常，等待恢复",
+            status_line=status_line,
             waiting_reason="world_stale",
             blocking_reason="world_stale",
             active_expert=active_expert,
             active_job_id=active_job_id,
             reservation_ids=reservation_ids,
             world_stale=True,
+            world_sync_error=world_sync_error,
+            world_sync_failures=world_sync_failures,
+            world_sync_failure_threshold=world_sync_failure_threshold,
             active_group_size=active_group_size,
         )
 

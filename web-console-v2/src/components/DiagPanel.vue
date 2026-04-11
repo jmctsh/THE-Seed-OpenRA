@@ -1,6 +1,15 @@
 <template>
   <div class="diag-panel">
     <h3>Diagnostics</h3>
+    <div v-if="worldSyncStale" class="triage-summary world-sync-summary">
+      <div class="triage-status">世界状态同步异常</div>
+      <div class="triage-meta">
+        <span>world=stale</span>
+        <span v-if="worldSyncFailures">failures={{ worldSyncFailures }}<template v-if="worldSyncFailureThreshold">/{{ worldSyncFailureThreshold }}</template></span>
+        <span v-if="worldSyncFailureThreshold">threshold={{ worldSyncFailureThreshold }}</span>
+        <span v-if="worldSyncError">error={{ worldSyncError }}</span>
+      </div>
+    </div>
     <div class="trace-controls">
       <label class="trace-label" for="session-select">Session</label>
       <div class="trace-session-row">
@@ -36,6 +45,10 @@
         <span v-if="selectedTaskTriage.active_expert">expert={{ selectedTaskTriage.active_expert }}</span>
         <span v-if="selectedTaskTriage.active_group_size">group={{ selectedTaskTriage.active_group_size }}</span>
         <span v-if="selectedTaskTriage.world_stale">world=stale</span>
+        <span v-if="selectedTaskTriage.world_sync_failures">
+          sync_fail={{ selectedTaskTriage.world_sync_failures }}<template v-if="selectedTaskTriage.world_sync_failure_threshold">/{{ selectedTaskTriage.world_sync_failure_threshold }}</template>
+        </span>
+        <span v-if="selectedTaskTriage.world_sync_error">sync={{ selectedTaskTriage.world_sync_error }}</span>
       </div>
     </div>
     <div v-if="selectedTaskReplayBundle" class="replay-summary">
@@ -67,6 +80,12 @@
           </span>
           <span v-if="selectedTaskReplayBundle.current_runtime.triage.active_expert">
             expert={{ selectedTaskReplayBundle.current_runtime.triage.active_expert }}
+          </span>
+          <span v-if="selectedTaskReplayBundle.current_runtime.triage.world_sync_failures">
+            sync_fail={{ selectedTaskReplayBundle.current_runtime.triage.world_sync_failures }}<template v-if="selectedTaskReplayBundle.current_runtime.triage.world_sync_failure_threshold">/{{ selectedTaskReplayBundle.current_runtime.triage.world_sync_failure_threshold }}</template>
+          </span>
+          <span v-if="selectedTaskReplayBundle.current_runtime.triage.world_sync_error">
+            sync={{ selectedTaskReplayBundle.current_runtime.triage.world_sync_error }}
           </span>
         </div>
       </div>
@@ -312,6 +331,10 @@ const TERMINAL_TASK_STATUS = new Set(['succeeded', 'failed', 'aborted', 'partial
 const logEntries = ref([])
 const logEl = ref(null)
 const benchmarkStats = reactive({})
+const worldSyncStale = ref(false)
+const worldSyncFailures = ref(0)
+const worldSyncFailureThreshold = ref(0)
+const worldSyncError = ref('')
 const filterLevel = ref('ALL')
 const filterComponent = ref('ALL')
 const selectedTaskId = ref('ALL')
@@ -704,6 +727,10 @@ if (props.on) {
     }
   }))
   offHandlers.push(props.on('world_snapshot', (msg) => {
+    worldSyncStale.value = !!msg.data?.stale
+    worldSyncFailures.value = Number(msg.data?.consecutive_refresh_failures || 0)
+    worldSyncFailureThreshold.value = Number(msg.data?.failure_threshold || 0)
+    worldSyncError.value = String(msg.data?.last_refresh_error || '')
     if (msg.data?.benchmark) replaceBenchmarkSnapshot(msg.data.benchmark)
   }))
   offHandlers.push(props.on('benchmark', (msg) => {

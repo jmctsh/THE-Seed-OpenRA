@@ -225,6 +225,9 @@ def test_task_triage_snapshot_from_mapping_normalizes_fields() -> None:
             "active_group_size": "2",
             "reservation_ids": ["r1", None, "r2"],
             "world_stale": 1,
+            "world_sync_error": "actors:COMMAND_EXECUTION_ERROR",
+            "world_sync_failures": "3",
+            "world_sync_failure_threshold": "5",
         }
     )
 
@@ -233,6 +236,9 @@ def test_task_triage_snapshot_from_mapping_normalizes_fields() -> None:
     assert snapshot.active_group_size == 2
     assert snapshot.reservation_ids == ["r1", "r2"]
     assert snapshot.world_stale is True
+    assert snapshot.world_sync_error == "actors:COMMAND_EXECUTION_ERROR"
+    assert snapshot.world_sync_failures == 3
+    assert snapshot.world_sync_failure_threshold == 5
     print("  PASS: task_triage_snapshot_from_mapping_normalizes_fields")
 
 
