@@ -416,6 +416,14 @@ class _WorldModelWithBlockedRuntimeProgression(_WorldModelNoPower):
         return result
 
 
+class _WorldModelBattlefieldLowPower(_WorldModelWithBlockedRuntimeProgression):
+    def query(self, query_type: str, params=None):
+        result = super().query(query_type, params)
+        if query_type == "battlefield_snapshot":
+            result["low_power"] = True
+        return result
+
+
 class _KernelCombatPriority(_Kernel):
     def __init__(self) -> None:
         super().__init__()
@@ -719,6 +727,17 @@ def test_coordinator_snapshot_corrects_blocked_runtime_base_progression() -> Non
     assert any(alert["code"] == "capability_low_power" for alert in context.coordinator_snapshot["alerts"])
     assert context.coordinator_snapshot["status_line"].startswith("能力层有 1 个请求受低电影响")
     print("  PASS: coordinator_snapshot_corrects_blocked_runtime_base_progression")
+
+
+def test_coordinator_alerts_dedup_capability_low_power_against_battlefield_low_power() -> None:
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelBattlefieldLowPower())
+
+    context = adjutant._build_context("现在怎么样")
+
+    alert_codes = [str(alert.get("code", "")) for alert in context.coordinator_snapshot["alerts"]]
+    assert "low_power" in alert_codes
+    assert "capability_low_power" not in alert_codes
+    print("  PASS: coordinator_alerts_dedup_capability_low_power_against_battlefield_low_power")
 
 
 def test_coordinator_alerts_surface_queue_block_reason() -> None:
