@@ -61,31 +61,31 @@
           last={{ selectedTaskReplayBundle.last_transition.label }}
         </span>
       </div>
-      <div v-if="selectedTaskReplayBundle.current_runtime?.triage" class="replay-section">
-        <div class="replay-heading">Current Runtime</div>
-        <div class="replay-overview">{{ selectedTaskReplayBundle.current_runtime.triage.status_line }}</div>
+      <div v-if="selectedReplayTriage" class="replay-section">
+        <div class="replay-heading">{{ selectedTaskReplayBundle.current_runtime?.triage ? 'Current Runtime' : 'Replay Triage' }}</div>
+        <div class="replay-overview">{{ selectedReplayTriage.status_line }}</div>
         <div class="triage-meta">
-          <span>state={{ selectedTaskReplayBundle.current_runtime.triage.state }}</span>
-          <span v-if="selectedTaskReplayBundle.current_runtime.triage.phase">
-            phase={{ selectedTaskReplayBundle.current_runtime.triage.phase }}
+          <span>state={{ selectedReplayTriage.state }}</span>
+          <span v-if="selectedReplayTriage.phase">
+            phase={{ selectedReplayTriage.phase }}
           </span>
-          <span v-if="selectedTaskReplayBundle.current_runtime.triage.waiting_reason">
-            waiting={{ selectedTaskReplayBundle.current_runtime.triage.waiting_reason }}
+          <span v-if="selectedReplayTriage.waiting_reason">
+            waiting={{ selectedReplayTriage.waiting_reason }}
           </span>
-          <span v-if="selectedTaskReplayBundle.current_runtime.triage.blocking_reason">
-            blocker={{ selectedTaskReplayBundle.current_runtime.triage.blocking_reason }}
+          <span v-if="selectedReplayTriage.blocking_reason">
+            blocker={{ selectedReplayTriage.blocking_reason }}
           </span>
-          <span v-if="selectedTaskReplayBundle.current_runtime.triage.reservation_ids?.length">
-            reservations={{ selectedTaskReplayBundle.current_runtime.triage.reservation_ids.length }}
+          <span v-if="selectedReplayTriage.reservation_ids?.length">
+            reservations={{ selectedReplayTriage.reservation_ids.length }}
           </span>
-          <span v-if="selectedTaskReplayBundle.current_runtime.triage.active_expert">
-            expert={{ selectedTaskReplayBundle.current_runtime.triage.active_expert }}
+          <span v-if="selectedReplayTriage.active_expert">
+            expert={{ selectedReplayTriage.active_expert }}
           </span>
-          <span v-if="selectedTaskReplayBundle.current_runtime.triage.world_sync_failures">
-            sync_fail={{ selectedTaskReplayBundle.current_runtime.triage.world_sync_failures }}<template v-if="selectedTaskReplayBundle.current_runtime.triage.world_sync_failure_threshold">/{{ selectedTaskReplayBundle.current_runtime.triage.world_sync_failure_threshold }}</template>
+          <span v-if="selectedReplayTriage.world_sync_failures">
+            sync_fail={{ selectedReplayTriage.world_sync_failures }}<template v-if="selectedReplayTriage.world_sync_failure_threshold">/{{ selectedReplayTriage.world_sync_failure_threshold }}</template>
           </span>
-          <span v-if="selectedTaskReplayBundle.current_runtime.triage.world_sync_error">
-            sync={{ selectedTaskReplayBundle.current_runtime.triage.world_sync_error }}
+          <span v-if="selectedReplayTriage.world_sync_error">
+            sync={{ selectedReplayTriage.world_sync_error }}
           </span>
         </div>
       </div>
@@ -409,6 +409,12 @@ const selectedTaskTriage = computed(() => {
 const selectedTaskReplayBundle = computed(() => {
   if (selectedTaskId.value === 'ALL') return null
   return replayBundleCache[replayCacheKey(selectedTaskId.value)] || null
+})
+
+const selectedReplayTriage = computed(() => {
+  const bundle = selectedTaskReplayBundle.value
+  if (!bundle) return null
+  return bundle.current_runtime?.triage || bundle.replay_triage || null
 })
 
 const selectedTaskReplayCount = computed(() => {

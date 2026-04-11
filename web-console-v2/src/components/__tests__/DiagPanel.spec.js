@@ -137,6 +137,78 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('sync=economy disconnected')
   })
 
+  it('renders replay_triage when current runtime triage is unavailable', async () => {
+    const bus = createBus()
+    const send = vi.fn()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send,
+        on: bus.on,
+      },
+    })
+
+    bus.emit('session_catalog', {
+      sessions: [
+        {
+          session_dir: '/tmp/session-1',
+          session_name: 'session-1',
+          task_count: 1,
+          record_count: 10,
+        },
+      ],
+      current_session_dir: '/live/session',
+    })
+    bus.emit('session_task_catalog', {
+      session_dir: '/tmp/session-1',
+      tasks: [
+        {
+          task_id: 't_hist',
+          raw_text: '历史任务',
+          status: 'partial',
+          timestamp: 100,
+          created_at: 90,
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('#session-select').setValue('/tmp/session-1')
+    await wrapper.vm.$nextTick()
+    await wrapper.find('#task-trace-select').setValue('t_hist')
+    await wrapper.vm.$nextTick()
+
+    bus.emit('task_replay', {
+      task_id: 't_hist',
+      session_dir: '/tmp/session-1',
+      bundle: {
+        summary: '历史阻塞：猛犸坦克 × 1 缺少前置',
+        entry_count: 5,
+        duration_s: 18.0,
+        replay_triage: {
+          status_line: '历史阻塞：猛犸坦克 × 1 缺少前置',
+          state: 'blocked',
+          phase: 'blocked',
+          waiting_reason: 'missing_prerequisite',
+          blocking_reason: 'missing_prerequisite',
+          reservation_ids: ['res_1'],
+        },
+      },
+      raw_entry_count: 0,
+      entry_count: 5,
+      raw_entries_included: false,
+      raw_entries_truncated: false,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Replay Triage')
+    expect(wrapper.text()).toContain('历史阻塞：猛犸坦克 × 1 缺少前置')
+    expect(wrapper.text()).toContain('state=blocked')
+    expect(wrapper.text()).toContain('phase=blocked')
+    expect(wrapper.text()).toContain('waiting=missing_prerequisite')
+    expect(wrapper.text()).toContain('blocker=missing_prerequisite')
+    expect(wrapper.text()).toContain('reservations=1')
+  })
+
   it('renders world-sync stale details from world_snapshot', async () => {
     const bus = createBus()
     const wrapper = mount(DiagPanel, {

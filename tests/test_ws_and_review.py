@@ -2369,6 +2369,70 @@ def test_task_replay_bundle_preserves_world_sync_detail_in_unit_pipeline():
     print("  PASS: task_replay_bundle_preserves_world_sync_detail_in_unit_pipeline")
 
 
+def test_task_replay_bundle_derives_replay_triage_from_unit_pipeline():
+    entries = [
+        {
+            "timestamp": 10.0,
+            "component": "kernel",
+            "level": "INFO",
+            "message": "Task created",
+            "event": "task_created",
+            "data": {"task_id": "t_demo"},
+        },
+        {
+            "timestamp": 10.1,
+            "component": "task_agent",
+            "level": "DEBUG",
+            "message": "TaskAgent context snapshot",
+            "event": "context_snapshot",
+            "data": {
+                "task_id": "t_demo",
+                "packet": {
+                    "runtime_facts": {
+                        "unfulfilled_requests": [
+                            {
+                                "request_id": "req_1",
+                                "reservation_id": "res_1",
+                                "task_id": "t_demo",
+                                "unit_type": "4tnk",
+                                "queue_type": "Vehicle",
+                                "count": 1,
+                                "fulfilled": 0,
+                                "remaining_count": 1,
+                                "reason": "missing_prerequisite",
+                                "prerequisites": ["fix", "stek", "weap"],
+                            }
+                        ],
+                        "unit_reservations": [
+                            {
+                                "reservation_id": "res_1",
+                                "request_id": "req_1",
+                                "task_id": "t_demo",
+                                "unit_type": "4tnk",
+                                "queue_type": "Vehicle",
+                                "count": 1,
+                                "remaining_count": 1,
+                                "status": "pending",
+                            }
+                        ],
+                    }
+                },
+            },
+        },
+    ]
+
+    bundle = build_task_replay_bundle("t_demo", entries)
+
+    triage = bundle["replay_triage"]
+    assert triage["state"] == "blocked"
+    assert triage["phase"] == "blocked"
+    assert triage["waiting_reason"] == "missing_prerequisite"
+    assert triage["blocking_reason"] == "missing_prerequisite"
+    assert triage["reservation_ids"] == ["res_1"]
+    assert "猛犸坦克" in triage["status_line"]
+    print("  PASS: task_replay_bundle_derives_replay_triage_from_unit_pipeline")
+
+
 def test_task_replay_bundle_falls_back_to_live_runtime_facts_for_unit_pipeline():
     entries = [
         {

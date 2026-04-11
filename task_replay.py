@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Any, Optional
 
+from openra_state.data.dataset import demo_prompt_display_name_for
+from runtime_views import TaskTriageSnapshot
+
 
 def build_live_task_replay_bundle(
     task_id: str,
@@ -592,9 +595,141 @@ def build_task_replay_bundle(
                 if isinstance(item, dict) and str(item.get("task_id") or "") == task_id
             ]
 
+    def _pipeline_label(item: dict[str, Any]) -> str:
+        hint = str(item.get("hint") or "").strip()
+        if hint:
+            return hint
+        unit_type = str(item.get("unit_type") or "").strip().lower()
+        if unit_type:
+            return demo_prompt_display_name_for(unit_type)
+        return str(item.get("category") or "请求").strip() or "请求"
+
+    def _pipeline_remaining(item: dict[str, Any]) -> int:
+        try:
+            return max(int(item.get("remaining_count", 0) or 0), 0)
+        except Exception:
+            return 0
+
+    def _replay_triage_status_line(
+        request: dict[str, Any] | None,
+        reservation: dict[str, Any] | None,
+    ) -> str:
+        if request is not None:
+            label = _pipeline_label(request)
+            remaining = _pipeline_remaining(request)
+            reason = str(request.get("reason") or "")
+            count_suffix = f" × {remaining}" if remaining > 0 else ""
+            if reason == "missing_prerequisite":
+                return f"历史阻塞：{label}{count_suffix} 缺少前置"
+            if reason == "disabled_prerequisite":
+                return f"历史阻塞：{label}{count_suffix} 前置离线"
+            if reason == "queue_blocked":
+                return f"历史阻塞：{label}{count_suffix} 队列阻塞"
+            if reason == "low_power":
+                return f"历史阻塞：{label}{count_suffix} 低电"
+            if reason == "world_sync_stale":
+                return f"历史阻塞：{label}{count_suffix} 等待世界同步恢复"
+            if reason == "bootstrap_in_progress":
+                return f"历史推进：{label}{count_suffix} 前置生产中"
+            if reason == "pending_requests_waiting_dispatch":
+                return f"历史推进：{label}{count_suffix} 待分发"
+            if reason == "request_inference_pending":
+                return f"历史推进：{label}{count_suffix} 等待解析"
+            return summary
+        if reservation is not None:
+            label = _pipeline_label(reservation)
+            remaining = _pipeline_remaining(reservation)
+            if remaining > 0:
+                return f"历史等待交付：{label} × {remaining}"
+            return f"历史等待交付：{label}"
+        return summary
+
+    def _derive_replay_triage() -> dict[str, Any]:
+        live_triage = current_runtime.get("triage") if isinstance(current_runtime, dict) else None
+        if isinstance(live_triage, dict):
+            return TaskTriageSnapshot.from_mapping(live_triage).to_dict()
+
+        first_request = unit_pipeline["unfulfilled_requests"][0] if unit_pipeline["unfulfilled_requests"] else None
+        first_reservation = unit_pipeline["unit_reservations"][0] if unit_pipeline["unit_reservations"] else None
+        reservation_ids = [
+            str(item.get("reservation_id") or "")
+            for item in unit_pipeline["unit_reservations"]
+            if str(item.get("reservation_id") or "")
+        ]
+        last_label = str((last_transition or {}).get("label") or "")
+        last_result = str((last_transition or {}).get("result") or "")
+        active_job_id = str((last_transition or {}).get("job_id") or "")
+        active_expert = str((last_transition or {}).get("expert_type") or "")
+        status_line = _replay_triage_status_line(first_request, first_reservation)
+        state = "history"
+        phase = "history"
+        waiting_reason = ""
+        blocking_reason = ""
+        world_stale = False
+        world_sync_error = ""
+        world_sync_failures = 0
+        world_sync_failure_threshold = 0
+
+        if first_request is not None:
+            reason = str(first_request.get("reason") or "")
+            waiting_reason = reason
+            blocking_reason = reason
+            if reason == "world_sync_stale":
+                state = "degraded"
+                phase = "world_sync"
+                world_stale = True
+                world_sync_error = str(first_request.get("world_sync_last_error") or "")
+                world_sync_failures = int(first_request.get("world_sync_consecutive_failures", 0) or 0)
+                world_sync_failure_threshold = int(first_request.get("world_sync_failure_threshold", 0) or 0)
+            elif reason == "bootstrap_in_progress":
+                state = "running"
+                phase = "bootstrapping"
+            elif reason in {"pending_requests_waiting_dispatch", "request_inference_pending"}:
+                state = "running"
+                phase = "dispatch"
+            else:
+                state = "blocked"
+                phase = "blocked"
+        elif first_reservation is not None:
+            state = "waiting_units"
+            phase = "reservation"
+            waiting_reason = "unit_reservation"
+        elif last_label == "task_completed":
+            state = "completed"
+            phase = "succeeded"
+        elif last_label == "expert:task_complete" and last_result in {"succeeded", "failed", "partial", "aborted"}:
+            state = "completed"
+            phase = last_result
+        elif last_label == "job_started":
+            state = "running"
+            phase = "job_running"
+        elif blockers:
+            state = "blocked"
+            phase = "warning"
+        elif highlights:
+            state = "running"
+
+        return TaskTriageSnapshot(
+            state=state,
+            phase=phase,
+            status_line=status_line,
+            waiting_reason=waiting_reason,
+            blocking_reason=blocking_reason,
+            active_expert=active_expert,
+            active_job_id=active_job_id,
+            reservation_ids=reservation_ids,
+            world_stale=world_stale,
+            world_sync_error=world_sync_error,
+            world_sync_failures=world_sync_failures,
+            world_sync_failure_threshold=world_sync_failure_threshold,
+        ).to_dict()
+
+    replay_triage = _derive_replay_triage()
+
     return {
         "task_id": task_id,
         "summary": summary,
+        "replay_triage": replay_triage,
         "status_line": current_status_line,
         "entry_count": len(entries),
         "duration_s": round(duration_s, 1),
