@@ -122,6 +122,7 @@ from .resource_assignment import (
 from .session_reset import (
     abort_and_release_all_jobs,
     clear_kernel_runtime_collections,
+    reset_kernel_session,
     stop_all_task_runtimes,
 )
 from .signal_delivery import route_expert_signal
@@ -868,19 +869,10 @@ class Kernel:
         return list(self._question_store.list_pending_questions())
 
     def reset_session(self) -> None:
-        stop_all_task_runtimes(
-            self._task_runtimes,
-            stop_task_runtime_fn=stop_task_runtime,
-        )
-        abort_and_release_all_jobs(
-            self._jobs,
-            is_terminal_status=self._is_terminal_status,
-            release_job_resources_fn=self._release_job_resources,
-        )
-        clear_kernel_runtime_collections(
-            tasks=self.tasks,
+        reset_kernel_session(
             task_runtimes=self._task_runtimes,
             jobs=self._jobs,
+            tasks=self.tasks,
             constraints=self._constraints,
             resource_needs=self._resource_needs,
             resource_loss_notified=self._resource_loss_notified,
@@ -894,12 +886,13 @@ class Kernel:
             task_actor_groups=self._task_actor_groups,
             direct_managed_tasks=self._direct_managed_tasks,
             capability_recent_inputs=self._capability_recent_inputs,
-            clear_player_notifications=True,
-            clear_task_messages=True,
+            stop_task_runtime_fn=stop_task_runtime,
+            is_terminal_status=self._is_terminal_status,
+            release_job_resources_fn=self._release_job_resources,
+            set_capability_task_id=lambda task_id: setattr(self, "_capability_task_id", task_id),
+            sync_world_runtime=self._sync_world_runtime,
+            ensure_capability_task=self.ensure_capability_task,
         )
-        self._capability_task_id = None
-        self._sync_world_runtime()
-        self.ensure_capability_task()
 
     def register_task_message(self, message: TaskMessage) -> bool:
         return register_task_message_runtime(
