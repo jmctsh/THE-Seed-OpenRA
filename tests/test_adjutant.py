@@ -2759,6 +2759,98 @@ def test_build_context_surfaces_unit_pipeline_focus_in_coordinator_alerts():
     print("  PASS: build_context_surfaces_unit_pipeline_focus_in_coordinator_alerts")
 
 
+def test_build_context_prefers_highest_severity_unit_pipeline_focus():
+    kernel = MockKernel()
+    kernel._runtime_state_override = RuntimeStateSnapshot(
+        active_tasks={},
+        active_jobs={},
+        resource_bindings={},
+        constraints=[],
+        unfulfilled_requests=[
+            {
+                "request_id": "req_wait",
+                "task_id": "t_wait",
+                "task_label": "002",
+                "category": "infantry",
+                "count": 1,
+                "fulfilled": 0,
+                "remaining_count": 1,
+                "hint": "步兵",
+                "blocking": True,
+                "reason": "waiting_dispatch",
+            },
+            {
+                "request_id": "req_stale",
+                "task_id": "t_stale",
+                "task_label": "003",
+                "category": "vehicle",
+                "count": 1,
+                "fulfilled": 0,
+                "remaining_count": 1,
+                "hint": "重坦",
+                "blocking": True,
+                "reason": "world_sync_stale",
+                "world_sync_last_error": "economy:COMMAND_EXECUTION_ERROR",
+                "world_sync_consecutive_failures": 4,
+                "world_sync_failure_threshold": 3,
+            },
+        ],
+        capability_status=CapabilityStatusSnapshot(),
+        unit_reservations=[
+            {
+                "reservation_id": "res_wait",
+                "request_id": "req_wait",
+                "task_id": "t_wait",
+                "task_label": "002",
+                "unit_type": "e1",
+                "count": 1,
+                "remaining_count": 1,
+                "status": "pending",
+                "blocking": True,
+                "reason": "waiting_dispatch",
+                "updated_at": 10.0,
+            },
+            {
+                "reservation_id": "res_stale",
+                "request_id": "req_stale",
+                "task_id": "t_stale",
+                "task_label": "003",
+                "unit_type": "3tnk",
+                "count": 1,
+                "remaining_count": 1,
+                "status": "pending",
+                "blocking": True,
+                "reason": "world_sync_stale",
+                "world_sync_last_error": "economy:COMMAND_EXECUTION_ERROR",
+                "world_sync_consecutive_failures": 4,
+                "world_sync_failure_threshold": 3,
+                "updated_at": 20.0,
+            },
+        ],
+        timestamp=time.time(),
+    ).to_dict()
+
+    class RuntimeOnlyWorldModel(MockWorldModel):
+        def query(self, query_type, params=None):
+            if query_type == "battlefield_snapshot":
+                return {}
+            return super().query(query_type, params)
+
+    adjutant = Adjutant(llm=MockProvider(), kernel=kernel, world_model=RuntimeOnlyWorldModel())
+
+    ctx = adjutant._build_context("继续发展")
+
+    focus = ctx.coordinator_snapshot["unit_pipeline_focus"]
+    assert focus["task_id"] == "t_stale"
+    assert focus["task_label"] == "003"
+    assert focus["reason"] == "world_sync_stale"
+    assert focus["request_count"] == 2
+    assert focus["reservation_count"] == 2
+    assert "等待世界同步恢复" in focus["detail"]
+    assert "economy:COMMAND_EXECUTION_ERROR" in focus["detail"]
+    assert "重坦" in ctx.coordinator_snapshot["status_line"]
+
+
 def test_classify_input_sends_recent_completed_to_llm():
     """_classify_input includes recent_completed_tasks in the JSON sent to LLM."""
     captured: list[dict] = []

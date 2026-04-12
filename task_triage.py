@@ -162,6 +162,65 @@ def build_unit_pipeline_preview(
     return preview
 
 
+def _match_request_for_reservation(
+    requests: list[dict[str, Any]],
+    reservation: dict[str, Any],
+) -> dict[str, Any] | None:
+    request_id = str(reservation.get("request_id") or "").strip()
+    if not request_id:
+        return None
+    for request in requests:
+        if str(request.get("request_id") or "").strip() == request_id:
+            return request
+    return None
+
+
+def _unit_pipeline_reason_priority(reason: str) -> int:
+    reason = str(reason or "").strip()
+    if reason == "world_sync_stale":
+        return 0
+    if reason in _UNIT_PIPELINE_BLOCKING_REASONS:
+        return 1
+    if reason in _UNIT_PIPELINE_BOOTSTRAP_REASONS:
+        return 2
+    if reason in _UNIT_PIPELINE_DISPATCH_REASONS:
+        return 3
+    if reason in _UNIT_PIPELINE_DELIVERY_REASONS:
+        return 4
+    return 5
+
+
+def _unit_pipeline_focus_sort_key(
+    request: dict[str, Any] | None,
+    reservation: dict[str, Any] | None,
+) -> tuple[Any, ...]:
+    item = request if request is not None else reservation if reservation is not None else {}
+    reason = _unit_pipeline_reason(request, reservation)
+    sync_failures = 0
+    for source in (request, reservation):
+        if not isinstance(source, dict):
+            continue
+        try:
+            sync_failures = max(sync_failures, int(source.get("world_sync_consecutive_failures", 0) or 0))
+        except Exception:
+            continue
+    try:
+        updated_at = float((reservation or {}).get("updated_at", 0) or 0)
+    except Exception:
+        updated_at = 0.0
+    blocking = bool((item or {}).get("blocking", True))
+    return (
+        _unit_pipeline_reason_priority(reason),
+        -sync_failures,
+        0 if blocking else 1,
+        -_remaining_count(item if isinstance(item, dict) else {}),
+        -updated_at,
+        str((item or {}).get("task_label") or ""),
+        str((item or {}).get("request_id") or ""),
+        str((item or {}).get("reservation_id") or ""),
+    )
+
+
 def _select_runtime_unit_pipeline_focus(
     runtime_state: RuntimeStateSnapshot | dict[str, Any] | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
@@ -179,12 +238,27 @@ def _select_runtime_unit_pipeline_focus(
     if not requests and not reservations:
         return [], [], None, None
 
-    reservation = reservations[0] if reservations else None
-    request = None
-    if reservation is not None:
-        request = _find_request_for_reservation(requests, reservation)
-    if request is None and requests:
-        request = requests[0]
+    matched_request_ids: set[str] = set()
+    candidates: list[tuple[dict[str, Any] | None, dict[str, Any] | None]] = []
+
+    for reservation in reservations:
+        request = _match_request_for_reservation(requests, reservation)
+        if request is not None:
+            request_id = str(request.get("request_id") or "").strip()
+            if request_id:
+                matched_request_ids.add(request_id)
+        candidates.append((request, reservation))
+
+    for request in requests:
+        request_id = str(request.get("request_id") or "").strip()
+        if request_id and request_id in matched_request_ids:
+            continue
+        candidates.append((request, None))
+
+    if not candidates:
+        return requests, reservations, None, None
+
+    request, reservation = min(candidates, key=lambda pair: _unit_pipeline_focus_sort_key(pair[0], pair[1]))
     return requests, reservations, request, reservation
 
 
