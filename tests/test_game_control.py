@@ -473,6 +473,66 @@ def test_run_runtime_start_failure_stops_persistence_session(monkeypatch: pytest
         assert session_meta["ended_at"]
 
 
+def test_run_runtime_real_start_partial_failure_stops_ws_and_persistence_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    class _PublishFailureRuntime(ApplicationRuntime):
+        created: list["_PublishFailureRuntime"] = []
+
+        def __init__(self, *, config: RuntimeConfig) -> None:
+            super().__init__(
+                config=config,
+                task_llm=provider,
+                adjutant_llm=provider,
+                api=api,
+                world_source=source,
+            )
+            type(self).created.append(self)
+
+            async def _boom_publish_dashboard() -> None:
+                raise RuntimeError("boom-publish-dashboard")
+
+            self.bridge.publish_dashboard = _boom_publish_dashboard  # type: ignore[method-assign]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ws_port = _free_tcp_port()
+        log_root = Path(tmpdir) / "logs"
+        cfg = RuntimeConfig(
+            ws_host="127.0.0.1",
+            ws_port=ws_port,
+            enable_ws=True,
+            enable_voice=False,
+            verify_game_api=True,
+            llm_provider="mock",
+            llm_model="mock",
+            log_session_root=str(log_root),
+            benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+            benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+            log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+        )
+        monkeypatch.setattr(main_module.game_control.GameAPI, "is_server_running", staticmethod(lambda *args, **kwargs: True))
+        monkeypatch.setattr(main_module, "ApplicationRuntime", _PublishFailureRuntime)
+
+        with pytest.raises(RuntimeError, match="boom-publish-dashboard"):
+            asyncio.run(main_module.run_runtime(cfg))
+
+        runtime = _PublishFailureRuntime.created[-1]
+        latest_session = logging_system.latest_session_dir(log_root)
+        assert logging_system.current_session_dir() is None
+        assert latest_session is not None
+        assert api.close_calls == 1
+        assert runtime.ws_server is not None
+        assert runtime.ws_server.is_running is False
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            assert probe.connect_ex(("127.0.0.1", ws_port)) != 0
+        session_meta = json.loads((latest_session / "session.json").read_text(encoding="utf-8"))
+        assert session_meta["ended_at"]
+
+
 def test_run_runtime_constructor_failure_stops_persistence_session(monkeypatch: pytest.MonkeyPatch) -> None:
     class _BoomRuntime:
         def __init__(self, *, config: RuntimeConfig) -> None:
@@ -500,6 +560,59 @@ def test_run_runtime_constructor_failure_stops_persistence_session(monkeypatch: 
         latest_session = logging_system.latest_session_dir(log_root)
         assert logging_system.current_session_dir() is None
         assert latest_session is not None
+        session_meta = json.loads((latest_session / "session.json").read_text(encoding="utf-8"))
+        assert session_meta["ended_at"]
+
+
+def test_run_runtime_wait_failure_after_real_start_still_stops_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    class _WaitFailureRuntime(ApplicationRuntime):
+        created: list["_WaitFailureRuntime"] = []
+
+        def __init__(self, *, config: RuntimeConfig) -> None:
+            super().__init__(
+                config=config,
+                task_llm=provider,
+                adjutant_llm=provider,
+                api=api,
+                world_source=source,
+            )
+            type(self).created.append(self)
+
+        async def wait_until_stopped(self) -> None:
+            raise RuntimeError("boom-wait-after-start")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_root = Path(tmpdir) / "logs"
+        cfg = RuntimeConfig(
+            enable_ws=False,
+            enable_voice=False,
+            verify_game_api=True,
+            llm_provider="mock",
+            llm_model="mock",
+            log_session_root=str(log_root),
+            benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+            benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+            log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+        )
+        monkeypatch.setattr(main_module.game_control.GameAPI, "is_server_running", staticmethod(lambda *args, **kwargs: True))
+        monkeypatch.setattr(main_module, "ApplicationRuntime", _WaitFailureRuntime)
+
+        with pytest.raises(RuntimeError, match="boom-wait-after-start"):
+            asyncio.run(main_module.run_runtime(cfg))
+
+        runtime = _WaitFailureRuntime.created[-1]
+        latest_session = logging_system.latest_session_dir(log_root)
+        assert logging_system.current_session_dir() is None
+        assert latest_session is not None
+        assert api.close_calls == 1
+        assert runtime._shutdown_event.is_set() is True
+        assert runtime._loop_task is None
         session_meta = json.loads((latest_session / "session.json").read_text(encoding="utf-8"))
         assert session_meta["ended_at"]
 
@@ -979,6 +1092,7 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
     api = _CloseTrackingAPI()
 
     async def run() -> None:
+        logging_system.clear()
         benchmark.clear()
         loop = asyncio.get_running_loop()
         previous_handler = loop.get_exception_handler()
@@ -990,6 +1104,8 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
 
         loop.set_exception_handler(_capture_loop_exception)
         try:
+            buffered_payloads: list[dict[str, Any]] = []
+
             async def _recv_json(
                 ws: aiohttp.ClientWebSocketResponse,
                 *,
@@ -997,6 +1113,9 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
                 timeout_s: float = 3.0,
                 max_messages: int = 40,
             ) -> dict[str, Any]:
+                for index, payload in enumerate(list(buffered_payloads)):
+                    if predicate(payload):
+                        return buffered_payloads.pop(index)
                 deadline = loop.time() + timeout_s
                 seen = 0
                 while seen < max_messages and loop.time() < deadline:
@@ -1005,6 +1124,7 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
                     payload = json.loads(msg.data)
                     if predicate(payload):
                         return payload
+                    buffered_payloads.append(payload)
                     seen += 1
                 raise AssertionError("expected websocket payload not received before timeout")
 
@@ -1190,6 +1310,7 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
                     assert probe.connect_ex(("127.0.0.1", ws_port)) != 0
         finally:
+            logging_system.clear()
             benchmark.clear()
             loop.set_exception_handler(previous_handler)
 
