@@ -4,6 +4,9 @@ Usage:
     python3 tests/test_live_e2e.py
     python3 tests/test_live_e2e.py phase_a
     python3 tests/test_live_e2e.py phase_b
+    python3 tests/test_live_e2e.py phase_c
+    python3 tests/test_live_e2e.py phase_d
+    python3 tests/test_live_e2e.py phase_e
 
 See also:
     docs/live_e2e_checklist.md
