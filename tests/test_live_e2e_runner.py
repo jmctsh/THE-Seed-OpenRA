@@ -236,6 +236,42 @@ def test_live_runner_connect_waits_for_full_ws_baseline(monkeypatch) -> None:
     asyncio.run(run())
 
 
+def test_live_runner_connect_accepts_empty_task_and_session_surfaces_once_received(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    fake_ws = _AsyncFakeWS()
+
+    async def fake_connect(*args, **kwargs):
+        return fake_ws
+
+    monkeypatch.setattr(live_e2e.websockets, "connect", fake_connect)
+    runner = live_e2e.LiveTestRunner()
+
+    async def run() -> None:
+        async def _deliver() -> None:
+            await asyncio.sleep(0.01)
+            fake_ws.feed({"type": "world_snapshot", "data": {"stale": False, "runtime_fault_state": {}}})
+            await asyncio.sleep(0.01)
+            fake_ws.feed({"type": "task_list", "data": {"tasks": [], "pending_questions": []}})
+            await asyncio.sleep(0.01)
+            fake_ws.feed({"type": "session_catalog", "data": {"sessions": []}})
+
+        asyncio.create_task(_deliver())
+        await runner.connect()
+
+        assert runner.latest_task_list() == []
+        assert runner.latest_session_catalog()["sessions"] == []
+        debug = runner.recent_debug_context()
+        assert "'received_task_list': True" in debug
+        assert "'received_session_catalog': True" in debug
+        assert "'task_count': 0" in debug
+        assert "'session_count': 0" in debug
+
+        await runner.close()
+        assert fake_ws.closed is True
+
+    asyncio.run(run())
+
+
 def test_live_runner_connect_fails_closed_when_world_snapshot_baseline_is_incomplete(monkeypatch) -> None:
     monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
     fake_ws = _AsyncFakeWS()
@@ -268,6 +304,8 @@ def test_live_runner_connect_fails_closed_when_world_snapshot_baseline_is_incomp
 
         assert "'stale': False" in runner.recent_debug_context()
         assert "'runtime_fault_degraded': False" in runner.recent_debug_context()
+        assert "'received_task_list': True" in runner.recent_debug_context()
+        assert "'received_session_catalog': True" in runner.recent_debug_context()
         await runner.close()
         assert fake_ws.closed is True
 

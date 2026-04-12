@@ -82,6 +82,8 @@ class LiveTestRunner:
         self._session_catalog: dict[str, Any] = {}
         self._session_task_catalog: dict[str, Any] = {}
         self._task_replays: dict[str, dict[str, Any]] = {}
+        self._received_task_list = False
+        self._received_session_catalog = False
 
     async def connect(self) -> None:
         self.ws = await websockets.connect(
@@ -95,8 +97,8 @@ class LiveTestRunner:
             lambda: (
                 bool(self._world_snapshot)
                 and isinstance(self._world_snapshot.get("runtime_fault_state"), dict)
-                and bool(self._task_list)
-                and bool(self._session_catalog)
+                and self._received_task_list
+                and self._received_session_catalog
             ),
             timeout=5.0,
         )
@@ -160,6 +162,7 @@ class LiveTestRunner:
         if msg_type == "query_response":
             self._query_responses.put_nowait(dict(msg))
         elif msg_type == "task_list":
+            self._received_task_list = True
             self._apply_task_list(list(data.get("tasks", [])))
             self._pending_questions = list(data.get("pending_questions", []))
         elif msg_type == "task_update":
@@ -177,6 +180,7 @@ class LiveTestRunner:
         elif msg_type == "benchmark":
             self._benchmarks.append(dict(data))
         elif msg_type == "session_catalog":
+            self._received_session_catalog = True
             self._session_catalog = dict(data)
         elif msg_type == "session_task_catalog":
             self._session_task_catalog = dict(data)
@@ -477,6 +481,10 @@ class LiveTestRunner:
             "runtime_fault_error": str(runtime_fault_state.get("error") or ""),
             "active_tasks": active_tasks,
             "pending_questions": len(world_snapshot.get("pending_questions", []) or []),
+            "received_task_list": self._received_task_list,
+            "received_session_catalog": self._received_session_catalog,
+            "task_count": len(self._task_list),
+            "session_count": len(self._session_catalog.get("sessions", []) or []),
         }
         return (
             f"world={world_debug} notifications={notifications} logs={logs} "
