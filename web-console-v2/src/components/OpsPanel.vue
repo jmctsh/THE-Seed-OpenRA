@@ -24,6 +24,10 @@
       <span v-if="staleFailures">连续失败 {{ staleFailures }}<template v-if="failureThreshold"> / {{ failureThreshold }}</template></span>
       <span v-if="lastRefreshError">最近错误: {{ lastRefreshError }}</span>
     </div>
+    <div v-if="capabilityTruthBlocker" class="game-status-detail truth-detail">
+      <span>能力真值受限: {{ capabilityTruthText }}</span>
+      <span v-if="playerFaction">阵营: {{ playerFaction }}</span>
+    </div>
 
     <h3>Mode</h3>
     <div class="controls">
@@ -57,6 +61,16 @@ const staleFailures = ref(0)
 const failureThreshold = ref(0)
 const lastRefreshError = ref('')
 const statusText = ref('● 数据正常')
+const capabilityTruthBlocker = ref('')
+const playerFaction = ref('')
+const capabilityTruthText = ref('')
+
+function formatCapabilityTruthText(blocker, faction) {
+  if (blocker === 'faction_roster_unsupported') {
+    return `demo capability roster 未覆盖${faction ? ` (${faction})` : '当前阵营'}`
+  }
+  return blocker || ''
+}
 
 function switchMode(mode) {
   if (props.send) props.send('mode_switch', { mode })
@@ -74,6 +88,9 @@ if (props.on) {
     staleFailures.value = Number(data.consecutive_refresh_failures || 0)
     failureThreshold.value = Number(data.failure_threshold || 0)
     lastRefreshError.value = String(data.last_refresh_error || '')
+    capabilityTruthBlocker.value = String(data.capability_truth_blocker || '')
+    playerFaction.value = String(data.player_faction || '')
+    capabilityTruthText.value = formatCapabilityTruthText(capabilityTruthBlocker.value, playerFaction.value)
     statusText.value = gameStale.value
       ? `⚠ 数据过期${staleFailures.value ? ` (${staleFailures.value}${failureThreshold.value ? `/${failureThreshold.value}` : ''})` : ''}`
       : '● 数据正常'
@@ -104,6 +121,9 @@ if (props.on) {
   color: #78909c;
   line-height: 1.4;
   word-break: break-word;
+}
+.truth-detail {
+  color: #8a4f00;
 }
 .healthy { color: #4caf50; }
 .stale { color: #ff9800; }

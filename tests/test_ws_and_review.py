@@ -550,6 +550,14 @@ def test_sync_request_pushes_current_state_directly():
         def runtime_state(self):
             return {"active_tasks": 1}
 
+        def compute_runtime_facts(self, task_id: str, *, include_buildable: bool = True):
+            assert task_id == "__dashboard__"
+            assert include_buildable is False
+            return {
+                "faction": "allied",
+                "capability_truth_blocker": "faction_roster_unsupported",
+            }
+
     class FakeGameLoop:
         def register_agent(self, *args, **kwargs):
             pass
@@ -608,6 +616,8 @@ def test_sync_request_pushes_current_state_directly():
     assert ws.sent[0][0] == "world_snapshot"
     assert ws.sent[0][1]["client_id"] == "client_42"
     assert ws.sent[0][1]["snapshot"]["economy"]["cash"] == 1200
+    assert ws.sent[0][1]["snapshot"]["player_faction"] == "allied"
+    assert ws.sent[0][1]["snapshot"]["capability_truth_blocker"] == "faction_roster_unsupported"
     assert ws.sent[1][0] == "task_list"
     assert ws.sent[1][1]["client_id"] == "client_42"
     assert ws.sent[1][1]["tasks"][0]["task_id"] == "t1"

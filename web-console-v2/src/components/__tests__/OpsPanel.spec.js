@@ -60,4 +60,25 @@ describe('OpsPanel', () => {
     expect(wrapper.text()).toContain('最近错误: actors:COMMAND_EXECUTION_ERROR')
     expect(wrapper.text()).toContain('WS 断开')
   })
+
+  it('renders capability truth blocker from world_snapshot', async () => {
+    const bus = createBus()
+    const wrapper = mount(OpsPanel, {
+      props: {
+        connected: true,
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('world_snapshot', {
+      player_faction: 'allied',
+      capability_truth_blocker: 'faction_roster_unsupported',
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('能力真值受限')
+    expect(wrapper.text()).toContain('demo capability roster 未覆盖 (allied)')
+    expect(wrapper.text()).toContain('阵营: allied')
+  })
 })

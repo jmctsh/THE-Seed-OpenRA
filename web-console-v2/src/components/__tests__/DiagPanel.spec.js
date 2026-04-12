@@ -238,4 +238,25 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('threshold=3')
     expect(wrapper.text()).toContain('error=actors:COMMAND_EXECUTION_ERROR')
   })
+
+  it('renders capability truth blocker from world_snapshot', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('world_snapshot', {
+      player_faction: 'allied',
+      capability_truth_blocker: 'faction_roster_unsupported',
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('能力真值受限')
+    expect(wrapper.text()).toContain('blocker=faction_roster_unsupported')
+    expect(wrapper.text()).toContain('faction=allied')
+    expect(wrapper.text()).toContain('demo capability roster 未覆盖当前阵营')
+  })
 })

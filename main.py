@@ -513,11 +513,14 @@ class RuntimeBridge(InboundHandler):
     def _build_dashboard_payload(self) -> dict[str, Any]:
         pending_questions = self.kernel.list_pending_questions()
         runtime_state = self.kernel.runtime_state()
+        dashboard_runtime_facts = self._dashboard_runtime_facts()
         world_snapshot = {
             **self.world_model.world_summary(),
             "runtime_state": runtime_state,
             "pending_questions": pending_questions,
             "mode": self.mode,
+            "player_faction": str(dashboard_runtime_facts.get("faction") or ""),
+            "capability_truth_blocker": str(dashboard_runtime_facts.get("capability_truth_blocker") or ""),
         }
         tasks = [
             self._task_to_dict(
@@ -535,6 +538,16 @@ class RuntimeBridge(InboundHandler):
 
     def _world_is_stale(self) -> bool:
         return bool(self._world_sync_health().get("stale", False))
+
+    def _dashboard_runtime_facts(self) -> dict[str, Any]:
+        compute_runtime_facts = getattr(self.world_model, "compute_runtime_facts", None)
+        if not callable(compute_runtime_facts):
+            return {}
+        try:
+            facts = compute_runtime_facts("__dashboard__", include_buildable=False) or {}
+            return dict(facts) if isinstance(facts, dict) else {}
+        except Exception:
+            return {}
 
     def _world_sync_health(self) -> dict[str, Any]:
         refresh_health = getattr(self.world_model, "refresh_health", None)

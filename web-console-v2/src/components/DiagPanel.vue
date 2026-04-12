@@ -10,6 +10,14 @@
         <span v-if="worldSyncError">error={{ worldSyncError }}</span>
       </div>
     </div>
+    <div v-if="capabilityTruthBlocker" class="triage-summary truth-summary">
+      <div class="triage-status">能力真值受限</div>
+      <div class="triage-meta">
+        <span>blocker={{ capabilityTruthBlocker }}</span>
+        <span v-if="capabilityTruthFaction">faction={{ capabilityTruthFaction }}</span>
+        <span>demo capability roster 未覆盖当前阵营</span>
+      </div>
+    </div>
     <div class="trace-controls">
       <label class="trace-label" for="session-select">Session</label>
       <div class="trace-session-row">
@@ -339,6 +347,8 @@ const worldSyncStale = ref(false)
 const worldSyncFailures = ref(0)
 const worldSyncFailureThreshold = ref(0)
 const worldSyncError = ref('')
+const capabilityTruthBlocker = ref('')
+const capabilityTruthFaction = ref('')
 const filterLevel = ref('ALL')
 const filterComponent = ref('ALL')
 const selectedTaskId = ref('ALL')
@@ -741,6 +751,8 @@ if (props.on) {
     worldSyncFailures.value = Number(msg.data?.consecutive_refresh_failures || 0)
     worldSyncFailureThreshold.value = Number(msg.data?.failure_threshold || 0)
     worldSyncError.value = String(msg.data?.last_refresh_error || '')
+    capabilityTruthBlocker.value = String(msg.data?.capability_truth_blocker || '')
+    capabilityTruthFaction.value = String(msg.data?.player_faction || '')
     if (msg.data?.benchmark) replaceBenchmarkSnapshot(msg.data.benchmark)
   }))
   offHandlers.push(props.on('benchmark', (msg) => {
