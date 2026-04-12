@@ -786,6 +786,117 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).not.toContain('state=blocked')
   })
 
+  it('renders current runtime triage when replay_triage is absent', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('task_list', {
+      tasks: [
+        {
+          task_id: 't_cap',
+          raw_text: '发展科技',
+          status: 'running',
+          timestamp: 100,
+          created_at: 90,
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('#task-trace-select').setValue('t_cap')
+    await wrapper.vm.$nextTick()
+
+    bus.emit('task_replay', {
+      task_id: 't_cap',
+      bundle: {
+        summary: '回放摘要',
+        entry_count: 4,
+        duration_s: 8.0,
+        current_runtime: {
+          triage: {
+            status_line: '实时状态：编队已就绪',
+            state: 'running',
+            phase: 'active',
+            active_expert: 'CombatExpert',
+          },
+        },
+      },
+      raw_entry_count: 0,
+      entry_count: 4,
+      raw_entries_included: false,
+      raw_entries_truncated: false,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Current Runtime')
+    expect(wrapper.text()).toContain('实时状态：编队已就绪')
+    expect(wrapper.text()).toContain('state=running')
+    expect(wrapper.text()).toContain('phase=active')
+    expect(wrapper.text()).toContain('expert=CombatExpert')
+    expect(wrapper.text()).not.toContain('Replay Triage')
+  })
+
+  it('falls back to replay_triage when current runtime exists but triage is null', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('task_list', {
+      tasks: [
+        {
+          task_id: 't_cap',
+          raw_text: '发展科技',
+          status: 'running',
+          timestamp: 100,
+          created_at: 90,
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('#task-trace-select').setValue('t_cap')
+    await wrapper.vm.$nextTick()
+
+    bus.emit('task_replay', {
+      task_id: 't_cap',
+      bundle: {
+        summary: '回放摘要',
+        entry_count: 4,
+        duration_s: 8.0,
+        current_runtime: {
+          triage: null,
+        },
+        replay_triage: {
+          status_line: '历史状态：等待前置建筑',
+          state: 'blocked',
+          phase: 'blocked',
+          waiting_reason: 'missing_prerequisite',
+        },
+      },
+      raw_entry_count: 0,
+      entry_count: 4,
+      raw_entries_included: false,
+      raw_entries_truncated: false,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Replay Triage')
+    expect(wrapper.text()).toContain('历史状态：等待前置建筑')
+    expect(wrapper.text()).toContain('state=blocked')
+    expect(wrapper.text()).toContain('phase=blocked')
+    expect(wrapper.text()).toContain('waiting=missing_prerequisite')
+    expect(wrapper.text()).not.toContain('Current Runtime')
+  })
+
   it('renders selected session world health summary from session_catalog', async () => {
     const bus = createBus()
     const wrapper = mount(DiagPanel, {
