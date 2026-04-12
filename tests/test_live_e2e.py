@@ -216,7 +216,13 @@ class LiveTestRunner:
             return None
         return dict(self._task_replays.get(task_id) or {})
 
-    async def send_command(self, text: str, timeout: float = 30.0) -> str:
+    async def send_player_input_response(
+        self,
+        text: str,
+        timeout: float = 30.0,
+        *,
+        response_types: set[str] | None = None,
+    ) -> dict[str, Any]:
         while not self._query_responses.empty():
             try:
                 self._query_responses.get_nowait()
@@ -237,17 +243,25 @@ class LiveTestRunner:
                     f"command reply timed out: {text}; {self.recent_debug_context()}"
                 ) from exc
             data = msg.get("data", {})
-            if str(data.get("response_type") or "") != "command":
+            response_type = str(data.get("response_type") or "")
+            if response_types is not None and response_type not in response_types:
                 continue
             echo_text = str(data.get("echo_text") or "")
             if echo_text and echo_text != text:
                 continue
-            return str(
-                data.get("answer")
-                or data.get("response_text")
-                or data.get("content")
-                or json.dumps(data, ensure_ascii=False)
-            )
+            return dict(data)
+
+    async def send_command_response(self, text: str, timeout: float = 30.0) -> dict[str, Any]:
+        return await self.send_player_input_response(text, timeout=timeout, response_types={"command"})
+
+    async def send_command(self, text: str, timeout: float = 30.0) -> str:
+        data = await self.send_command_response(text, timeout=timeout)
+        return str(
+            data.get("answer")
+            or data.get("response_text")
+            or data.get("content")
+            or json.dumps(data, ensure_ascii=False)
+        )
 
     async def wait_for_game_state(
         self,
@@ -591,7 +605,19 @@ class LiveTestSuite:
         return f"{reply} (scouts={len(before_positions)})"
 
     async def test_phase_e_query(self) -> str:
-        reply = await self.runner.send_command("战况如何？")
+        response = await self.runner.send_player_input_response("战况如何？", response_types={"query"})
+        reply = str(
+            response.get("answer")
+            or response.get("response_text")
+            or response.get("content")
+            or json.dumps(response, ensure_ascii=False)
+        )
+        if str(response.get("response_type") or "") != "query":
+            raise RuntimeError(f"query command returned non-query response_type: {response!r}")
+        if str(response.get("task_id") or "") or str(response.get("existing_task_id") or ""):
+            raise RuntimeError(f"query command unexpectedly attached task metadata: {response!r}")
+        if self.runner.extract_task_id(reply) is not None:
+            raise RuntimeError(f"query reply unexpectedly looks like task creation ack: {reply!r}")
         keywords = ("经济", "敌", "单位", "地图", "战况", "现金")
         if len(reply) <= 50 or not any(keyword in reply for keyword in keywords):
             raise RuntimeError(f"query response too weak: {reply!r}")

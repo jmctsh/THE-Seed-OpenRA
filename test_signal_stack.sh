@@ -18,6 +18,10 @@ or application_runtime_ws_question_reply_round_trip_delivers_to_task_agent \
 or application_runtime_ws_command_cancel_round_trip_updates_runtime_truth"
 
 echo
+echo "==> Live runner local contracts"
+python3 -m pytest tests/test_live_e2e_runner.py -q
+
+echo
 echo "==> Diagnostics / replay truth contracts"
 python3 -m pytest tests/test_ws_and_review.py -q -k \
   "sync_request_overlays_live_world_health_into_session_catalog \

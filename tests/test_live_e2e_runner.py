@@ -352,6 +352,33 @@ def test_live_runner_send_command_ignores_non_command_or_mismatched_query_respon
     assert sent["text"] == "推进前线"
 
 
+def test_live_runner_send_player_input_response_accepts_query_payload(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    runner = live_e2e.LiveTestRunner()
+    runner.ws = _FakeWS()
+
+    async def run() -> None:
+        async def _deliver() -> None:
+            await asyncio.sleep(0.01)
+            runner._handle_message(
+                {
+                    "type": "query_response",
+                    "data": {
+                        "response_type": "query",
+                        "echo_text": "战况如何？",
+                        "answer": "当前现金3200，兵力稳定，地图左侧未明。",
+                    },
+                }
+            )
+
+        asyncio.create_task(_deliver())
+        payload = await runner.send_player_input_response("战况如何？", timeout=0.5)
+        assert payload["response_type"] == "query"
+        assert "当前现金3200" in payload["answer"]
+
+    asyncio.run(run())
+
+
 def test_live_runner_send_command_timeout_includes_runtime_fault_context(monkeypatch) -> None:
     monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
     runner = live_e2e.LiveTestRunner()
@@ -422,6 +449,26 @@ class _StructureSuiteRunner:
 
     def recent_debug_context(self) -> str:
         return "debug-context"
+
+
+class _QuerySuiteRunner:
+    def __init__(self, response: dict[str, Any]) -> None:
+        self._response = dict(response)
+
+    async def send_player_input_response(
+        self,
+        text: str,
+        timeout: float = 30.0,
+        *,
+        response_types: set[str] | None = None,
+    ) -> dict[str, Any]:
+        del text, timeout
+        if response_types is not None and str(self._response.get("response_type") or "") not in response_types:
+            raise RuntimeError("unexpected response_type for query suite runner")
+        return dict(self._response)
+
+    def extract_task_id(self, reply: str) -> str | None:
+        return live_e2e.LiveTestRunner.extract_task_id(reply)
 
 
 def test_live_suite_wait_for_structure_result_requires_real_count_increase(monkeypatch) -> None:
@@ -506,6 +553,43 @@ def test_live_suite_wait_for_structure_result_requires_task_surface(monkeypatch)
                 reply="收到指令，已创建任务 t_build",
                 timeout=5.0,
             )
+
+    asyncio.run(run())
+
+
+def test_live_suite_phase_e_query_requires_pure_query_contract(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    suite = live_e2e.LiveTestSuite(
+        _QuerySuiteRunner(
+            {
+                "response_type": "query",
+                "answer": "当前现金3200，经济稳定，己方单位正在推进，地图左侧仍有未知区域，敌军单位暂未接触，战况总体可控，建议继续侦察并关注矿区。",
+            }
+        )
+    )
+
+    async def run() -> None:
+        reply = await suite.test_phase_e_query()
+        assert "当前现金3200" in reply
+
+    asyncio.run(run())
+
+
+def test_live_suite_phase_e_query_fails_if_task_metadata_leaks_into_reply(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    suite = live_e2e.LiveTestSuite(
+        _QuerySuiteRunner(
+            {
+                "response_type": "query",
+                "task_id": "t_query",
+                "answer": "当前现金3200，经济稳定，己方单位正在推进，地图左侧仍有未知区域，敌军单位暂未接触，战况总体可控，建议继续侦察并关注矿区。",
+            }
+        )
+    )
+
+    async def run() -> None:
+        with pytest.raises(RuntimeError, match="unexpectedly attached task metadata"):
+            await suite.test_phase_e_query()
 
     asyncio.run(run())
 

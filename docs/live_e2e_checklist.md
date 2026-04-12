@@ -71,7 +71,9 @@ This is intentionally stricter than the older check that only looked for `ReconE
 `phase_e`
 
 - Goal: pure battlefield query still returns a substantive answer after the earlier live actions.
-- Pass: `战况如何？` returns a non-trivial battlefield summary rather than a short generic reply.
+- Pass:
+  - `战况如何？` returns a non-trivial battlefield summary rather than a short generic reply.
+  - The reply stays on the query path instead of turning into task creation or task merge metadata.
 
 ## Failure Capture
 
