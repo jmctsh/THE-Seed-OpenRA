@@ -1198,6 +1198,367 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
 
 
 @pytest.mark.startup_smoke
+def test_application_runtime_ws_question_reply_round_trip_delivers_to_task_agent() -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+        background_errors: list[dict[str, Any]] = []
+
+        def _capture_loop_exception(loop, context) -> None:
+            del loop
+            background_errors.append(dict(context))
+
+        loop.set_exception_handler(_capture_loop_exception)
+        try:
+            async def _recv_json(
+                ws: aiohttp.ClientWebSocketResponse,
+                *,
+                predicate,
+                timeout_s: float = 3.0,
+                max_messages: int = 40,
+            ) -> dict[str, Any]:
+                deadline = loop.time() + timeout_s
+                seen = 0
+                while seen < max_messages and loop.time() < deadline:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    assert msg.type == aiohttp.WSMsgType.TEXT
+                    payload = json.loads(msg.data)
+                    if predicate(payload):
+                        return payload
+                    seen += 1
+                raise AssertionError("expected websocket payload not received before timeout")
+
+            async def _drain_ws(
+                ws: aiohttp.ClientWebSocketResponse,
+                *,
+                idle_s: float = 0.5,
+            ) -> None:
+                deadline = loop.time() + idle_s
+                while loop.time() < deadline:
+                    try:
+                        msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    except asyncio.TimeoutError:
+                        break
+                    if msg.type != aiohttp.WSMsgType.TEXT:
+                        continue
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                ws_port = _free_tcp_port()
+                cfg = RuntimeConfig(
+                    ws_host="127.0.0.1",
+                    ws_port=ws_port,
+                    enable_ws=True,
+                    enable_voice=False,
+                    log_session_root=str(Path(tmpdir) / "logs"),
+                    benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                    benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                    log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+                )
+                runtime = ApplicationRuntime(
+                    config=cfg,
+                    task_llm=provider,
+                    adjutant_llm=provider,
+                    api=api,
+                    world_source=source,
+                )
+                try:
+                    await runtime.start()
+
+                    task = runtime.kernel.create_task("是否继续推进？", TaskKind.MANAGED, 60)
+                    agent = runtime.kernel.get_task_agent(task.task_id)
+                    assert agent is not None
+
+                    delivered: list[dict[str, Any]] = []
+                    original_push = agent.push_player_response
+
+                    def _spy_push_player_response(response) -> None:
+                        delivered.append(
+                            {
+                                "message_id": response.message_id,
+                                "task_id": response.task_id,
+                                "answer": response.answer,
+                            }
+                        )
+                        original_push(response)
+
+                    agent.push_player_response = _spy_push_player_response  # type: ignore[method-assign]
+
+                    message_id = "msg_live_reply"
+                    assert runtime.kernel.register_task_message(
+                        TaskMessage(
+                            message_id=message_id,
+                            task_id=task.task_id,
+                            type=TaskMessageType.TASK_QUESTION,
+                            content="继续推进还是等待？",
+                            options=["继续", "等待"],
+                            timeout_s=15.0,
+                            default_option="等待",
+                            priority=60,
+                        )
+                    )
+
+                    async with aiohttp.ClientSession() as session:
+                        async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                            await ws.send_json({"type": "sync_request"})
+
+                            initial_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and any(
+                                        item.get("message_id") == message_id
+                                        for item in list(payload.get("data", {}).get("pending_questions", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            pending_questions = initial_task_list["data"]["pending_questions"]
+                            assert any(item["message_id"] == message_id for item in pending_questions)
+                            await _drain_ws(ws)
+
+                            await ws.send_json(
+                                {
+                                    "type": "question_reply",
+                                    "message_id": message_id,
+                                    "task_id": task.task_id,
+                                    "answer": "继续",
+                                }
+                            )
+
+                            query_response_payload = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "query_response"
+                                    and payload.get("data", {}).get("response_type") == "reply"
+                                    and payload.get("data", {}).get("message_id") == message_id
+                                ),
+                            )
+                            assert query_response_payload["data"]["ok"] is True
+                            assert query_response_payload["data"]["status"] == "delivered"
+                            assert query_response_payload["data"]["task_id"] == task.task_id
+                            assert query_response_payload["data"]["answer"] == "已回复"
+
+                            cleared_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and not any(
+                                        item.get("message_id") == message_id
+                                        for item in list(payload.get("data", {}).get("pending_questions", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            assert cleared_task_list["type"] == "task_list"
+                            assert runtime.kernel.list_pending_questions() == []
+                            assert delivered == [
+                                {
+                                    "message_id": message_id,
+                                    "task_id": task.task_id,
+                                    "answer": "继续",
+                                }
+                            ]
+
+                    runtime.bridge.on_tick(1, 0.0)
+                    await asyncio.sleep(0.1)
+                    assert background_errors == [], background_errors
+                finally:
+                    await runtime.stop()
+
+                assert api.close_calls == 1
+                assert runtime.ws_server is not None
+                assert runtime.ws_server.is_running is False
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+    asyncio.run(run())
+    print("  PASS: application_runtime_ws_question_reply_round_trip_delivers_to_task_agent")
+
+
+@pytest.mark.startup_smoke
+def test_application_runtime_ws_question_reply_task_mismatch_preserves_pending_question() -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+        background_errors: list[dict[str, Any]] = []
+
+        def _capture_loop_exception(loop, context) -> None:
+            del loop
+            background_errors.append(dict(context))
+
+        loop.set_exception_handler(_capture_loop_exception)
+        try:
+            async def _recv_json(
+                ws: aiohttp.ClientWebSocketResponse,
+                *,
+                predicate,
+                timeout_s: float = 3.0,
+                max_messages: int = 40,
+            ) -> dict[str, Any]:
+                deadline = loop.time() + timeout_s
+                seen = 0
+                while seen < max_messages and loop.time() < deadline:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    assert msg.type == aiohttp.WSMsgType.TEXT
+                    payload = json.loads(msg.data)
+                    if predicate(payload):
+                        return payload
+                    seen += 1
+                raise AssertionError("expected websocket payload not received before timeout")
+
+            async def _drain_ws(
+                ws: aiohttp.ClientWebSocketResponse,
+                *,
+                idle_s: float = 0.5,
+            ) -> None:
+                deadline = loop.time() + idle_s
+                while loop.time() < deadline:
+                    try:
+                        msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    except asyncio.TimeoutError:
+                        break
+                    if msg.type != aiohttp.WSMsgType.TEXT:
+                        continue
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                ws_port = _free_tcp_port()
+                cfg = RuntimeConfig(
+                    ws_host="127.0.0.1",
+                    ws_port=ws_port,
+                    enable_ws=True,
+                    enable_voice=False,
+                    log_session_root=str(Path(tmpdir) / "logs"),
+                    benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                    benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                    log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+                )
+                runtime = ApplicationRuntime(
+                    config=cfg,
+                    task_llm=provider,
+                    adjutant_llm=provider,
+                    api=api,
+                    world_source=source,
+                )
+                try:
+                    await runtime.start()
+
+                    task = runtime.kernel.create_task("等待玩家确认", TaskKind.MANAGED, 60)
+                    agent = runtime.kernel.get_task_agent(task.task_id)
+                    assert agent is not None
+
+                    delivered: list[dict[str, Any]] = []
+                    original_push = agent.push_player_response
+
+                    def _spy_push_player_response(response) -> None:
+                        delivered.append(
+                            {
+                                "message_id": response.message_id,
+                                "task_id": response.task_id,
+                                "answer": response.answer,
+                            }
+                        )
+                        original_push(response)
+
+                    agent.push_player_response = _spy_push_player_response  # type: ignore[method-assign]
+
+                    message_id = "msg_live_mismatch"
+                    assert runtime.kernel.register_task_message(
+                        TaskMessage(
+                            message_id=message_id,
+                            task_id=task.task_id,
+                            type=TaskMessageType.TASK_QUESTION,
+                            content="继续推进还是等待？",
+                            options=["继续", "等待"],
+                            timeout_s=15.0,
+                            default_option="等待",
+                            priority=60,
+                        )
+                    )
+
+                    async with aiohttp.ClientSession() as session:
+                        async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                            await ws.send_json({"type": "sync_request"})
+
+                            initial_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and any(
+                                        item.get("message_id") == message_id
+                                        for item in list(payload.get("data", {}).get("pending_questions", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            pending_questions = initial_task_list["data"]["pending_questions"]
+                            assert any(item["message_id"] == message_id for item in pending_questions)
+                            await _drain_ws(ws)
+
+                            await ws.send_json(
+                                {
+                                    "type": "question_reply",
+                                    "message_id": message_id,
+                                    "task_id": "t_wrong",
+                                    "answer": "继续",
+                                }
+                            )
+
+                            query_response_payload = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "query_response"
+                                    and payload.get("data", {}).get("response_type") == "reply"
+                                    and payload.get("data", {}).get("message_id") == message_id
+                                ),
+                            )
+                            assert query_response_payload["data"]["ok"] is False
+                            assert query_response_payload["data"]["status"] == "task_mismatch"
+                            assert query_response_payload["data"]["task_id"] == "t_wrong"
+                            assert query_response_payload["data"]["answer"] == "回复与任务不匹配"
+
+                            retained_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and any(
+                                        item.get("message_id") == message_id
+                                        for item in list(payload.get("data", {}).get("pending_questions", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            assert any(
+                                item["message_id"] == message_id
+                                for item in retained_task_list["data"]["pending_questions"]
+                            )
+                            assert runtime.kernel.list_pending_questions()[0]["message_id"] == message_id
+                            assert delivered == []
+
+                    runtime.bridge.on_tick(1, 0.0)
+                    await asyncio.sleep(0.1)
+                    assert background_errors == [], background_errors
+                finally:
+                    await runtime.stop()
+
+                assert api.close_calls == 1
+                assert runtime.ws_server is not None
+                assert runtime.ws_server.is_running is False
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+    asyncio.run(run())
+    print("  PASS: application_runtime_ws_question_reply_task_mismatch_preserves_pending_question")
+
+
+@pytest.mark.startup_smoke
 def test_application_runtime_ws_session_clear_retargets_requesting_client_only() -> None:
     provider = MockProvider([])
     source = MockWorldSource(make_frames())
