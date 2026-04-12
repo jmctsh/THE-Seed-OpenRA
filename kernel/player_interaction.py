@@ -64,6 +64,7 @@ def register_task_message(
             task_id=message.task_id,
             message_id=message.message_id,
             message_type=message.type.value,
+            content=message.content,
             priority=message.priority,
         )
         question_store.register(message)

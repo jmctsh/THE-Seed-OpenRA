@@ -737,6 +737,15 @@ def list_session_tasks(
                     or payload.get("message")
                     or latest_message_summary
                 )
+            elif event == "task_message_registered" and str(data.get("message_type") or "") in {
+                "task_info",
+                "task_warning",
+            }:
+                latest_message_summary = str(
+                    data.get("summary")
+                    or data.get("content")
+                    or latest_message_summary
+                )
 
         if not task_id:
             continue

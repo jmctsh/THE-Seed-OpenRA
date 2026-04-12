@@ -479,6 +479,71 @@ def test_list_session_tasks_ignores_task_message_registered_without_content() ->
     assert tasks[0]["summary"] == ""
 
 
+def test_list_session_tasks_falls_back_to_registered_task_message_content() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        session_dir = base / "session-c2"
+        tasks_dir = session_dir / "tasks"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / "session.json").write_text(
+            json.dumps(
+                {
+                    "session_name": "session-c2",
+                    "started_at": "2026-04-12T00:00:00+00:00",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (tasks_dir / "t_demo.jsonl").write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "timestamp": 10.0,
+                            "component": "kernel",
+                            "level": "INFO",
+                            "message": "Task created",
+                            "event": "task_created",
+                            "data": {
+                                "task_id": "t_demo",
+                                "task_label": "004",
+                                "raw_text": "发展科技",
+                                "kind": "managed",
+                                "priority": 60,
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(
+                        {
+                            "timestamp": 11.0,
+                            "component": "kernel",
+                            "level": "INFO",
+                            "message": "Task message registered",
+                            "event": "task_message_registered",
+                            "data": {
+                                "task_id": "t_demo",
+                                "message_type": "task_warning",
+                                "message_id": "m_warn",
+                                "content": "世界状态同步异常，暂停动作等待恢复",
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        tasks = logging_system.list_session_tasks(session_dir)
+
+    assert tasks[0]["summary"] == "世界状态同步异常，暂停动作等待恢复"
+
+
 def test_list_session_tasks_keeps_terminal_summary_over_later_task_message() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         base = Path(tmpdir)
