@@ -506,14 +506,18 @@ class Kernel:
             unit_requests=self._unit_requests,
             infer_unit_type_for_request=infer_unit_type_for_request,
             ensure_reservation_for_request=self._ensure_reservation_for_request,
+            reservation_for_request=self._reservation_for_request,
             try_fulfill_from_idle=self._try_fulfill_from_idle,
             update_request_status_from_progress=update_request_status_from_progress,
+            request_can_start=self._request_can_start,
+            handoff_request_assignments=self._handoff_request_assignments,
             bootstrap_production_for_request=self._bootstrap_production_for_request,
             sync_world_runtime=self._sync_world_runtime,
             notify_capability_unfulfilled=self._notify_capability_unfulfilled,
             suspend_agent_for_requests=self._suspend_agent_for_requests,
             unit_request_result=lambda req, status: self._unit_request_result(req, status=status),
             gen_id=_gen_id,
+            now=_now,
         )
 
     def cancel_unit_request(self, request_id: str) -> bool:

@@ -7,6 +7,7 @@ from typing import Any
 
 from logging_system import get_logger
 from models import Task, UnitRequest
+from .unit_request_lifecycle import release_ready_task_requests
 
 slog = get_logger("kernel")
 
@@ -53,14 +54,18 @@ def register_unit_request(
     unit_requests: MutableMapping[str, UnitRequest],
     infer_unit_type_for_request: Callable[[str, str], tuple[str | None, str | None]],
     ensure_reservation_for_request: Callable[[UnitRequest, str], Any],
+    reservation_for_request: Callable[[UnitRequest], Any],
     try_fulfill_from_idle: Callable[[UnitRequest], bool],
     update_request_status_from_progress: Callable[[UnitRequest], None],
+    request_can_start: Callable[[UnitRequest], bool],
+    handoff_request_assignments: Callable[[UnitRequest], list[int]],
     bootstrap_production_for_request: Callable[[UnitRequest], Any],
     sync_world_runtime: Callable[[], None],
     notify_capability_unfulfilled: Callable[[UnitRequest], None],
     suspend_agent_for_requests: Callable[[str], None],
     unit_request_result: Callable[[UnitRequest, str], dict[str, Any]],
     gen_id: Callable[[str], str],
+    now: Callable[[], float],
 ) -> dict[str, Any]:
     """Register a request: idle matching → bootstrap → wait."""
     task = tasks.get(task_id)
@@ -96,6 +101,21 @@ def register_unit_request(
 
     if try_fulfill_from_idle(req):
         update_request_status_from_progress(req)
+        released_actor_ids, _fully_fulfilled, released_transitions = release_ready_task_requests(
+            [req],
+            task_id,
+            reservation_for_request=reservation_for_request,
+            request_can_start=request_can_start,
+            handoff_request_assignments=handoff_request_assignments,
+            now=now,
+        )
+        for transition in released_transitions:
+            slog.info(
+                "Unit request start released",
+                event="unit_request_start_released",
+                **transition,
+            )
+        sync_world_runtime()
         slog.info(
             "Unit request fulfilled from idle",
             event="unit_request_fulfilled",
@@ -108,10 +128,24 @@ def register_unit_request(
             produced_count=len(reservation.produced_actor_ids) if reservation is not None else 0,
         )
         result = unit_request_result(req, "fulfilled")
-        result["actor_ids"] = list(req.assigned_actor_ids)
+        result["actor_ids"] = released_actor_ids or list(req.assigned_actor_ids)
         return result
 
     update_request_status_from_progress(req)
+    released_actor_ids, _fully_fulfilled, released_transitions = release_ready_task_requests(
+        [req],
+        task_id,
+        reservation_for_request=reservation_for_request,
+        request_can_start=request_can_start,
+        handoff_request_assignments=handoff_request_assignments,
+        now=now,
+    )
+    for transition in released_transitions:
+        slog.info(
+            "Unit request start released",
+            event="unit_request_start_released",
+            **transition,
+        )
     bootstrap_outcome = bootstrap_production_for_request(req)
     sync_world_runtime()
 
@@ -134,4 +168,7 @@ def register_unit_request(
         blocking=req.blocking,
         min_start_package=req.min_start_package,
     )
-    return unit_request_result(req, "waiting")
+    result = unit_request_result(req, "waiting")
+    if released_actor_ids:
+        result["actor_ids"] = list(released_actor_ids)
+    return result

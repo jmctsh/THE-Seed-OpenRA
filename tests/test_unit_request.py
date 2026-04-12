@@ -190,6 +190,8 @@ def test_idle_match_fulfilled():
     kernel, _ = make_kernel_with_base()
     task = kernel.create_task("进攻东部", TaskKind.MANAGED, 50)
     result = kernel.register_unit_request(task.task_id, "vehicle", 2, "high", "重坦")
+    req = kernel._unit_requests[result["request_id"]]
+    runtime = kernel.world_model.query("runtime_state")
     assert result["status"] == "fulfilled"
     assert result["remaining_count"] == 0
     assert result["unit_type"] == "3tnk"
@@ -197,9 +199,13 @@ def test_idle_match_fulfilled():
     assert result["reservation_id"].startswith("res_")
     assert result["reservation_status"] == ReservationStatus.ASSIGNED.value
     assert result["bootstrap_job_id"] is None
+    assert result["start_released"] is True
     assert len(result["actor_ids"]) == 2
     # Actor 10 and 11 are idle 重坦; 12 is AttackMove (not idle)
     assert set(result["actor_ids"]) == {10, 11}
+    assert req.start_released is True
+    assert set(kernel.task_active_actor_ids(task.task_id)) == {10, 11}
+    assert runtime["active_tasks"][task.task_id]["active_group_size"] == 2
 
 
 def test_idle_match_partial():
@@ -213,6 +219,44 @@ def test_idle_match_partial():
     assert req.fulfilled == 2
     assert req.status == "partial"
     assert set(req.assigned_actor_ids) == {10, 11}
+
+
+def test_idle_match_partial_releases_start_package_immediately() -> None:
+    """If idle units already satisfy start package, the task should keep going immediately."""
+    logging_system.clear()
+    kernel, world = make_kernel_with_base()
+    task = kernel.create_task("装甲推进", TaskKind.MANAGED, 50)
+    agent = get_agent(kernel, task.task_id)
+
+    result = kernel.register_unit_request(
+        task.task_id,
+        "vehicle",
+        3,
+        "high",
+        "重坦",
+        min_start_package=2,
+    )
+    req = kernel._unit_requests[result["request_id"]]
+    reservation = kernel.list_unit_reservations()[0]
+    runtime = kernel.world_model.query("runtime_state")
+
+    assert result["status"] == "waiting"
+    assert result["start_released"] is True
+    assert set(result["actor_ids"]) == {10, 11}
+    assert req.status == "partial"
+    assert req.start_released is True
+    assert reservation.start_released is True
+    assert agent._suspended is False
+    assert set(kernel.task_active_actor_ids(task.task_id)) == {10, 11}
+    assert runtime["active_tasks"][task.task_id]["active_group_size"] == 2
+    assert world.resource_bindings.get("actor:10") != f"req:{req.request_id}"
+    assert world.resource_bindings.get("actor:11") != f"req:{req.request_id}"
+    release_logs = logging_system.query(component="kernel", event="unit_request_start_released")
+    assert release_logs, "expected register-time start release to be logged"
+    latest = release_logs[-1]
+    assert latest.data["task_id"] == task.task_id
+    assert latest.data["request_id"] == req.request_id
+    assert latest.data["reservation_id"] == reservation.reservation_id
 
 
 def test_idle_match_none_available():

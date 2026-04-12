@@ -125,5 +125,123 @@ def test_wake_waiting_agent_releases_ready_request_and_resumes_agent() -> None:
     assert agent.resumed[0].data["actor_ids"] == [10]
     assert sync_calls == ["sync"]
 
+
+def test_wake_waiting_agent_keeps_task_gate_when_other_blocking_wait_remains() -> None:
+    agent = _Agent()
+    runtime = _Runtime(agent=agent)
+    ready_req = UnitRequest(
+        request_id="req_ready",
+        task_id="t1",
+        task_label="001",
+        task_summary="装甲推进",
+        category="vehicle",
+        count=2,
+        urgency="high",
+        hint="重坦",
+        blocking=True,
+        min_start_package=1,
+        fulfilled=1,
+        status="partial",
+        assigned_actor_ids=[10],
+    )
+    reservation = UnitReservation(
+        reservation_id="res_ready",
+        request_id="req_ready",
+        task_id="t1",
+        task_label="001",
+        task_summary="装甲推进",
+        category="vehicle",
+        unit_type="3tnk",
+        count=2,
+        status=ReservationStatus.PARTIAL,
+        assigned_actor_ids=[10],
+    )
+    handoff_calls = []
+    sync_calls = []
+
+    wake_waiting_agent(
+        "t1",
+        task_has_blocking_wait=lambda task_id: True,
+        task_runtimes={"t1": runtime},
+        unit_requests=[ready_req],
+        reservation_for_request=lambda request: reservation,
+        request_can_start=lambda request: True,
+        handoff_request_assignments=lambda request: handoff_calls.append(request.request_id) or [10],
+        now=lambda: 123.0,
+        sync_world_runtime=lambda: sync_calls.append("sync"),
+    )
+
+    assert ready_req.start_released is False
+    assert reservation.start_released is False
+    assert handoff_calls == []
+    assert sync_calls == []
+    assert agent.resumed == []
+    assert agent.events == []
+
+
+def test_wake_waiting_agent_handoffs_before_resume_and_sync() -> None:
+    agent = _Agent()
+    runtime = _Runtime(agent=agent)
+    req = UnitRequest(
+        request_id="req_1",
+        task_id="t1",
+        task_label="001",
+        task_summary="装甲推进",
+        category="vehicle",
+        count=2,
+        urgency="high",
+        hint="重坦",
+        blocking=True,
+        min_start_package=1,
+        fulfilled=1,
+        status="partial",
+        assigned_actor_ids=[10],
+    )
+    reservation = UnitReservation(
+        reservation_id="res_1",
+        request_id="req_1",
+        task_id="t1",
+        task_label="001",
+        task_summary="装甲推进",
+        category="vehicle",
+        unit_type="3tnk",
+        count=2,
+        status=ReservationStatus.PARTIAL,
+        assigned_actor_ids=[10],
+    )
+    agent._suspended = True
+    order = []
+
+    def handoff_request_assignments(request):
+        assert request.start_released is True
+        assert reservation.start_released is True
+        order.append("handoff")
+        return [10]
+
+    def sync_world_runtime():
+        order.append("sync")
+
+    original_resume = agent.resume_with_event
+
+    def resume_with_event(event):
+        order.append("resume")
+        original_resume(event)
+
+    agent.resume_with_event = resume_with_event  # type: ignore[assignment]
+
+    wake_waiting_agent(
+        "t1",
+        task_has_blocking_wait=lambda task_id: False,
+        task_runtimes={"t1": runtime},
+        unit_requests=[req],
+        reservation_for_request=lambda request: reservation,
+        request_can_start=lambda request: True,
+        handoff_request_assignments=handoff_request_assignments,
+        now=lambda: 123.0,
+        sync_world_runtime=sync_world_runtime,
+    )
+
+    assert order == ["handoff", "resume", "sync"]
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))

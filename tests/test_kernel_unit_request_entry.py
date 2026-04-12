@@ -10,6 +10,7 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from kernel.unit_request_entry import register_unit_request, try_fulfill_from_idle
+from models import ReservationStatus, UnitReservation
 from models import Task, TaskKind, TaskStatus, UnitRequest
 
 
@@ -75,14 +76,18 @@ def test_register_unit_request_waiting_path_syncs_and_suspends() -> None:
         unit_requests=unit_requests,
         infer_unit_type_for_request=lambda category, hint: ("3tnk", "Vehicle"),
         ensure_reservation_for_request=lambda req, unit_type: calls.append(("reserve", req.request_id, unit_type)) or object(),
+        reservation_for_request=lambda req: None,
         try_fulfill_from_idle=lambda req: False,
         update_request_status_from_progress=lambda req: calls.append(("progress", req.request_id)),
+        request_can_start=lambda req: False,
+        handoff_request_assignments=lambda req: [],
         bootstrap_production_for_request=lambda req: SimpleNamespace(notify_capability=True),
         sync_world_runtime=lambda: calls.append(("sync",)),
         notify_capability_unfulfilled=lambda req: calls.append(("notify", req.request_id)),
         suspend_agent_for_requests=lambda task_id: calls.append(("suspend", task_id)),
         unit_request_result=lambda req, status: {"status": status, "request_id": req.request_id},
         gen_id=lambda prefix: f"{prefix}abc123",
+        now=lambda: 123.0,
     )
 
     assert result == {"status": "waiting", "request_id": "req_abc123"}
@@ -118,18 +123,108 @@ def test_register_unit_request_rejects_building_for_non_capability() -> None:
         unit_requests={},
         infer_unit_type_for_request=lambda category, hint: ("barr", "Building"),
         ensure_reservation_for_request=lambda req, unit_type: object(),
+        reservation_for_request=lambda req: None,
         try_fulfill_from_idle=lambda req: False,
         update_request_status_from_progress=lambda req: None,
+        request_can_start=lambda req: False,
+        handoff_request_assignments=lambda req: [],
         bootstrap_production_for_request=lambda req: SimpleNamespace(notify_capability=False),
         sync_world_runtime=lambda: None,
         notify_capability_unfulfilled=lambda req: None,
         suspend_agent_for_requests=lambda task_id: None,
         unit_request_result=lambda req, status: {"status": status},
         gen_id=lambda prefix: f"{prefix}x",
+        now=lambda: 123.0,
     )
 
     assert result["status"] == "error"
     assert "普通任务不能直接请求建筑前置" in result["message"]
+
+
+def test_register_unit_request_releases_start_package_reached_from_idle() -> None:
+    task = Task(
+        task_id="t1",
+        raw_text="装甲推进",
+        kind=TaskKind.MANAGED,
+        priority=60,
+        status=TaskStatus.RUNNING,
+        label="001",
+    )
+    unit_requests = {}
+    calls = []
+    reservation_holder: dict[str, UnitReservation] = {}
+
+    def ensure_reservation(req, unit_type):
+        reservation = UnitReservation(
+            reservation_id="res_1",
+            request_id=req.request_id,
+            task_id=req.task_id,
+            task_label=req.task_label,
+            task_summary=req.task_summary,
+            category=req.category,
+            unit_type=unit_type,
+            count=req.count,
+            status=ReservationStatus.PARTIAL,
+            assigned_actor_ids=[10, 11],
+        )
+        reservation_holder["value"] = reservation
+        return reservation
+
+    def partially_fulfill(req):
+        req.fulfilled = 2
+        req.status = "partial"
+        req.assigned_actor_ids = [10, 11]
+        return False
+
+    result = register_unit_request(
+        task_id="t1",
+        category="vehicle",
+        count=3,
+        urgency="high",
+        hint="重坦",
+        blocking=True,
+        min_start_package=2,
+        tasks={"t1": task},
+        unit_requests=unit_requests,
+        infer_unit_type_for_request=lambda category, hint: ("3tnk", "Vehicle"),
+        ensure_reservation_for_request=ensure_reservation,
+        reservation_for_request=lambda req: reservation_holder["value"],
+        try_fulfill_from_idle=partially_fulfill,
+        update_request_status_from_progress=lambda req: calls.append(("progress", req.request_id)),
+        request_can_start=lambda req: req.fulfilled >= req.min_start_package,
+        handoff_request_assignments=lambda req: calls.append(("handoff", req.request_id)) or [10, 11],
+        bootstrap_production_for_request=lambda req: SimpleNamespace(notify_capability=True),
+        sync_world_runtime=lambda: calls.append(("sync",)),
+        notify_capability_unfulfilled=lambda req: calls.append(("notify", req.request_id)),
+        suspend_agent_for_requests=lambda task_id: calls.append(("suspend", task_id)),
+        unit_request_result=lambda req, status: {
+            "status": status,
+            "request_id": req.request_id,
+            "start_released": req.start_released,
+        },
+        gen_id=lambda prefix: f"{prefix}abc123",
+        now=lambda: 123.0,
+    )
+
+    reservation = reservation_holder["value"]
+    req = unit_requests["req_abc123"]
+
+    assert result == {
+        "status": "waiting",
+        "request_id": "req_abc123",
+        "start_released": True,
+        "actor_ids": [10, 11],
+    }
+    assert req.start_released is True
+    assert reservation.start_released is True
+    assert reservation.updated_at == 123.0
+    assert calls == [
+        ("progress", "req_abc123"),
+        ("handoff", "req_abc123"),
+        ("sync",),
+        ("notify", "req_abc123"),
+        ("suspend", "t1"),
+    ]
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, *sys.argv[1:]]))
