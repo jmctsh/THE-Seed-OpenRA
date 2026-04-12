@@ -539,6 +539,49 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('summary=历史阻塞：猛犸坦克 × 1 缺少前置')
   })
 
+  it('hides the selected-task catalog strip again when switching back to ALL', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('session_catalog', {
+      sessions: [
+        {
+          session_dir: '/tmp/history-session',
+          session_name: 'history-session',
+          is_current: true,
+        },
+      ],
+      selected_session_dir: '/tmp/history-session',
+    })
+    bus.emit('session_task_catalog', {
+      session_dir: '/tmp/history-session',
+      tasks: [
+        {
+          task_id: 't_hist_meta',
+          raw_text: '历史任务',
+          status: 'partial',
+          summary: '历史阻塞：猛犸坦克 × 1 缺少前置',
+          entry_count: 7,
+          timestamp: 80,
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('#task-trace-select').setValue('t_hist_meta')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.selected-task-meta').exists()).toBe(true)
+
+    await wrapper.find('#task-trace-select').setValue('ALL')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.selected-task-meta').exists()).toBe(false)
+  })
+
   it('renders replay_triage when current runtime triage is unavailable', async () => {
     const bus = createBus()
     const send = vi.fn()

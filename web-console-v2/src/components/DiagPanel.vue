@@ -513,15 +513,17 @@ const filteredTraceEntries = computed(() => {
   return items.slice(-200)
 })
 
-const selectedTaskLogPath = computed(() => {
+const selectedTaskCatalogEntry = computed(() => {
   if (selectedTaskId.value === 'ALL') return null
-  const task = activeTaskCatalog.value.find(t => t.task_id === selectedTaskId.value)
-  return task?.log_path || null
+  return activeTaskCatalog.value.find((task) => task.task_id === selectedTaskId.value) || null
+})
+
+const selectedTaskLogPath = computed(() => {
+  return selectedTaskCatalogEntry.value?.log_path || null
 })
 
 const selectedTaskCatalogSummary = computed(() => {
-  if (selectedTaskId.value === 'ALL') return null
-  const task = activeTaskCatalog.value.find(t => t.task_id === selectedTaskId.value)
+  const task = selectedTaskCatalogEntry.value
   if (!task) return null
   const status = compactSingleLine(task.status || '', 24)
   const summary = compactSingleLine(task.summary || '', 72)
@@ -535,9 +537,7 @@ const selectedTaskCatalogSummary = computed(() => {
 })
 
 const selectedTaskTriage = computed(() => {
-  if (selectedTaskId.value === 'ALL') return null
-  const task = activeTaskCatalog.value.find(t => t.task_id === selectedTaskId.value)
-  return task?.triage || null
+  return selectedTaskCatalogEntry.value?.triage || null
 })
 
 const selectedTaskReplayBundle = computed(() => {
