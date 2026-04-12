@@ -289,6 +289,24 @@ def _make_missing_deploy_frames() -> list[Frame]:
     ]
 
 
+def _make_recon_frames() -> list[Frame]:
+    return [
+        Frame(
+            self_actors=[
+                Actor(actor_id=11, type="步兵", faction="自己", position=Location(20, 20), hppercent=100, activity="Idle"),
+                Actor(actor_id=1, type="矿车", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+                Actor(actor_id=3, type="矿场", faction="自己", position=Location(15, 15), hppercent=100, activity="Idle"),
+            ],
+            enemy_actors=[
+                Actor(actor_id=100, type="矿场", faction="敌人", position=Location(300, 300), hppercent=100, activity="Idle"),
+            ],
+            economy=PlayerBaseInfo(Cash=2500, Resources=300, Power=80, PowerDrained=40, PowerProvided=100),
+            map_info=make_map(0.2, 0.1),
+            queues={},
+        )
+    ]
+
+
 def _assert_application_runtime_ws_command_submit_merges_to_capability(
     command_text: str,
     *,
@@ -472,7 +490,7 @@ def _assert_application_runtime_ws_command_submit_merges_to_capability(
 def _assert_application_runtime_ws_command_submit_routes_to_recon(command_text: str) -> None:
     task_provider = MockProvider([])
     adjutant_provider = MockProvider([])
-    source = MockWorldSource(make_frames())
+    source = MockWorldSource(_make_recon_frames())
     api = _CloseTrackingAPI()
 
     async def run() -> None:
