@@ -38,11 +38,14 @@ Running `python3 tests/test_live_e2e.py` executes the full chain, but phase-by-p
   - `建造电厂` increases `powr`.
   - `建造兵营` increases `barr/tent`.
   - `建造矿场` increases `proc`.
+  - The task that drove the observed change must not immediately fall into `failed` / `aborted` / `partial`; ordinary one-shot tasks should settle, while a merged persistent Capability task may remain running.
 
 `phase_c`
 
 - Goal: the production path can create infantry through the real runtime.
-- Pass: `生产3个步兵` increases `e1` count by at least 3.
+- Pass:
+  - `生产3个步兵` increases `e1` count by at least 3.
+  - The post-change task state stays healthy by the same rule as `phase_b`: no immediate `failed` / `aborted` / `partial`, and non-capability tasks should settle instead of hanging after the world-state delta appears.
 
 `phase_d`
 

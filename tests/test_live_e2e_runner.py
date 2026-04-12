@@ -417,11 +417,16 @@ class _StructureSuiteRunner:
         *,
         counts: list[int],
         task: dict[str, Any] | None = None,
+        task_snapshots: list[dict[str, Any]] | None = None,
         has_surface: bool = True,
     ) -> None:
         self._counts = list(counts)
         self._count_index = 0
         self._task = dict(task) if isinstance(task, dict) else task
+        self._task_snapshots = [
+            dict(item) for item in list(task_snapshots or []) if isinstance(item, dict)
+        ]
+        self._task_snapshot_index = 0
         self._has_surface = has_surface
 
     def extract_task_id(self, reply: str) -> str | None:
@@ -445,6 +450,12 @@ class _StructureSuiteRunner:
     def get_task(self, task_id: str) -> dict[str, Any] | None:
         if task_id != "t_build" or self._task is None:
             return None
+        if self._task_snapshots:
+            if self._task_snapshot_index < len(self._task_snapshots):
+                value = dict(self._task_snapshots[self._task_snapshot_index])
+                self._task_snapshot_index += 1
+                return value
+            return dict(self._task_snapshots[-1])
         return dict(self._task)
 
     def recent_debug_context(self) -> str:
@@ -549,6 +560,11 @@ def test_live_suite_wait_for_actor_count_increase_result_requires_real_count_inc
         _StructureSuiteRunner(
             counts=[1, 1, 2],
             task={"task_id": "t_build", "status": "running"},
+            task_snapshots=[
+                {"task_id": "t_build", "status": "running"},
+                {"task_id": "t_build", "status": "running"},
+                {"task_id": "t_build", "status": "succeeded"},
+            ],
         )
     )
 
@@ -572,7 +588,9 @@ def test_live_suite_wait_for_actor_count_increase_result_requires_real_count_inc
             min_delta=1,
             label="structure count",
         )
-        assert "(before=1, after=2)" in result
+        assert "before=1" in result
+        assert "after=2" in result
+        assert "settle=task_succeeded" in result
 
     asyncio.run(run())
 
@@ -607,6 +625,90 @@ def test_live_suite_wait_for_actor_count_increase_result_fails_on_terminal_task_
                 min_delta=1,
                 label="structure count",
             )
+
+    asyncio.run(run())
+
+
+def test_live_suite_wait_for_actor_count_increase_result_fails_when_non_capability_task_never_settles_after_count_increase(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    suite = live_e2e.LiveTestSuite(
+        _StructureSuiteRunner(
+            counts=[1, 1, 2],
+            task={"task_id": "t_build", "status": "running"},
+            task_snapshots=[
+                {"task_id": "t_build", "status": "running"},
+                {"task_id": "t_build", "status": "running"},
+                {"task_id": "t_build", "status": "running"},
+                {"task_id": "t_build", "status": "running"},
+            ],
+        )
+    )
+
+    fake_now = {"value": 220.0}
+
+    def _fake_time() -> float:
+        return fake_now["value"]
+
+    async def _fake_sleep(delay: float) -> None:
+        fake_now["value"] += delay
+
+    monkeypatch.setattr(live_e2e.time, "time", _fake_time)
+    monkeypatch.setattr(live_e2e.asyncio, "sleep", _fake_sleep)
+
+    async def run() -> None:
+        with pytest.raises(RuntimeError, match="did not settle after structure count changed"):
+            await suite._wait_for_actor_count_increase_result(
+                expected="powr",
+                before=1,
+                reply="收到指令，已创建任务 t_build",
+                timeout=5.0,
+                min_delta=1,
+                label="structure count",
+            )
+
+    asyncio.run(run())
+
+
+def test_live_suite_wait_for_actor_count_increase_result_allows_capability_task_to_keep_running_after_count_increase(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    suite = live_e2e.LiveTestSuite(
+        _StructureSuiteRunner(
+            counts=[1, 1, 2],
+            task={"task_id": "t_build", "status": "running", "is_capability": True},
+            task_snapshots=[
+                {"task_id": "t_build", "status": "running", "is_capability": True},
+                {"task_id": "t_build", "status": "running", "is_capability": True},
+                {"task_id": "t_build", "status": "running", "is_capability": True},
+                {"task_id": "t_build", "status": "running", "is_capability": True},
+            ],
+        )
+    )
+
+    fake_now = {"value": 240.0}
+
+    def _fake_time() -> float:
+        return fake_now["value"]
+
+    async def _fake_sleep(delay: float) -> None:
+        fake_now["value"] += delay
+
+    monkeypatch.setattr(live_e2e.time, "time", _fake_time)
+    monkeypatch.setattr(live_e2e.asyncio, "sleep", _fake_sleep)
+
+    async def run() -> None:
+        result = await suite._wait_for_actor_count_increase_result(
+            expected="powr",
+            before=1,
+            reply="收到指令，已创建任务 t_build",
+            timeout=5.0,
+            min_delta=1,
+            label="structure count",
+        )
+        assert "settle=task_running_capability" in result
 
     asyncio.run(run())
 

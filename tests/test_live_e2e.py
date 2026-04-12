@@ -460,6 +460,44 @@ class LiveTestSuite:
     def __init__(self, runner: LiveTestRunner) -> None:
         self.runner = runner
 
+    async def _wait_for_post_change_task_settle(
+        self,
+        *,
+        task_id: str,
+        reply: str,
+        timeout: float,
+        label: str,
+    ) -> str:
+        deadline = time.time() + min(timeout, 10.0)
+        last_status = ""
+        last_is_capability = False
+        while time.time() < deadline:
+            task = self.runner.get_task(task_id)
+            if task is None:
+                return "task_cleared"
+            status = str(task.get("status") or "")
+            is_capability = bool(task.get("is_capability"))
+            last_status = status
+            last_is_capability = is_capability
+            if status in {"failed", "aborted", "partial"}:
+                raise RuntimeError(
+                    f"task {task_id} reached terminal status {status} after {label} changed; "
+                    f"reply={reply}; {self.runner.recent_debug_context()}"
+                )
+            if status == "succeeded":
+                return "task_succeeded"
+            if is_capability and status in {"pending", "running"}:
+                await asyncio.sleep(1.0)
+                continue
+            await asyncio.sleep(1.0)
+
+        if last_is_capability and last_status in {"pending", "running"}:
+            return f"task_{last_status}_capability"
+        raise RuntimeError(
+            f"task {task_id} did not settle after {label} changed; "
+            f"last_status={last_status or 'unknown'}; reply={reply}; {self.runner.recent_debug_context()}"
+        )
+
     async def _require_task_surface(self, reply: str, *, timeout: float = 10.0) -> Optional[str]:
         task_id = self.runner.extract_task_id(reply)
         if task_id is None:
@@ -493,7 +531,15 @@ class LiveTestSuite:
         while time.time() < deadline:
             after = self.runner.count_matching_actors(expected, faction="己方")
             if after >= target_count:
-                return f"{reply} (before={before}, after={after})"
+                settle = "task_untracked"
+                if task_id is not None:
+                    settle = await self._wait_for_post_change_task_settle(
+                        task_id=task_id,
+                        reply=reply,
+                        timeout=timeout,
+                        label=label,
+                    )
+                return f"{reply} (before={before}, after={after}, settle={settle})"
             if task_id is not None:
                 task = self.runner.get_task(task_id)
                 status = str((task or {}).get("status") or "")
