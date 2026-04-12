@@ -977,6 +977,44 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
                             assert error_payload["type"] == "error"
                             assert error_payload["message"] == "Unknown message type: unknown_live_message"
 
+                            class _LiveCommandAdjutant:
+                                def __init__(self, kernel) -> None:
+                                    self.kernel = kernel
+
+                                async def handle_player_input(self, text: str) -> dict[str, Any]:
+                                    task = self.kernel.create_task(text, TaskKind.MANAGED, 55)
+                                    return {
+                                        "response_text": f"收到指令，已创建任务 {task.task_id}",
+                                        "type": "command",
+                                        "ok": True,
+                                        "task_id": task.task_id,
+                                    }
+
+                            runtime.bridge.adjutant = _LiveCommandAdjutant(runtime.kernel)
+                            await ws.send_json({"type": "command_submit", "text": "推进前线"})
+
+                            query_response_payload = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "query_response"
+                                    and payload.get("data", {}).get("response_type") == "command"
+                                    and payload.get("data", {}).get("task_id")
+                                ),
+                            )
+                            command_task_id = query_response_payload["data"]["task_id"]
+                            assert query_response_payload["data"]["ok"] is True
+                            assert query_response_payload["data"]["answer"] == f"收到指令，已创建任务 {command_task_id}"
+
+                            command_task_update = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_update"
+                                    and payload.get("data", {}).get("task_id") == command_task_id
+                                ),
+                            )
+                            assert command_task_update["data"]["raw_text"] == "推进前线"
+                            assert command_task_update["data"]["kind"] == "managed"
+
                     runtime.bridge.on_tick(1, 0.0)
                     await asyncio.sleep(0.1)
                     assert background_errors == [], background_errors
