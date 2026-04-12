@@ -99,4 +99,40 @@ describe('OpsPanel', () => {
 
     expect(wrapper.text()).toContain('能力在途: 步兵 × 1 · 待分发')
   })
+
+  it('dispatches diagnostics focus for the capability task from ops status actions', async () => {
+    const bus = createBus()
+    const wrapper = mount(OpsPanel, {
+      props: {
+        connected: true,
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('world_snapshot', {
+      capability_truth_blocker: 'queue_blocked',
+      unit_pipeline_preview: '步兵 × 1 · 待分发',
+      runtime_state: {
+        capability_status: {
+          task_id: 't_cap',
+        },
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    const events = []
+    const handler = (event) => events.push(event.detail)
+    window.addEventListener('theseed:focus-diagnostics-task', handler)
+    try {
+      const buttons = wrapper.findAll('.diag-link-btn')
+      expect(buttons).toHaveLength(2)
+      await buttons[0].trigger('click')
+      await buttons[1].trigger('click')
+    } finally {
+      window.removeEventListener('theseed:focus-diagnostics-task', handler)
+    }
+
+    expect(events).toEqual([{ taskId: 't_cap' }, { taskId: 't_cap' }])
+  })
 })

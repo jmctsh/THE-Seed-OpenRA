@@ -27,9 +27,21 @@
     <div v-if="capabilityTruthBlocker" class="game-status-detail truth-detail">
       <span>能力真值受限: {{ capabilityTruthText }}</span>
       <span v-if="playerFaction">阵营: {{ playerFaction }}</span>
+      <button
+        v-if="capabilityTaskId"
+        type="button"
+        class="diag-link-btn"
+        @click="focusCapabilityDiagnostics"
+      >查看任务诊断</button>
     </div>
     <div v-if="unitPipelinePreview" class="game-status-detail pipeline-detail">
       <span>能力在途: {{ unitPipelinePreview }}</span>
+      <button
+        v-if="capabilityTaskId"
+        type="button"
+        class="diag-link-btn"
+        @click="focusCapabilityDiagnostics"
+      >定位到能力任务</button>
     </div>
 
     <h3>Mode</h3>
@@ -68,6 +80,7 @@ const capabilityTruthBlocker = ref('')
 const playerFaction = ref('')
 const capabilityTruthText = ref('')
 const unitPipelinePreview = ref('')
+const capabilityTaskId = ref('')
 
 function formatCapabilityTruthText(blocker, faction) {
   if (blocker === 'faction_roster_unsupported') {
@@ -85,9 +98,20 @@ function restartGame() {
   if (props.send) props.send('game_restart', {})
 }
 
+function focusCapabilityDiagnostics() {
+  if (!capabilityTaskId.value) return
+  window.dispatchEvent(
+    new CustomEvent('theseed:focus-diagnostics-task', {
+      detail: { taskId: capabilityTaskId.value },
+    }),
+  )
+}
+
 if (props.on) {
   props.on('world_snapshot', (msg) => {
     const data = msg.data || {}
+    const runtimeState = data.runtime_state || {}
+    const capabilityStatus = runtimeState.capability_status || {}
     gameStale.value = !!data.stale
     staleFailures.value = Number(data.consecutive_refresh_failures || 0)
     failureThreshold.value = Number(data.failure_threshold || 0)
@@ -96,6 +120,7 @@ if (props.on) {
     playerFaction.value = String(data.player_faction || '')
     capabilityTruthText.value = formatCapabilityTruthText(capabilityTruthBlocker.value, playerFaction.value)
     unitPipelinePreview.value = String(data.unit_pipeline_preview || '')
+    capabilityTaskId.value = String(capabilityStatus.task_id || '')
     statusText.value = gameStale.value
       ? `⚠ 数据过期${staleFailures.value ? ` (${staleFailures.value}${failureThreshold.value ? `/${failureThreshold.value}` : ''})` : ''}`
       : '● 数据正常'
@@ -129,6 +154,19 @@ if (props.on) {
 }
 .truth-detail {
   color: #8a4f00;
+}
+.diag-link-btn {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #1565c0;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.diag-link-btn:hover {
+  color: #0d47a1;
 }
 .healthy { color: #4caf50; }
 .stale { color: #ff9800; }
