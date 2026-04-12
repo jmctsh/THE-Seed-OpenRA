@@ -3161,6 +3161,171 @@ def test_main_entry_direct_start_smoke_covers_enable_voice_and_task_message_publ
 
 
 @pytest.mark.startup_smoke
+def test_application_runtime_ws_diagnostics_sync_request_refreshes_baseline_without_replaying_generic_history() -> None:
+    source = MockWorldSource(make_frames())
+    task_provider = MockProvider([])
+    adjutant_provider = MockProvider([])
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        logging_system.clear()
+        benchmark.clear()
+        loop = asyncio.get_running_loop()
+        buffered_payloads: list[dict[str, Any]] = []
+
+        async def _recv_json(
+            ws: aiohttp.ClientWebSocketResponse,
+            *,
+            predicate,
+            timeout_s: float = 3.0,
+            max_messages: int = 80,
+        ) -> dict[str, Any]:
+            for index, payload in enumerate(list(buffered_payloads)):
+                if predicate(payload):
+                    return buffered_payloads.pop(index)
+            deadline = loop.time() + timeout_s
+            seen = 0
+            while seen < max_messages and loop.time() < deadline:
+                msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                assert msg.type == aiohttp.WSMsgType.TEXT
+                payload = json.loads(msg.data)
+                if predicate(payload):
+                    return payload
+                buffered_payloads.append(payload)
+                seen += 1
+            raise AssertionError("expected websocket payload not received before timeout")
+
+        async def _drain_ws(
+            ws: aiohttp.ClientWebSocketResponse,
+            *,
+            idle_s: float = 0.5,
+        ) -> None:
+            deadline = loop.time() + idle_s
+            while loop.time() < deadline:
+                try:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                except asyncio.TimeoutError:
+                    break
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    continue
+                buffered_payloads.append(json.loads(msg.data))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws_port = _free_tcp_port()
+            cfg = RuntimeConfig(
+                ws_host="127.0.0.1",
+                ws_port=ws_port,
+                enable_ws=True,
+                enable_voice=False,
+                log_session_root=str(Path(tmpdir) / "logs"),
+                benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+            )
+            runtime = ApplicationRuntime(
+                config=cfg,
+                task_llm=task_provider,
+                adjutant_llm=adjutant_provider,
+                api=api,
+                world_source=source,
+            )
+            try:
+                await runtime.start()
+                task = runtime.kernel.create_task("探索地图", TaskKind.MANAGED, 50)
+                task.label = "001"
+                runtime.kernel.register_task_message(
+                    TaskMessage(
+                        message_id="msg_info",
+                        task_id=task.task_id,
+                        type=TaskMessageType.TASK_INFO,
+                        content="历史任务提示",
+                    )
+                )
+                runtime.kernel.push_player_notification(
+                    "command",
+                    "历史内核通知",
+                    data={"task_id": task.task_id},
+                )
+                await runtime.bridge._publisher.emit_adjutant_response(
+                    "历史副官回复",
+                    response_type="command",
+                    extra={"task_id": task.task_id},
+                )
+                await runtime.bridge._publisher.emit_notification(
+                    "info",
+                    "历史发布通知",
+                    data={"task_id": task.task_id},
+                )
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                        await ws.send_json({"type": "sync_request"})
+
+                        initial_messages = [
+                            await _recv_json(ws, predicate=lambda payload, t=msg_type: payload.get("type") == t)
+                            for msg_type in (
+                                "world_snapshot",
+                                "task_list",
+                                "session_catalog",
+                                "session_task_catalog",
+                                "task_message",
+                                "player_notification",
+                                "query_response",
+                            )
+                        ]
+                        initial_types = {payload.get("type") for payload in initial_messages}
+                        assert {"task_message", "player_notification", "query_response"} <= initial_types
+
+                        await _drain_ws(ws)
+                        buffered_payloads.clear()
+
+                        await ws.send_json({"type": "diagnostics_sync_request"})
+
+                        diag_messages = [
+                            await _recv_json(ws, predicate=lambda payload, t=msg_type: payload.get("type") == t)
+                            for msg_type in (
+                                "world_snapshot",
+                                "task_list",
+                                "session_catalog",
+                                "session_task_catalog",
+                                "session_history",
+                            )
+                        ]
+
+                        await _drain_ws(ws)
+                        diag_payloads = diag_messages + list(buffered_payloads)
+                        diag_types = [str(payload.get("type") or "") for payload in diag_payloads]
+                        assert "query_response" not in diag_types
+                        assert "player_notification" not in diag_types
+                        assert "task_message" not in diag_types
+                        history_messages = {"历史副官回复", "历史内核通知", "历史发布通知", "历史任务提示"}
+                        for payload in diag_payloads:
+                            if payload.get("type") != "log_entry":
+                                if payload.get("type") == "benchmark":
+                                    benchmark_payload = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                                    assert benchmark_payload.get("replace") is not True
+                                continue
+                            record = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                            log_message = str(record.get("message") or "")
+                            assert log_message not in history_messages
+
+                        history_payload = next(
+                            payload["data"]
+                            for payload in diag_messages
+                            if payload.get("type") == "session_history"
+                        )
+                        assert isinstance(history_payload, dict)
+                        assert "log_entries" in history_payload
+                        assert "benchmark_records" in history_payload
+            finally:
+                await runtime.stop()
+
+    asyncio.run(run())
+    assert api.close_calls == 1
+    print("  PASS: application_runtime_ws_diagnostics_sync_request_refreshes_baseline_without_replaying_generic_history")
+
+
+@pytest.mark.startup_smoke
 def test_main_entry_subprocess_short_start_does_not_crash_on_enable_voice() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     ws_port = _free_tcp_port()
