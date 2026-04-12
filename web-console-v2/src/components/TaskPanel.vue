@@ -29,7 +29,7 @@
       <div class="task-text">{{ task.raw_text }}</div>
       <div v-if="isTaskExpanded(task)" class="task-details">
         <div class="task-meta">
-          优先级: {{ task.priority }} · {{ formatTimeAgo(task.timestamp) }}
+          优先级: {{ task.priority }} · {{ formatTaskAge(task.timestamp) }}
         </div>
         <div v-if="getTaskStatusLine(task)" class="task-hint">
           {{ getTaskStatusLine(task) }}
@@ -86,7 +86,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { formatTimeAgo } from '../composables/useTimeAgo.js'
+import { useTimeAgo } from '../composables/useTimeAgo.js'
 import {
   clearTaskUiState,
   formatTaskLabel,
@@ -105,6 +105,7 @@ const pendingQuestions = ref([])
 const hiddenTaskIds = ref(loadHiddenTaskIds())
 const expandedTaskState = ref({})
 const completedJobsExpandedState = ref({})
+const { tick, formatTimeAgo } = useTimeAgo()
 let latestTaskList = []
 let clearUiHandler = null
 
@@ -137,6 +138,11 @@ function normalizeTasks(items) {
 
 function displayTaskLabel(taskId) {
   return formatTaskLabel(taskId)
+}
+
+function formatTaskAge(timestamp) {
+  void tick.value
+  return formatTimeAgo(timestamp)
 }
 
 function isTaskExpanded(task) {
@@ -248,6 +254,18 @@ function getTaskTriageMeta(task) {
   const reservationCount = Array.isArray(triage.reservation_ids) ? triage.reservation_ids.length : 0
   if (reservationCount) items.push(`reservations=${reservationCount}`)
   if (triage.reservation_preview) items.push(`reservation=${triage.reservation_preview}`)
+  if (triage.reservation_status) items.push(`res_status=${triage.reservation_status}`)
+  if (Number.isFinite(Number(triage.remaining_count)) && Number(triage.remaining_count) > 0) {
+    items.push(`remaining=${Number(triage.remaining_count)}`)
+  }
+  if (Number.isFinite(Number(triage.assigned_count)) && Number(triage.assigned_count) > 0) {
+    items.push(`assigned=${Number(triage.assigned_count)}`)
+  }
+  if (Number.isFinite(Number(triage.produced_count)) && Number(triage.produced_count) > 0) {
+    items.push(`produced=${Number(triage.produced_count)}`)
+  }
+  if (triage.start_released) items.push('start_released=yes')
+  if (triage.bootstrap_job_id) items.push(`bootstrap=${triage.bootstrap_job_id}`)
   if (triage.world_stale) items.push('world=stale')
   if (triage.world_sync_failures) {
     const threshold = Number(triage.world_sync_failure_threshold || 0)

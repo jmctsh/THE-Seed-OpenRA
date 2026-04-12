@@ -138,6 +138,12 @@ describe('TaskPanel', () => {
             blocking_reason: 'missing_prerequisite',
             reservation_ids: ['res_1'],
             reservation_preview: '重坦 × 2 · 缺少前置',
+            reservation_status: 'pending',
+            remaining_count: 2,
+            assigned_count: 1,
+            produced_count: 1,
+            start_released: true,
+            bootstrap_job_id: 'j_boot',
             world_stale: true,
             world_sync_failures: 3,
             world_sync_failure_threshold: 2,
@@ -155,9 +161,55 @@ describe('TaskPanel', () => {
     expect(wrapper.text()).toContain('blocker=missing_prerequisite')
     expect(wrapper.text()).toContain('reservations=1')
     expect(wrapper.text()).toContain('reservation=重坦 × 2 · 缺少前置')
+    expect(wrapper.text()).toContain('res_status=pending')
+    expect(wrapper.text()).toContain('remaining=2')
+    expect(wrapper.text()).toContain('assigned=1')
+    expect(wrapper.text()).toContain('produced=1')
+    expect(wrapper.text()).toContain('start_released=yes')
+    expect(wrapper.text()).toContain('bootstrap=j_boot')
     expect(wrapper.text()).toContain('world=stale')
     expect(wrapper.text()).toContain('sync_fail=3/2')
     expect(wrapper.text()).toContain('sync=actors:COMMAND_EXECUTION_ERROR')
+  })
+
+  it('updates task age labels reactively over time', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-13T00:00:00Z'))
+    const bus = createBus()
+    const wrapper = mount(TaskPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    try {
+      bus.emit('task_list', {
+        tasks: [
+          {
+            task_id: 't_age',
+            raw_text: '观察时间标签',
+            status: 'running',
+            timestamp: Math.floor(Date.now() / 1000) - 10,
+            priority: 5,
+            jobs: [],
+            job_count: 0,
+          },
+        ],
+        pending_questions: [],
+      })
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.text()).toContain('10s ago')
+
+      await vi.advanceTimersByTimeAsync(2000)
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.text()).toContain('12s ago')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
   })
 
   it('keeps completed experts collapsed by default until expanded', async () => {
