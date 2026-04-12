@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TaskPanel from '../TaskPanel.vue'
 
@@ -277,5 +277,36 @@ describe('TaskPanel', () => {
     }
 
     expect(events).toEqual([{ taskId: 't_focus' }])
+  })
+
+  it('sends command_cancel for a running non-capability task', async () => {
+    const bus = createBus()
+    const send = vi.fn()
+    const wrapper = mount(TaskPanel, {
+      props: {
+        send,
+        on: bus.on,
+      },
+    })
+
+    bus.emit('task_list', {
+      tasks: [
+        {
+          task_id: 't_cancel',
+          raw_text: '取消中的任务',
+          status: 'running',
+          timestamp: 100,
+          priority: 20,
+          jobs: [],
+          job_count: 0,
+        },
+      ],
+      pending_questions: [],
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('.cancel-btn').trigger('click')
+
+    expect(send).toHaveBeenCalledWith('command_cancel', { task_id: 't_cancel' })
   })
 })
