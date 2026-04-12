@@ -52,7 +52,7 @@
       <div
         v-if="selectedSessionWorldHealth"
         class="triage-meta session-health"
-        :title="selectedSessionWorldHealth.last_error || ''"
+        :title="selectedSessionWorldHealth.last_error_detail || selectedSessionWorldHealth.last_error || ''"
       >
         <span>{{ formatSessionHealthStatus(selectedSessionWorldHealth) }}</span>
         <span v-if="selectedSessionWorldHealth.max_consecutive_failures">
@@ -72,6 +72,9 @@
         </span>
         <span v-if="selectedSessionWorldHealth.last_error">
           last={{ formatSessionHealthError(selectedSessionWorldHealth.last_error) }}
+        </span>
+        <span v-if="selectedSessionWorldHealth.last_error_detail">
+          detail={{ formatSessionHealthError(selectedSessionWorldHealth.last_error_detail) }}
         </span>
       </div>
       <label class="trace-label" for="task-trace-select">Task Trace</label>
@@ -715,6 +718,7 @@ function normalizeSessionWorldHealth(raw) {
     max_totalMs: Number(raw.max_total_ms || 0),
     last_failure_layer: raw.last_failure_layer || '',
     last_error: raw.last_error || '',
+    last_error_detail: raw.last_error_detail || '',
   }
   if (
     !normalized.stale_seen
@@ -726,6 +730,7 @@ function normalizeSessionWorldHealth(raw) {
     && !normalized.max_totalMs
     && !normalized.last_failure_layer
     && !normalized.last_error
+    && !normalized.last_error_detail
   ) {
     return null
   }

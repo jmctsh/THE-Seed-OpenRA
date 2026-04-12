@@ -924,6 +924,7 @@ describe('DiagPanel', () => {
             max_total_ms: 154.2,
             last_failure_layer: 'actors',
             last_error: 'actors:COMMAND_EXECUTION_ERROR',
+            last_error_detail: 'Attempted to get trait from destroyed object',
           },
         },
       ],
@@ -937,6 +938,7 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('max_refresh=154.2ms')
     expect(wrapper.text()).toContain('layer=actors')
     expect(wrapper.text()).toContain('last=actors:COMMAND_EXECUTION_ERROR')
+    expect(wrapper.text()).toContain('detail=Attempted to get trait from destroyed object')
   })
 
   it('renders world-sync stale details from world_snapshot', async () => {

@@ -1016,6 +1016,7 @@ def test_build_session_catalog_preserves_persisted_world_health_counters_under_l
             "max_consecutive_failures": 6,
             "failure_threshold": 3,
             "last_error": "actors:OLD_ERROR",
+            "last_error_detail": "Attempted to get trait from destroyed object",
         }
         session_meta_path.write_text(json.dumps(session_meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         try:
@@ -1042,6 +1043,7 @@ def test_build_session_catalog_preserves_persisted_world_health_counters_under_l
     assert world_health["max_consecutive_failures"] == 6
     assert world_health["failure_threshold"] == 3
     assert world_health["last_error"] == "actors:COMMAND_EXECUTION_ERROR"
+    assert world_health["last_error_detail"] == "Attempted to get trait from destroyed object"
 
 
 def test_sync_request_preserves_persisted_session_health_when_refresh_health_fails():
@@ -1136,6 +1138,7 @@ def test_sync_request_preserves_persisted_session_health_when_refresh_health_fai
             "max_consecutive_failures": 6,
             "failure_threshold": 3,
             "last_error": "actors:OLD_ERROR",
+            "last_error_detail": "Attempted to get trait from destroyed object",
         }
         session_meta_path.write_text(json.dumps(session_meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         bridge.log_session_root = tmpdir
@@ -1156,6 +1159,7 @@ def test_sync_request_preserves_persisted_session_health_when_refresh_health_fai
     assert world_health["max_consecutive_failures"] == 6
     assert world_health["failure_threshold"] == 3
     assert world_health["last_error"] == "actors:OLD_ERROR"
+    assert world_health["last_error_detail"] == "Attempted to get trait from destroyed object"
 
 
 def test_sync_request_surfaces_unit_pipeline_preview_in_world_snapshot():
