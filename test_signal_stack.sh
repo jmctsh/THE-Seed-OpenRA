@@ -37,6 +37,18 @@ echo "==> Frontend transport contract"
 )
 
 echo
+echo "==> Frontend control wiring"
+(
+  cd web-console-v2
+  npm test -- --run src/components/__tests__/ChatView.spec.js -t \
+    "sends question_reply from task-question options and disables them after answering|clears chat history on theseed:clear-ui and unregisters websocket handlers on unmount"
+  npm test -- --run src/__tests__/App.spec.js -t \
+    "requests session_clear first and only clears UI after session_cleared arrives"
+  npm test -- --run src/components/__tests__/TaskPanel.spec.js -t \
+    "sends command_cancel for a running non-capability task"
+)
+
+echo
 echo "High-signal runtime/operator gate passed."
 echo "This is a fast regression screen for the most important current truths:"
 echo "  - real runtime entry + WS publish path"
@@ -46,6 +58,7 @@ echo "  - replay payload session-context truth"
 echo "  - diagnostics session discovery / replay visibility"
 echo "  - live unit-pipeline blocking-task visibility and focus jump"
 echo "  - frontend websocket transport contract"
+echo "  - frontend control wiring for question_reply / command_cancel / session_clear"
 echo
 echo "It is intentionally narrow."
 echo "Run the broader layered backend gate separately via:"
