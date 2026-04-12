@@ -44,6 +44,7 @@ class DashboardPublisher:
         self.recent_responses: list[dict[str, Any]] = []
         self.publish_lock = asyncio.Lock()
         self.publish_task: Optional[asyncio.Task[Any]] = None
+        self._runtime_fault_state: dict[str, Any] = {}
 
     def attach_ws_server(self, ws_server: Optional[WSServer]) -> None:
         self.ws_server = ws_server
@@ -67,6 +68,7 @@ class DashboardPublisher:
         except asyncio.CancelledError:
             pass
         except Exception as exc:
+            self._record_runtime_fault(source="dashboard_publish", stage="task", error=repr(exc))
             slog.error(
                 "Dashboard publish task failed",
                 event="dashboard_publish_task_failed",
@@ -86,34 +88,53 @@ class DashboardPublisher:
         self.log_offset = 0
         self.benchmark_offset = 0
         self.recent_responses.clear()
+        self._runtime_fault_state = {}
 
     async def publish_all(self) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
             return
         async with self.publish_lock:
-            await self._run_publish_stage("dashboard", self.broadcast_current_dashboard)
-            await self._run_publish_stage("task_updates", self.publish_task_updates)
-            await self._run_publish_stage("task_messages", self.publish_task_messages)
-            await self._run_publish_stage("notifications", self.publish_notifications)
-            await self._run_publish_stage("logs", self.publish_logs)
-            await self._run_publish_stage("benchmarks", self.publish_benchmarks)
+            had_fault = False
+            had_fault |= not await self._run_publish_stage("dashboard", self.broadcast_current_dashboard)
+            had_fault |= not await self._run_publish_stage("task_updates", self.publish_task_updates)
+            had_fault |= not await self._run_publish_stage("task_messages", self.publish_task_messages)
+            had_fault |= not await self._run_publish_stage("notifications", self.publish_notifications)
+            had_fault |= not await self._run_publish_stage("logs", self.publish_logs)
+            had_fault |= not await self._run_publish_stage("benchmarks", self.publish_benchmarks)
+            if not had_fault:
+                self._runtime_fault_state = {}
 
     async def _run_publish_stage(
         self,
         stage: str,
         publish: Callable[[], Awaitable[None]],
-    ) -> None:
+    ) -> bool:
         try:
             await publish()
+            return True
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            self._record_runtime_fault(source="dashboard_publish", stage=stage, error=repr(exc))
             slog.error(
                 "Dashboard publish stage failed",
                 event="dashboard_publish_stage_failed",
                 stage=stage,
                 error=repr(exc),
             )
+            return False
+
+    def _record_runtime_fault(self, *, source: str, stage: str, error: str) -> None:
+        self._runtime_fault_state = {
+            "degraded": True,
+            "source": str(source or ""),
+            "stage": str(stage or ""),
+            "error": str(error or ""),
+            "updated_at": time.time(),
+        }
+
+    def runtime_fault_state(self) -> dict[str, Any]:
+        return dict(self._runtime_fault_state)
 
     async def publish_task_updates(self) -> None:
         assert self.ws_server is not None

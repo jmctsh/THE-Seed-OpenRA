@@ -16,13 +16,19 @@
     <div class="game-control-note">Web 面板当前仅支持重启对局；启动/停止请走本地进程控制。</div>
 
     <div class="game-status">
-      <span :class="gameStale ? 'stale' : 'healthy'">
+      <span :class="statusClass">
         {{ statusText }}
       </span>
     </div>
     <div v-if="gameStale && (staleFailures || lastRefreshError)" class="game-status-detail">
       <span v-if="staleFailures">连续失败 {{ staleFailures }}<template v-if="failureThreshold"> / {{ failureThreshold }}</template></span>
       <span v-if="lastRefreshError">最近错误: {{ lastRefreshError }}</span>
+    </div>
+    <div v-if="runtimeFault.degraded" class="game-status-detail runtime-fault-detail">
+      <span>
+        运行时降级: {{ runtimeFault.source || 'unknown' }}<template v-if="runtimeFault.stage"> / {{ runtimeFault.stage }}</template>
+      </span>
+      <span v-if="runtimeFault.error">错误: {{ runtimeFault.error }}</span>
     </div>
     <div v-if="capabilityTruthBlocker" class="game-status-detail truth-detail">
       <span>能力真值受限: {{ capabilityTruthText }}</span>
@@ -71,7 +77,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 
 const props = defineProps({
   connected: Boolean,
@@ -88,6 +94,12 @@ const staleFailures = ref(0)
 const failureThreshold = ref(0)
 const lastRefreshError = ref('')
 const statusText = ref('● 数据正常')
+const runtimeFault = ref({
+  degraded: false,
+  source: '',
+  stage: '',
+  error: '',
+})
 const capabilityTruthBlocker = ref('')
 const playerFaction = ref('')
 const capabilityTruthText = ref('')
@@ -100,6 +112,12 @@ const unitPipelineFocus = ref({
   reservationCount: 0,
 })
 const capabilityTaskId = ref('')
+
+const statusClass = computed(() => {
+  if (gameStale.value) return 'stale'
+  if (runtimeFault.value.degraded) return 'degraded'
+  return 'healthy'
+})
 
 function formatCapabilityTruthText(blocker, faction) {
   if (blocker === 'faction_roster_unsupported') {
@@ -145,6 +163,13 @@ if (props.on) {
     staleFailures.value = Number(data.consecutive_refresh_failures || 0)
     failureThreshold.value = Number(data.failure_threshold || 0)
     lastRefreshError.value = String(data.last_refresh_error || '')
+    const nextRuntimeFault = data.runtime_fault_state || {}
+    runtimeFault.value = {
+      degraded: !!nextRuntimeFault.degraded,
+      source: String(nextRuntimeFault.source || ''),
+      stage: String(nextRuntimeFault.stage || ''),
+      error: String(nextRuntimeFault.error || ''),
+    }
     capabilityTruthBlocker.value = String(data.capability_truth_blocker || '')
     playerFaction.value = String(data.player_faction || '')
     capabilityTruthText.value = formatCapabilityTruthText(capabilityTruthBlocker.value, playerFaction.value)
@@ -160,7 +185,7 @@ if (props.on) {
     capabilityTaskId.value = String(capabilityStatus.task_id || '')
     statusText.value = gameStale.value
       ? `⚠ 数据过期${staleFailures.value ? ` (${staleFailures.value}${failureThreshold.value ? `/${failureThreshold.value}` : ''})` : ''}`
-      : '● 数据正常'
+      : (runtimeFault.value.degraded ? '⚠ 运行降级' : '● 数据正常')
   })
 }
 </script>
@@ -192,6 +217,9 @@ if (props.on) {
 .truth-detail {
   color: #8a4f00;
 }
+.runtime-fault-detail {
+  color: #b71c1c;
+}
 .diag-link-btn {
   align-self: flex-start;
   padding: 0;
@@ -207,6 +235,7 @@ if (props.on) {
 }
 .healthy { color: #4caf50; }
 .stale { color: #ff9800; }
+.degraded { color: #e65100; }
 .controls { display: flex; gap: 8px; }
 .controls button { padding: 6px 12px; border: 1px solid #ccc; border-radius: 4px; background: #f5f5f5; cursor: pointer; font-size: 12px; }
 .controls button:hover { background: #e0e0e0; }

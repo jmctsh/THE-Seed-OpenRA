@@ -1023,10 +1023,105 @@ def test_sync_request_tolerates_runtime_fact_and_world_health_failures():
 
     assert world_snapshot["player_faction"] == ""
     assert world_snapshot["capability_truth_blocker"] == ""
+    assert world_snapshot["runtime_fault_state"] == {
+        "degraded": True,
+        "source": "world_sync_probe",
+        "stage": "",
+        "error": "RuntimeError('health-boom')",
+        "updated_at": world_snapshot["runtime_fault_state"]["updated_at"],
+    }
+    assert isinstance(world_snapshot["runtime_fault_state"]["updated_at"], float)
     assert task_payload["task_id"] == "t_cap"
     assert task_payload["triage"]["phase"] == "idle"
     assert task_payload["triage"]["blocking_reason"] == ""
     assert session_catalog["sessions"] == []
+
+
+def test_dashboard_publish_fault_is_reflected_in_world_snapshot_runtime_fault_state():
+    class FakeKernel:
+        def list_pending_questions(self):
+            return []
+
+        def runtime_state(self):
+            return {}
+
+        def list_tasks(self):
+            return []
+
+        def jobs_for_task(self, _task_id):
+            return []
+
+        def get_task_agent(self, _task_id):
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self, task_id=None):
+            del task_id
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+        def compute_runtime_facts(self, *_args, **_kwargs):
+            return {}
+
+        def refresh_health(self):
+            return {"stale": False}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    bridge.attach_ws_server(FakeWS())
+
+    async def _noop():
+        return None
+
+    async def _boom():
+        raise RuntimeError("publish-boom")
+
+    bridge._publisher.broadcast_current_dashboard = _noop
+    bridge._publisher.publish_task_updates = _noop
+    bridge._publisher.publish_task_messages = _boom
+    bridge._publisher.publish_notifications = _noop
+    bridge._publisher.publish_logs = _noop
+    bridge._publisher.publish_benchmarks = _noop
+
+    asyncio.run(bridge._publisher.publish_all())
+
+    world_snapshot = bridge._build_dashboard_payload()["world_snapshot"]
+    assert world_snapshot["runtime_fault_state"] == {
+        "degraded": True,
+        "source": "dashboard_publish",
+        "stage": "task_messages",
+        "error": "RuntimeError('publish-boom')",
+        "updated_at": world_snapshot["runtime_fault_state"]["updated_at"],
+    }
+    assert isinstance(world_snapshot["runtime_fault_state"]["updated_at"], float)
 
 
 def test_build_session_catalog_clears_persisted_error_detail_when_live_overlay_changes_error():
@@ -2031,6 +2126,89 @@ def test_dashboard_publisher_publish_all_continues_after_stage_failure(monkeypat
         }
     ]
     print("  PASS: dashboard_publisher_publish_all_continues_after_stage_failure")
+
+
+def test_dashboard_publisher_runtime_fault_state_clears_after_clean_publish():
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+
+    publisher = dashboard_publish_module.DashboardPublisher(
+        kernel=object(),
+        ws_server=FakeWS(),
+        dashboard_payload_builder=lambda: {},
+        task_payload_builder=lambda *args, **kwargs: {},
+    )
+
+    async def _noop():
+        return None
+
+    async def _boom():
+        raise RuntimeError("boom")
+
+    publisher.broadcast_current_dashboard = _noop
+    publisher.publish_task_updates = _noop
+    publisher.publish_task_messages = _boom
+    publisher.publish_notifications = _noop
+    publisher.publish_logs = _noop
+    publisher.publish_benchmarks = _noop
+
+    asyncio.run(publisher.publish_all())
+    fault_state = publisher.runtime_fault_state()
+    assert fault_state["degraded"] is True
+    assert fault_state["source"] == "dashboard_publish"
+    assert fault_state["stage"] == "task_messages"
+    assert fault_state["error"] == "RuntimeError('boom')"
+
+    publisher.publish_task_messages = _noop
+    asyncio.run(publisher.publish_all())
+
+    assert publisher.runtime_fault_state() == {}
+
+
+def test_dashboard_publisher_schedule_publish_logs_task_level_failure(monkeypatch):
+    logged_errors: list[dict[str, Any]] = []
+
+    class FakeLogger:
+        def error(self, _message, **kwargs):
+            logged_errors.append(kwargs)
+
+    monkeypatch.setattr(dashboard_publish_module, "slog", FakeLogger())
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+
+    async def run():
+        publisher = dashboard_publish_module.DashboardPublisher(
+            kernel=object(),
+            ws_server=FakeWS(),
+            dashboard_payload_builder=lambda: {},
+            task_payload_builder=lambda *args, **kwargs: {},
+        )
+
+        async def _boom():
+            raise RuntimeError("top-level boom")
+
+        publisher.publish_all = _boom
+        publisher.schedule_publish()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+
+        assert publisher.publish_task is None
+        assert publisher.runtime_fault_state()["degraded"] is True
+        assert publisher.runtime_fault_state()["source"] == "dashboard_publish"
+        assert publisher.runtime_fault_state()["stage"] == "task"
+        assert publisher.runtime_fault_state()["error"] == "RuntimeError('top-level boom')"
+
+    asyncio.run(run())
+
+    assert logged_errors == [
+        {
+            "event": "dashboard_publish_task_failed",
+            "error": "RuntimeError('top-level boom')",
+        }
+    ]
 
 
 def test_task_replay_request_returns_persisted_task_log():

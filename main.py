@@ -196,6 +196,7 @@ class RuntimeBridge(InboundHandler):
         self._registered_agents: set[str] = set()
         self._registered_jobs: set[str] = set()
         self.log_session_root = "Logs/runtime"
+        self._probe_fault_state: dict[str, Any] = {}
 
         def _task_payload_builder(task: Any, jobs: Optional[list[Any]] = None, **kwargs: Any) -> dict[str, Any]:
             runtime_state = kwargs.get("runtime_state")
@@ -219,7 +220,9 @@ class RuntimeBridge(InboundHandler):
                         ) or {}
                     except Exception:
                         runtime_facts = {}
-            world_sync = self._world_sync_health()
+            world_sync = kwargs.get("world_sync")
+            if not isinstance(world_sync, dict):
+                world_sync = self._world_sync_health()
             return build_live_task_payload(
                 task,
                 jobs or [],
@@ -490,11 +493,13 @@ class RuntimeBridge(InboundHandler):
         jobs: Optional[list[Any]] = None,
         *,
         runtime_state: Optional[dict[str, Any]] = None,
+        world_sync: Optional[dict[str, Any]] = None,
     ) -> dict[str, Any]:
         return self._task_payload_builder(
             task,
             jobs,
             runtime_state=runtime_state,
+            world_sync=world_sync,
         )
 
     async def on_game_restart(self, save_path: Optional[str], client_id: str) -> None:
@@ -544,6 +549,7 @@ class RuntimeBridge(InboundHandler):
         pending_questions = self.kernel.list_pending_questions()
         runtime_state = self.kernel.runtime_state()
         dashboard_runtime_facts = self._dashboard_runtime_facts()
+        world_sync = self._world_sync_health()
         world_snapshot = {
             **self.world_model.world_summary(),
             "runtime_state": runtime_state,
@@ -553,12 +559,14 @@ class RuntimeBridge(InboundHandler):
             "capability_truth_blocker": str(dashboard_runtime_facts.get("capability_truth_blocker") or ""),
             "unit_pipeline_preview": build_runtime_unit_pipeline_preview(runtime_state),
             "unit_pipeline_focus": build_runtime_unit_pipeline_focus(runtime_state),
+            "runtime_fault_state": self._runtime_fault_state(),
         }
         tasks = [
             self._task_to_dict(
                 task,
                 self.kernel.jobs_for_task(task.task_id),
                 runtime_state=runtime_state,
+                world_sync=world_sync,
             )
             for task in self.kernel.list_tasks()
         ]
@@ -577,8 +585,10 @@ class RuntimeBridge(InboundHandler):
             return {}
         try:
             facts = compute_runtime_facts("__dashboard__", include_buildable=False) or {}
+            self._clear_probe_fault("dashboard_runtime_facts")
             return dict(facts) if isinstance(facts, dict) else {}
-        except Exception:
+        except Exception as exc:
+            self._record_probe_fault(source="dashboard_runtime_facts", error=repr(exc))
             return {}
 
     def _world_sync_health(self) -> dict[str, Any]:
@@ -588,10 +598,36 @@ class RuntimeBridge(InboundHandler):
         try:
             health = refresh_health() or {}
             if isinstance(health, dict):
+                self._clear_probe_fault("world_sync_probe")
                 return dict(health)
             return {"stale": False}
-        except Exception:
+        except Exception as exc:
+            self._record_probe_fault(source="world_sync_probe", error=repr(exc))
             return {"stale": False}
+
+    def _record_probe_fault(self, *, source: str, error: str) -> None:
+        self._probe_fault_state = {
+            "degraded": True,
+            "source": str(source or ""),
+            "stage": "",
+            "error": str(error or ""),
+            "updated_at": time.time(),
+        }
+
+    def _clear_probe_fault(self, source: str) -> None:
+        if str(self._probe_fault_state.get("source") or "") == str(source or ""):
+            self._probe_fault_state = {}
+
+    def _runtime_fault_state(self) -> dict[str, Any]:
+        candidates: list[dict[str, Any]] = []
+        if self._probe_fault_state.get("degraded"):
+            candidates.append(dict(self._probe_fault_state))
+        publisher_fault = self._publisher.runtime_fault_state()
+        if publisher_fault.get("degraded"):
+            candidates.append(dict(publisher_fault))
+        if not candidates:
+            return {}
+        return max(candidates, key=lambda item: float(item.get("updated_at") or 0.0))
 
 
 class ApplicationRuntime:

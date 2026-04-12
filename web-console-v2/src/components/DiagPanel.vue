@@ -18,6 +18,14 @@
         <span>demo capability roster 未覆盖当前阵营</span>
       </div>
     </div>
+    <div v-if="runtimeFaultState.degraded" class="triage-summary runtime-fault-summary">
+      <div class="triage-status">运行时降级</div>
+      <div class="triage-meta">
+        <span>source={{ runtimeFaultState.source }}</span>
+        <span v-if="runtimeFaultState.stage">stage={{ runtimeFaultState.stage }}</span>
+        <span v-if="runtimeFaultState.error">error={{ runtimeFaultState.error }}</span>
+      </div>
+    </div>
     <div v-if="liveRuntimeSummary" class="triage-summary runtime-summary">
       <div class="triage-status">Live Runtime</div>
       <div class="triage-meta">
@@ -470,6 +478,12 @@ const worldSyncFailureThreshold = ref(0)
 const worldSyncError = ref('')
 const capabilityTruthBlocker = ref('')
 const capabilityTruthFaction = ref('')
+const runtimeFaultState = ref({
+  degraded: false,
+  source: '',
+  stage: '',
+  error: '',
+})
 const liveRuntimeState = ref({})
 const liveUnitPipelinePreview = ref('')
 const filterLevel = ref('ALL')
@@ -1138,6 +1152,7 @@ if (props.on) {
     const nextWorldSyncError = String(msg.data?.last_refresh_error || '')
     const nextCapabilityTruthBlocker = String(msg.data?.capability_truth_blocker || '')
     const nextCapabilityTruthFaction = String(msg.data?.player_faction || '')
+    const nextRuntimeFault = msg.data?.runtime_fault_state || {}
     liveRuntimeState.value = msg.data?.runtime_state && typeof msg.data.runtime_state === 'object'
       ? msg.data.runtime_state
       : {}
@@ -1149,6 +1164,12 @@ if (props.on) {
     worldSyncError.value = nextWorldSyncError
     capabilityTruthBlocker.value = nextCapabilityTruthBlocker
     capabilityTruthFaction.value = nextCapabilityTruthFaction
+    runtimeFaultState.value = {
+      degraded: !!nextRuntimeFault.degraded,
+      source: String(nextRuntimeFault.source || ''),
+      stage: String(nextRuntimeFault.stage || ''),
+      error: String(nextRuntimeFault.error || ''),
+    }
 
     const nextWorldTruthSignature = [
       nextWorldSyncStale,
@@ -1157,6 +1178,10 @@ if (props.on) {
       nextWorldSyncError,
       nextCapabilityTruthBlocker,
       nextCapabilityTruthFaction,
+      runtimeFaultState.value.degraded,
+      runtimeFaultState.value.source,
+      runtimeFaultState.value.stage,
+      runtimeFaultState.value.error,
     ].join('|')
     if (nextWorldTruthSignature !== lastWorldTruthSignature) {
       lastWorldTruthSignature = nextWorldTruthSignature

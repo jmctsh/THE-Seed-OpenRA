@@ -61,6 +61,31 @@ describe('OpsPanel', () => {
     expect(wrapper.text()).toContain('WS 断开')
   })
 
+  it('renders runtime fault detail from world_snapshot when not stale', async () => {
+    const bus = createBus()
+    const wrapper = mount(OpsPanel, {
+      props: {
+        connected: true,
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('world_snapshot', {
+      runtime_fault_state: {
+        degraded: true,
+        source: 'dashboard_publish',
+        stage: 'task_messages',
+        error: "RuntimeError('publish-boom')",
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('⚠ 运行降级')
+    expect(wrapper.text()).toContain('运行时降级: dashboard_publish / task_messages')
+    expect(wrapper.text()).toContain("错误: RuntimeError('publish-boom')")
+  })
+
   it('renders capability truth blocker from world_snapshot', async () => {
     const bus = createBus()
     const wrapper = mount(OpsPanel, {
