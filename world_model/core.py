@@ -63,6 +63,7 @@ SLOW_NAMES = {"猛犸坦克", "mamm", "v2", "v2rl"}
 BASE_ATTACK_MIN_DAMAGE_PCT = 5
 BASE_ATTACK_NEARBY_ENEMY_RADIUS = 200
 REFRESH_FAILURE_LOG_COOLDOWN_S = 2.0
+CONNECTION_FAILURE_LOG_COOLDOWN_S = 10.0
 SLOW_REFRESH_LOG_COOLDOWN_S = 10.0
 CONNECTION_FAILURE_RETRY_BACKOFF_S = 2.0
 
@@ -1513,8 +1514,10 @@ class WorldModel:
 
     def _log_refresh_failure(self, layer: str, exc: Exception, timestamp: float) -> None:
         error = str(exc)
+        connection_failure = self._is_connection_failure(exc)
+        cooldown_s = CONNECTION_FAILURE_LOG_COOLDOWN_S if connection_failure else REFRESH_FAILURE_LOG_COOLDOWN_S
         state = self._refresh_failure_log_state.get(layer)
-        if state and state["error"] == error and timestamp - state["last_log_at"] < REFRESH_FAILURE_LOG_COOLDOWN_S:
+        if state and state["error"] == error and timestamp - state["last_log_at"] < cooldown_s:
             state["suppressed_count"] += 1
             return
 
@@ -1536,7 +1539,7 @@ class WorldModel:
             layer=layer,
             error=error,
             error_detail=detail,
-            disconnected=self._is_connection_failure(exc),
+            disconnected=connection_failure,
             error_meta=self._extract_exception_meta(exc),
             failure_threshold=self.stale_failure_threshold,
             suppressed_count=suppressed_count,

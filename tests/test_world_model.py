@@ -71,7 +71,7 @@ class FailingWorldSource(MockWorldSource):
 
     def _maybe_fail(self, layer: str) -> None:
         if self.fail:
-            raise RuntimeError(f"{layer} disconnected")
+            raise RuntimeError(f"{layer} refresh failed")
 
     def fetch_self_actors(self) -> list[Actor]:
         self._maybe_fail("actors")
@@ -430,8 +430,8 @@ def test_refresh_failure_marks_stale_and_recovers() -> None:
 
     assert summary["stale"] is True
     assert summary["military"]["self_units"] == 3  # previous snapshot still usable
-    assert summary["disconnected"] is True
-    assert "actors disconnected" in summary["last_refresh_error"]
+    assert summary["disconnected"] is False
+    assert "actors refresh failed" in summary["last_refresh_error"]
     assert summary["consecutive_refresh_failures"] == 3
     assert summary["total_refresh_failures"] == 3
     assert summary["failure_threshold"] == 3
@@ -439,11 +439,11 @@ def test_refresh_failure_marks_stale_and_recovers() -> None:
     assert facts["world_sync_stale"] is True
     assert facts["world_sync_consecutive_failures"] == 3
     assert facts["world_sync_failure_threshold"] == 3
-    assert "actors disconnected" in facts["world_sync_last_error"]
-    assert health["disconnected"] is True
+    assert "actors refresh failed" in facts["world_sync_last_error"]
+    assert health["disconnected"] is False
     assert health["consecutive_failures"] == 3
     assert health["failure_threshold"] == 3
-    assert "actors disconnected" in health["last_error"]
+    assert "actors refresh failed" in health["last_error"]
 
     source.fail = False
     world.refresh(now=104.0, force=True)
@@ -465,6 +465,8 @@ def test_connection_failure_skips_remaining_layers_and_respects_retry_backoff() 
     assert source.actor_fetches == 1
     assert source.economy_fetches == 0
     assert source.map_fetches == 0
+    assert world.refresh_health()["disconnected"] is True
+    assert world.world_summary()["disconnected"] is True
 
     world.refresh(now=101.0, force=False)
     assert source.actor_fetches == 1
@@ -530,6 +532,25 @@ def test_refresh_failure_logs_include_exception_detail_when_available() -> None:
     assert actor_logs[0].data.get("error_detail") == "Actor query failed in server"
     assert actor_logs[0].data.get("error_meta", {}).get("type") == "System.InvalidOperationException"
     print("  PASS: refresh_failure_logs_include_exception_detail_when_available")
+
+
+def test_connection_failure_logging_uses_longer_cooldown_than_retry_backoff() -> None:
+    logging_system.clear()
+    source = ConnectionFailingWorldSource([make_frames()[0]])
+    world = WorldModel(source)
+
+    world.refresh(now=100.0, force=True)
+    world.refresh(now=102.1, force=False)
+    world.refresh(now=104.2, force=False)
+    world.refresh(now=110.5, force=False)
+
+    fail_logs = logging_system.query(component="world_model", event="world_refresh_failed")
+    actor_logs = [record for record in fail_logs if record.data.get("layer") == "actors"]
+
+    assert len(actor_logs) == 2
+    assert actor_logs[0].data.get("suppressed_count") == 0
+    assert actor_logs[1].data.get("suppressed_count") == 2
+    print("  PASS: connection_failure_logging_uses_longer_cooldown_than_retry_backoff")
 
 
 def test_slow_refresh_logging_is_throttled_with_suppressed_count() -> None:
