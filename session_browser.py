@@ -84,7 +84,7 @@ def _normalize_live_runtime_fault(current_runtime_fault_state: Optional[dict[str
         first_at = updated_at
     if not any([degraded, source, stage, error, count, first_at, updated_at]):
         return {}
-    return {
+    normalized = {
         "degraded": degraded,
         "source": source,
         "stage": stage,
@@ -93,6 +93,66 @@ def _normalize_live_runtime_fault(current_runtime_fault_state: Optional[dict[str
         "first_at": first_at,
         "updated_at": updated_at,
     }
+    raw_breakdown = current_runtime_fault_state.get("breakdown")
+    if isinstance(raw_breakdown, list):
+        breakdown = []
+        for item in raw_breakdown:
+            if not isinstance(item, dict):
+                continue
+            item_source = str(item.get("source") or "")
+            item_stage = str(item.get("stage") or "")
+            item_count = int(item.get("count", 0) or 0)
+            if item_count <= 0 or not (item_source or item_stage):
+                continue
+            breakdown.append(
+                {
+                    "source": item_source,
+                    "stage": item_stage,
+                    "count": item_count,
+                }
+            )
+        breakdown.sort(key=lambda item: (-item["count"], item["source"], item["stage"]))
+        if breakdown:
+            normalized["breakdown"] = breakdown[:4]
+    elif count > 0 and (source or stage):
+        normalized["breakdown"] = [
+            {
+                "source": source,
+                "stage": stage,
+                "count": count,
+            }
+        ]
+    return normalized
+
+
+def _merge_runtime_fault_breakdown(
+    left: Optional[list[dict[str, Any]]],
+    right: Optional[list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    buckets: dict[tuple[str, str], int] = {}
+    for items in (left, right):
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            source = str(item.get("source") or "")
+            stage = str(item.get("stage") or "")
+            count = int(item.get("count", 0) or 0)
+            if count <= 0 or not (source or stage):
+                continue
+            key = (source, stage)
+            buckets[key] = max(buckets.get(key, 0), count)
+    merged = [
+        {
+            "source": source,
+            "stage": stage,
+            "count": count,
+        }
+        for (source, stage), count in buckets.items()
+    ]
+    merged.sort(key=lambda item: (-item["count"], item["source"], item["stage"]))
+    return merged[:4]
 
 
 def _merge_runtime_fault_summary(
@@ -113,12 +173,16 @@ def _merge_runtime_fault_summary(
         for item in (left, right)
         if float(item.get("first_at") or item.get("updated_at") or 0.0) > 0.0
     ]
-    return {
+    merged = {
         **latest,
         "degraded": bool(left.get("degraded") or right.get("degraded")),
         "count": max(int(left.get("count", 0) or 0), int(right.get("count", 0) or 0)),
         "first_at": min(first_candidates) if first_candidates else float(latest.get("updated_at") or 0.0),
     }
+    breakdown = _merge_runtime_fault_breakdown(left.get("breakdown"), right.get("breakdown"))
+    if breakdown:
+        merged["breakdown"] = breakdown
+    return merged
 
 
 def _summarize_live_task_rollup(current_tasks: Optional[list[dict[str, Any]]]) -> dict[str, Any]:

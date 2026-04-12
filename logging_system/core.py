@@ -558,7 +558,36 @@ def _empty_runtime_fault_summary() -> dict[str, Any]:
         "count": 0,
         "first_at": 0.0,
         "updated_at": 0.0,
+        "_breakdown": {},
     }
+
+
+def _compact_runtime_fault_breakdown(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = summary.get("_breakdown")
+    if isinstance(raw, dict):
+        items = list(raw.values())
+    elif isinstance(summary.get("breakdown"), list):
+        items = list(summary.get("breakdown") or [])
+    else:
+        items = []
+    normalized: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        source = str(item.get("source") or "")
+        stage = str(item.get("stage") or "")
+        count = int(item.get("count", 0) or 0)
+        if count <= 0 or not (source or stage):
+            continue
+        normalized.append(
+            {
+                "source": source,
+                "stage": stage,
+                "count": count,
+            }
+        )
+    normalized.sort(key=lambda item: (-item["count"], item["source"], item["stage"]))
+    return normalized[:4]
 
 
 def _compact_runtime_fault_summary(summary: dict[str, Any]) -> dict[str, Any]:
@@ -583,6 +612,9 @@ def _compact_runtime_fault_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "first_at": first_at,
         "updated_at": updated_at,
     }
+    breakdown = _compact_runtime_fault_breakdown(summary)
+    if breakdown:
+        normalized["breakdown"] = breakdown
     if not any(
         [
             normalized["degraded"],
@@ -670,6 +702,16 @@ def _update_runtime_fault_summary_from_event(
 
     if not source and not error:
         return
+
+    breakdown = summary.setdefault("_breakdown", {})
+    if isinstance(breakdown, dict):
+        bucket_key = f"{source}|{stage}"
+        bucket = breakdown.get(bucket_key) if isinstance(breakdown.get(bucket_key), dict) else {}
+        breakdown[bucket_key] = {
+            "source": source,
+            "stage": stage,
+            "count": int(bucket.get("count", 0) or 0) + 1,
+        }
 
     event_ts = float(timestamp or 0.0)
     current_updated_at = float(summary.get("updated_at", 0.0) or 0.0)

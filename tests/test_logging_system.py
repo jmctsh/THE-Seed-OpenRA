@@ -1182,6 +1182,18 @@ def test_list_persistence_sessions_backfills_runtime_fault_summary_from_componen
     assert runtime_fault_summary["error"] == "RuntimeError('publish-boom')"
     assert runtime_fault_summary["first_at"] == 10.0
     assert runtime_fault_summary["updated_at"] == 12.0
+    assert runtime_fault_summary["breakdown"] == [
+        {
+            "source": "dashboard_publish",
+            "stage": "task_messages",
+            "count": 1,
+        },
+        {
+            "source": "dashboard_runtime_facts",
+            "stage": "",
+            "count": 1,
+        },
+    ]
     assert session_meta["runtime_fault_summary"] == runtime_fault_summary
 
 
@@ -1234,6 +1246,13 @@ def test_read_persistence_session_backfills_runtime_fault_summary_from_component
     assert runtime_fault_summary["error"] == "RuntimeError('publish-boom')"
     assert runtime_fault_summary["first_at"] == 18.0
     assert runtime_fault_summary["updated_at"] == 18.0
+    assert runtime_fault_summary["breakdown"] == [
+        {
+            "source": "dashboard_publish",
+            "stage": "task_messages",
+            "count": 1,
+        }
+    ]
     assert session_meta["runtime_fault_summary"] == runtime_fault_summary
 
 
@@ -1295,6 +1314,13 @@ def test_read_persistence_session_counts_repeated_publish_runtime_faults() -> No
     assert runtime_fault_summary["source"] == "dashboard_publish"
     assert runtime_fault_summary["stage"] == "task_messages"
     assert runtime_fault_summary["error"] == "RuntimeError('publish-boom-2')"
+    assert runtime_fault_summary["breakdown"] == [
+        {
+            "source": "dashboard_publish",
+            "stage": "task_messages",
+            "count": 2,
+        }
+    ]
 
 
 def test_benchmark_summary_and_logging_integration() -> None:

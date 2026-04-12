@@ -257,6 +257,10 @@ describe('DiagPanel', () => {
             count: 3,
             first_at: 10,
             updated_at: 12,
+            breakdown: [
+              { source: 'dashboard_publish', stage: 'task_messages', count: 3 },
+              { source: 'dashboard_runtime_facts', stage: '', count: 1 },
+            ],
           },
         },
       },
@@ -275,6 +279,8 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('source=dashboard_publish')
     expect(wrapper.text()).toContain('stage=task_messages')
     expect(wrapper.text()).toContain("error=RuntimeError('publish-boom')")
+    expect(wrapper.text()).toContain('fault=dashboard_publish/task_messages×3')
+    expect(wrapper.text()).toContain('fault=dashboard_runtime_facts×1')
   })
 
   it('renders session world health context inside replay diagnostics', async () => {
@@ -1247,6 +1253,10 @@ describe('DiagPanel', () => {
             count: 2,
             first_at: 10,
             updated_at: 12,
+            breakdown: [
+              { source: 'dashboard_publish', stage: 'task_messages', count: 2 },
+              { source: 'world_sync_probe', stage: '', count: 1 },
+            ],
           },
         },
       ],
@@ -1274,6 +1284,8 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('source=dashboard_publish')
     expect(wrapper.text()).toContain('stage=task_messages')
     expect(wrapper.text()).toContain("error=RuntimeError('publish-boom')")
+    expect(wrapper.text()).toContain('fault=dashboard_publish/task_messages×2')
+    expect(wrapper.text()).toContain('fault=world_sync_probe×1')
   })
 
   it('replaces pane history from session_history and ignores live log append while browsing a historical session', async () => {

@@ -1333,6 +1333,13 @@ def test_sync_request_overlays_live_world_health_into_session_catalog():
         "count": 3,
         "first_at": 40.0,
         "updated_at": 42.0,
+        "breakdown": [
+            {
+                "source": "dashboard_publish",
+                "stage": "task_messages",
+                "count": 3,
+            }
+        ],
     }
     assert session_catalog[0]["task_rollup"] == {
         "total": 2,
@@ -3219,6 +3226,13 @@ def test_task_replay_request_returns_persisted_task_log():
         "count": 1,
         "first_at": 126.0,
         "updated_at": 126.0,
+        "breakdown": [
+            {
+                "source": "dashboard_publish",
+                "stage": "task_messages",
+                "count": 1,
+            }
+        ],
     }
     assert payload["bundle"]["unit_pipeline"]["unfulfilled_requests"][0]["request_id"] == "req_1"
     assert (

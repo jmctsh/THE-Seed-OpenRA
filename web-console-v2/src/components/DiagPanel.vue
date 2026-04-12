@@ -149,6 +149,12 @@
         <span>source={{ selectedSessionRuntimeFault.source }}</span>
         <span v-if="selectedSessionRuntimeFault.stage">stage={{ selectedSessionRuntimeFault.stage }}</span>
         <span v-if="selectedSessionRuntimeFault.error">error={{ formatSessionHealthError(selectedSessionRuntimeFault.error) }}</span>
+        <span
+          v-for="item in selectedSessionRuntimeFault.breakdown"
+          :key="`session-fault-breakdown-${item.source}-${item.stage}`"
+        >
+          {{ formatSessionFaultBreakdownItem(item) }}
+        </span>
       </div>
       <div v-if="displayedOperatorMessages.length" class="replay-section session-operator-strip">
         <div class="replay-heading">Operator Surface</div>
@@ -262,6 +268,12 @@
           </span>
           <span v-if="selectedTaskReplaySessionRuntimeFault.error">
             error={{ formatSessionHealthError(selectedTaskReplaySessionRuntimeFault.error) }}
+          </span>
+          <span
+            v-for="item in selectedTaskReplaySessionRuntimeFault.breakdown"
+            :key="`replay-fault-breakdown-${item.source}-${item.stage}`"
+          >
+            {{ formatSessionFaultBreakdownItem(item) }}
           </span>
         </div>
       </div>
@@ -1020,6 +1032,21 @@ function normalizeSessionRuntimeFault(raw) {
     count,
     first_at: firstAt,
     updated_at: updatedAt,
+    breakdown: Array.isArray(raw.breakdown)
+      ? raw.breakdown
+        .map((item) => ({
+          source: String(item?.source || ''),
+          stage: String(item?.stage || ''),
+          count: Number(item?.count || 0),
+        }))
+        .filter((item) => item.count > 0 && (item.source || item.stage))
+      : count > 0 && (source || stage)
+        ? [{
+            source,
+            stage,
+            count,
+          }]
+      : [],
   }
   if (
     !normalized.degraded
@@ -1054,6 +1081,15 @@ function formatSessionFaultFlag(fault) {
   const when = formatSessionFaultTime(fault.updated_at)
   const countSuffix = fault.count > 1 ? `x${fault.count}` : ''
   return when ? `fault${countSuffix}@${when}` : `fault${countSuffix}`
+}
+
+function formatSessionFaultBreakdownItem(item) {
+  if (!item) return ''
+  const source = String(item.source || '')
+  const stage = String(item.stage || '')
+  const count = Number(item.count || 0)
+  const key = stage ? `${source}/${stage}` : source
+  return key && count > 0 ? `fault=${key}×${count}` : ''
 }
 
 function formatSessionFaultTime(ts) {
