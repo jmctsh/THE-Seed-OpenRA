@@ -22,7 +22,7 @@ from logging_system import start_persistence_session, stop_persistence_session
 
 from models import Event, EventType, TaskMessage, TaskMessageType, TaskStatus
 from main import RuntimeBridge, TASK_REPLAY_RAW_ENTRY_LIMIT
-from session_browser import build_session_catalog_payload, build_session_history_payload, default_session_dir
+from session_browser import build_session_catalog_payload, build_session_history_payload, default_session_dir, resolve_session_dir
 from task_replay import build_live_task_replay_bundle, build_task_replay_bundle
 from task_triage import build_live_task_payload
 from task_agent.queue import AgentQueue
@@ -3040,6 +3040,7 @@ def test_task_replay_request_returns_persisted_task_log():
     bridge.attach_ws_server(ws)
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        bridge.log_session_root = tmpdir
         session_dir = start_persistence_session(tmpdir, session_name="unit-replay")
         try:
             task_path = Path(session_dir) / "tasks" / "t_demo.jsonl"
@@ -3382,6 +3383,179 @@ def test_task_replay_request_returns_persisted_task_log():
     print("  PASS: task_replay_request_returns_persisted_task_log")
 
 
+def test_task_replay_request_rejects_requested_session_outside_root():
+    class FakeKernel:
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return []
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+        def runtime_state(self):
+            return {}
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[tuple[str, dict[str, Any]]] = []
+
+        async def send_task_replay_to_client(self, client_id, payload):
+            self.sent.append(("task_replay", {"client_id": client_id, "payload": payload}))
+
+        async def send_error_to_client(self, client_id, message, *, code="INVALID_MESSAGE", inbound_type=None, extra=None):
+            self.sent.append(
+                (
+                    "error",
+                    {
+                        "client_id": client_id,
+                        "message": message,
+                        "code": code,
+                        "inbound_type": inbound_type,
+                        "extra": dict(extra or {}),
+                    },
+                )
+            )
+
+    import tempfile
+    from pathlib import Path
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    ws = FakeWS()
+    bridge.attach_ws_server(ws)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir) / "logs"
+        outside_root = Path(tmpdir) / "outside"
+        inside_session = start_persistence_session(root, session_name="inside-session")
+        try:
+            inside_task_path = inside_session / "tasks" / "t_demo.jsonl"
+            inside_task_path.parent.mkdir(parents=True, exist_ok=True)
+            inside_task_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "timestamp": 10.0,
+                                "component": "kernel",
+                                "level": "INFO",
+                                "message": "Task created",
+                                "event": "task_created",
+                                "data": {"task_id": "t_demo"},
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "timestamp": 11.0,
+                                "component": "kernel",
+                                "level": "INFO",
+                                "message": "Task completed",
+                                "event": "task_completed",
+                                "data": {"task_id": "t_demo", "summary": "根目录回放"},
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            outside_session = start_persistence_session(outside_root, session_name="outside-session")
+            outside_task_path = outside_session / "tasks" / "t_demo.jsonl"
+            outside_task_path.parent.mkdir(parents=True, exist_ok=True)
+            outside_task_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "timestamp": 20.0,
+                                "component": "kernel",
+                                "level": "INFO",
+                                "message": "Task created",
+                                "event": "task_created",
+                                "data": {"task_id": "t_demo"},
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "timestamp": 21.0,
+                                "component": "kernel",
+                                "level": "INFO",
+                                "message": "Task completed",
+                                "event": "task_completed",
+                                "data": {"task_id": "t_demo", "summary": "越界回放"},
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            bridge.log_session_root = str(root)
+            stop_persistence_session()
+
+            async def run():
+                await bridge.on_task_replay_request("t_demo", "client_scope", session_dir=str(outside_session))
+
+            asyncio.run(run())
+        finally:
+            stop_persistence_session()
+
+    assert ws.sent == [
+        (
+            "error",
+            {
+                "client_id": "client_scope",
+                "message": f"Invalid task_replay_request: unknown session_dir {outside_session}",
+                "code": "INVALID_SESSION",
+                "inbound_type": "task_replay_request",
+                "extra": {},
+            },
+        )
+    ]
+    print("  PASS: task_replay_request_rejects_requested_session_outside_root")
+
+
 def test_task_replay_request_prefers_live_truth_for_active_task_bundle():
     """Live replay should not keep stale persisted truth once live runtime provides current truth."""
 
@@ -3504,6 +3678,7 @@ def test_task_replay_request_prefers_live_truth_for_active_task_bundle():
     bridge.attach_ws_server(ws)
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        bridge.log_session_root = tmpdir
         session_dir = start_persistence_session(tmpdir, session_name="unit-replay-live")
         try:
             task_path = Path(session_dir) / "tasks" / "t_live.jsonl"
@@ -3715,6 +3890,7 @@ def test_task_replay_request_keeps_historical_session_isolated_from_live_runtime
     bridge.attach_ws_server(ws)
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        bridge.log_session_root = tmpdir
         historical_session = start_persistence_session(tmpdir, session_name="older-session")
         try:
             task_path = Path(historical_session) / "tasks" / "t_hist.jsonl"
@@ -3841,6 +4017,7 @@ def test_task_replay_request_limits_raw_entries_payload():
     bridge.attach_ws_server(ws)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
+        bridge.log_session_root = tmp_dir
         session_dir = Path(tmp_dir) / "session-20260411T021500Z"
         task_dir = session_dir / "tasks"
         task_dir.mkdir(parents=True, exist_ok=True)
@@ -3946,6 +4123,7 @@ def test_task_replay_request_can_skip_raw_entries_until_expanded():
     bridge.attach_ws_server(ws)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
+        bridge.log_session_root = tmp_dir
         session_dir = Path(tmp_dir) / "session-20260411T021500Z"
         task_dir = session_dir / "tasks"
         task_dir.mkdir(parents=True, exist_ok=True)
@@ -4132,6 +4310,155 @@ def test_session_select_returns_catalog_and_task_catalog():
     assert [entry["message"] for entry in ws.sent[2][1]["payload"]["log_entries"]] == ["历史日志"]
     assert [entry["name"] for entry in ws.sent[2][1]["payload"]["benchmark_records"]] == ["history_bench"]
     print("  PASS: session_select_returns_catalog_and_task_catalog")
+
+
+def test_session_select_rejects_requested_session_outside_root():
+    class FakeKernel:
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return []
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+        def runtime_state(self):
+            return {}
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[tuple[str, dict[str, Any]]] = []
+
+        async def send_session_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_catalog", {"client_id": client_id, "payload": payload}))
+
+        async def send_session_task_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_task_catalog", {"client_id": client_id, "payload": payload}))
+
+        async def send_session_history_to_client(self, client_id, payload):
+            self.sent.append(("session_history", {"client_id": client_id, "payload": payload}))
+
+        async def send_error_to_client(self, client_id, message, *, code="INVALID_MESSAGE", inbound_type=None, extra=None):
+            self.sent.append(
+                (
+                    "error",
+                    {
+                        "client_id": client_id,
+                        "message": message,
+                        "code": code,
+                        "inbound_type": inbound_type,
+                        "extra": dict(extra or {}),
+                    },
+                )
+            )
+
+    import tempfile
+    from pathlib import Path
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    ws = FakeWS()
+    bridge.attach_ws_server(ws)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir) / "logs"
+        outside_root = Path(tmpdir) / "outside"
+        inside_session = start_persistence_session(root, session_name="inside-session")
+        try:
+            inside_task_path = inside_session / "tasks" / "t_select.jsonl"
+            inside_task_path.parent.mkdir(parents=True, exist_ok=True)
+            inside_task_path.write_text(
+                json.dumps(
+                    {
+                        "timestamp": 10.0,
+                        "component": "kernel",
+                        "level": "INFO",
+                        "message": "Task created",
+                        "event": "task_created",
+                        "data": {"task_id": "t_select", "raw_text": "根目录会话", "priority": 40},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            outside_session = start_persistence_session(outside_root, session_name="outside-session")
+            outside_task_path = outside_session / "tasks" / "t_select.jsonl"
+            outside_task_path.parent.mkdir(parents=True, exist_ok=True)
+            outside_task_path.write_text(
+                json.dumps(
+                    {
+                        "timestamp": 11.0,
+                        "component": "kernel",
+                        "level": "INFO",
+                        "message": "Task created",
+                        "event": "task_created",
+                        "data": {"task_id": "t_select", "raw_text": "越界会话", "priority": 50},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            bridge.log_session_root = str(root)
+            stop_persistence_session()
+
+            async def run():
+                await bridge.on_session_select(str(outside_session), "client_10")
+
+            asyncio.run(run())
+        finally:
+            stop_persistence_session()
+
+    assert ws.sent == [
+        (
+            "error",
+            {
+                "client_id": "client_10",
+                "message": f"Invalid session_select: unknown session_dir {outside_session}",
+                "code": "INVALID_SESSION",
+                "inbound_type": "session_select",
+                "extra": {},
+            },
+        )
+    ]
+    print("  PASS: session_select_rejects_requested_session_outside_root")
 
 
 def test_session_clear_rotates_persisted_log_session():
@@ -4344,6 +4671,25 @@ def test_default_session_dir_ignores_current_session_from_other_root():
             stop_persistence_session()
 
     print("  PASS: default_session_dir_ignores_current_session_from_other_root")
+
+
+def test_resolve_session_dir_rejects_existing_path_outside_root():
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir) / "logs"
+        outside_root = Path(tmpdir) / "outside"
+        inside_session = start_persistence_session(root, session_name="inside")
+        try:
+            outside_session = start_persistence_session(outside_root, session_name="outside")
+            assert resolve_session_dir(str(root), str(inside_session)) == inside_session
+            assert resolve_session_dir(str(root), str(outside_session)) is None
+            assert resolve_session_dir(str(root), str(Path("..") / "outside" / outside_session.name)) is None
+        finally:
+            stop_persistence_session()
+
+    print("  PASS: resolve_session_dir_rejects_existing_path_outside_root")
 
 
 def test_task_replay_bundle_prefers_live_runtime_status_line_for_active_tasks():

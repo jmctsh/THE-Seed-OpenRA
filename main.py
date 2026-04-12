@@ -457,9 +457,16 @@ class RuntimeBridge(InboundHandler):
         await self.publish_dashboard()
 
     async def on_session_select(self, session_dir: str, client_id: str) -> None:
-        selected_session_dir = resolve_session_dir(self.log_session_root, session_dir) or default_session_dir(
-            self.log_session_root
-        )
+        selected_session_dir = resolve_session_dir(self.log_session_root, session_dir)
+        if selected_session_dir is None:
+            if self.ws_server is not None and self.ws_server.is_running:
+                await self.ws_server.send_error_to_client(
+                    client_id,
+                    f"Invalid session_select: unknown session_dir {session_dir}",
+                    inbound_type="session_select",
+                    code="INVALID_SESSION",
+                )
+            return
         await self._send_session_catalog_to_client(client_id, selected_session_dir=selected_session_dir)
         await self._send_session_tasks_to_client(client_id, session_dir=selected_session_dir)
         await self._send_session_history_to_client(client_id, session_dir=selected_session_dir)
@@ -473,9 +480,16 @@ class RuntimeBridge(InboundHandler):
     ) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
             return
-        resolved_session_dir = resolve_session_dir(self.log_session_root, session_dir) or default_session_dir(
-            self.log_session_root
-        )
+        resolved_session_dir = resolve_session_dir(self.log_session_root, session_dir)
+        if session_dir and resolved_session_dir is None:
+            await self.ws_server.send_error_to_client(
+                client_id,
+                f"Invalid task_replay_request: unknown session_dir {session_dir}",
+                inbound_type="task_replay_request",
+                code="INVALID_SESSION",
+            )
+            return
+        resolved_session_dir = resolved_session_dir or default_session_dir(self.log_session_root)
         live_session_dir = current_session_dir()
         use_live_bundle = (
             resolved_session_dir is not None

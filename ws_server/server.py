@@ -341,6 +341,27 @@ class WSServer:
             },
         )
 
+    async def send_error_to_client(
+        self,
+        client_id: str,
+        message: str,
+        *,
+        code: str = "INVALID_MESSAGE",
+        inbound_type: str | None = None,
+        extra: Optional[dict[str, Any]] = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "type": "error",
+            "message": message,
+            "code": code,
+            "timestamp": time.time(),
+        }
+        if inbound_type:
+            payload["inbound_type"] = inbound_type
+        if extra:
+            payload.update(extra)
+        await self._send_to(client_id, payload)
+
     async def send_task_replay_to_client(self, client_id: str, payload: dict[str, Any]) -> None:
         await self.send_to_client(client_id, "task_replay", payload)
 

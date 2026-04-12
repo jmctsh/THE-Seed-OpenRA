@@ -37,12 +37,19 @@ def resolve_session_dir(log_session_root: str, session_dir: Optional[str]) -> Op
     """Resolve a browser session path relative to the log session root."""
     if not session_dir:
         return None
+    root = Path(log_session_root).resolve()
     candidate = Path(session_dir)
     if not candidate.is_absolute():
-        candidate = (Path(log_session_root) / candidate).resolve()
+        candidate = (root / candidate).resolve()
     else:
         candidate = candidate.resolve()
-    return candidate if candidate.exists() else None
+    if not candidate.exists():
+        return None
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate
 
 
 def _normalize_live_world_health(current_world_health: Optional[dict[str, Any]]) -> dict[str, Any]:
