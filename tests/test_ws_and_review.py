@@ -22,7 +22,7 @@ from logging_system import start_persistence_session, stop_persistence_session
 
 from models import Event, EventType, TaskMessage, TaskMessageType, TaskStatus
 from main import RuntimeBridge, TASK_REPLAY_RAW_ENTRY_LIMIT
-from session_browser import build_session_catalog_payload, default_session_dir
+from session_browser import build_session_catalog_payload, build_session_history_payload, default_session_dir
 from task_replay import build_live_task_replay_bundle, build_task_replay_bundle
 from task_triage import build_live_task_payload
 from task_agent.queue import AgentQueue
@@ -641,6 +641,93 @@ def test_sync_request_pushes_current_state_directly():
     print("  PASS: sync_request_pushes_current_state_directly")
 
 
+def test_runtime_bridge_handle_published_task_message_tolerates_minimal_adjutant_stub():
+    class FakeTask:
+        def __init__(self):
+            self.task_id = "t1"
+            self.raw_text = "探索地图"
+            self.label = "001"
+            self.status = TaskStatus.RUNNING
+
+    class FakeKernel:
+        def __init__(self):
+            self._tasks = [FakeTask()]
+
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return list(self._tasks)
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+        def runtime_state(self):
+            return {}
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+
+    class MinimalAdjutant:
+        async def handle_player_input(self, text: str) -> dict[str, Any]:
+            return {"response_text": text}
+
+    bridge.adjutant = MinimalAdjutant()
+
+    bridge._handle_published_task_message(
+        TaskMessage(
+            task_id="t1",
+            message_id="m_info",
+            type=TaskMessageType.TASK_INFO,
+            content="侦察进行中",
+        )
+    )
+    bridge.kernel._tasks[0].status = TaskStatus.SUCCEEDED
+    bridge._handle_published_task_message(
+        TaskMessage(
+            task_id="t1",
+            message_id="m_done",
+            type=TaskMessageType.TASK_COMPLETE_REPORT,
+            content="任务完成",
+        )
+    )
+    print("  PASS: runtime_bridge_handle_published_task_message_tolerates_minimal_adjutant_stub")
+
+
 def test_diagnostics_sync_request_refreshes_current_state_without_replaying_generic_history():
     """diagnostics_sync_request should refresh diagnostics surfaces without duplicating chat/task history."""
 
@@ -793,6 +880,169 @@ def test_diagnostics_sync_request_refreshes_current_state_without_replaying_gene
     assert "player_notification" not in sent_types
     assert "query_response" not in sent_types
     print("  PASS: diagnostics_sync_request_refreshes_current_state_without_replaying_generic_history")
+
+
+def test_session_history_payload_includes_logged_adjutant_responses_and_notifications():
+    logging_system.clear()
+    benchmark.clear()
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.query_responses: list[dict[str, Any]] = []
+            self.player_notifications: list[dict[str, Any]] = []
+
+        async def send_query_response(self, payload):
+            self.query_responses.append(payload)
+
+        async def send_player_notification(self, payload):
+            self.player_notifications.append(payload)
+
+    class FakeKernel:
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return []
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+        def runtime_state(self):
+            return {}
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    bridge.attach_ws_server(FakeWS())
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bridge.log_session_root = tmpdir
+        session_dir = start_persistence_session(tmpdir, session_name="publisher-history")
+        try:
+            async def run():
+                await bridge._publisher.emit_adjutant_response(
+                    "副官收到指令",
+                    response_type="command",
+                    ok=True,
+                    extra={"task_id": "t_resp"},
+                )
+                await bridge._publisher.emit_notification(
+                    "command_cancel",
+                    "任务已取消",
+                    data={"task_id": "t_resp"},
+                )
+
+            asyncio.run(run())
+            payload = build_session_history_payload(tmpdir, session_dir=session_dir)
+        finally:
+            stop_persistence_session()
+
+    events = {(entry.get("event"), entry.get("message")) for entry in payload["log_entries"]}
+    assert ("adjutant_response_sent", "副官收到指令") in events
+    assert ("player_notification_sent", "任务已取消") in events
+    assert any(
+        entry.get("event") == "adjutant_response_sent" and entry.get("data", {}).get("task_id") == "t_resp"
+        for entry in payload["log_entries"]
+    )
+    assert any(
+        entry.get("event") == "player_notification_sent"
+        and entry.get("data", {}).get("data", {}).get("task_id") == "t_resp"
+        for entry in payload["log_entries"]
+    )
+    print("  PASS: session_history_payload_includes_logged_adjutant_responses_and_notifications")
+
+
+def test_dashboard_publisher_emit_adjutant_response_ignores_reserved_extra_field_collisions():
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.query_responses: list[dict[str, Any]] = []
+
+        async def send_query_response(self, payload):
+            self.query_responses.append(payload)
+
+    logged_info: list[dict[str, Any]] = []
+
+    class FakeLogger:
+        def info(self, _message, **kwargs):
+            logged_info.append(kwargs)
+
+    original_logger = dashboard_publish_module.slog
+    dashboard_publish_module.slog = FakeLogger()
+    try:
+        publisher = dashboard_publish_module.DashboardPublisher(
+            kernel=object(),
+            ws_server=FakeWS(),
+            dashboard_payload_builder=lambda: {},
+            task_payload_builder=lambda *args, **kwargs: {},
+        )
+
+        async def run():
+            await publisher.emit_adjutant_response(
+                "收到指令",
+                response_type="command",
+                ok=True,
+                extra={
+                    "ok": True,
+                    "timestamp": 123.0,
+                    "task_id": "t_cmd",
+                    "type": "command",
+                },
+            )
+
+        asyncio.run(run())
+    finally:
+        dashboard_publish_module.slog = original_logger
+
+    assert publisher.ws_server.query_responses[0]["answer"] == "收到指令"
+    assert publisher.ws_server.query_responses[0]["ok"] is True
+    assert publisher.ws_server.query_responses[0]["response_type"] == "command"
+    assert publisher.ws_server.query_responses[0]["task_id"] == "t_cmd"
+    assert logged_info == [
+        {
+            "event": "adjutant_response_sent",
+            "content": "收到指令",
+            "response_type": "command",
+            "ok": True,
+            "task_id": "t_cmd",
+            "type": "command",
+        }
+    ]
+    print("  PASS: dashboard_publisher_emit_adjutant_response_ignores_reserved_extra_field_collisions")
 
 
 def test_sync_request_propagates_world_stale_truth_consistently():

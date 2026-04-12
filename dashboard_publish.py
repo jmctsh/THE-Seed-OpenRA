@@ -279,6 +279,13 @@ class DashboardPublisher:
     ) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
             return
+        slog.info(
+            content,
+            event="player_notification_sent",
+            notification_type=notification_type,
+            content=content,
+            data=dict(data or {}),
+        )
         await self.ws_server.send_player_notification(
             {
                 "type": notification_type,
@@ -309,6 +316,17 @@ class DashboardPublisher:
         self.recent_responses.append(dict(payload))
         if len(self.recent_responses) > 100:
             self.recent_responses = self.recent_responses[-100:]
+        log_extra = dict(extra or {})
+        for reserved_key in ("event", "content", "response_type", "ok", "timestamp"):
+            log_extra.pop(reserved_key, None)
+        slog.info(
+            answer,
+            event="adjutant_response_sent",
+            content=answer,
+            response_type=response_type,
+            ok=ok,
+            **log_extra,
+        )
         await self.ws_server.send_query_response(payload)
 
     async def replay_history(self, client_id: str) -> None:

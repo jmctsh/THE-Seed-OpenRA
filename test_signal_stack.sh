@@ -24,7 +24,8 @@ or dashboard_publish_fault_is_reflected_in_world_snapshot_runtime_fault_state \
 or task_replay_request_returns_persisted_task_log \
 or task_replay_request_prefers_live_truth_for_active_task_bundle \
 or diagnostics_sync_request_refreshes_current_state_without_replaying_generic_history \
-or session_select_returns_catalog_and_task_catalog"
+or session_select_returns_catalog_and_task_catalog \
+or session_history_payload_includes_logged_adjutant_responses_and_notifications"
 
 echo
 echo "==> Operator surface hints"

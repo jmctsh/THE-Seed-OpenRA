@@ -254,11 +254,15 @@ class RuntimeBridge(InboundHandler):
     def _handle_published_task_message(self, message: TaskMessage) -> None:
         if self.adjutant is None:
             return
+        notify_task_completed = getattr(self.adjutant, "notify_task_completed", None)
+        notify_task_message = getattr(self.adjutant, "notify_task_message", None)
         if message.type == TaskMessageType.TASK_COMPLETE_REPORT:
             task_obj = next((t for t in self.kernel.list_tasks() if t.task_id == message.task_id), None)
             if task_obj is None:
                 return
-            self.adjutant.notify_task_completed(
+            if not callable(notify_task_completed):
+                return
+            notify_task_completed(
                 label=getattr(task_obj, "label", message.task_id),
                 raw_text=task_obj.raw_text,
                 result=task_obj.status.value,
@@ -266,8 +270,8 @@ class RuntimeBridge(InboundHandler):
                 task_id=message.task_id,
             )
             return
-        if message.type in (TaskMessageType.TASK_WARNING, TaskMessageType.TASK_INFO):
-            self.adjutant.notify_task_message(
+        if message.type in (TaskMessageType.TASK_WARNING, TaskMessageType.TASK_INFO) and callable(notify_task_message):
+            notify_task_message(
                 task_id=message.task_id,
                 message_type=message.type.value,
                 content=message.content,
