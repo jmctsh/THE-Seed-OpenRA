@@ -407,6 +407,96 @@ describe('DiagPanel', () => {
     expect(historyOptions.some((text) => text.includes('历史任务') && text.includes('历史阻塞：猛犸坦克 × 1 缺少前置'))).toBe(true)
   })
 
+  it('falls back to status text for historical tasks without persisted summaries', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('session_catalog', {
+      sessions: [
+        {
+          session_dir: '/tmp/history-session',
+          session_name: 'history-session',
+          is_current: true,
+        },
+      ],
+      selected_session_dir: '/tmp/history-session',
+    })
+    await wrapper.vm.$nextTick()
+    bus.emit('session_task_catalog', {
+      session_dir: '/tmp/history-session',
+      tasks: [
+        {
+          task_id: 't_hist_status',
+          raw_text: '历史任务',
+          status: 'partial',
+          timestamp: 80,
+        },
+      ],
+    })
+    await wrapper.find('#session-select').setValue('/tmp/history-session')
+    await wrapper.vm.$nextTick()
+
+    const options = wrapper.findAll('#task-trace-select option').map((item) => item.text())
+    expect(options.some((text) => text.includes('历史任务') && text.includes('status=partial'))).toBe(true)
+  })
+
+  it('prefers live triage over persisted summary when current session merges catalogs', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('session_catalog', {
+      sessions: [
+        {
+          session_dir: '/tmp/live-session',
+          session_name: 'live-session',
+          is_current: true,
+        },
+      ],
+      selected_session_dir: '/tmp/live-session',
+    })
+    bus.emit('session_task_catalog', {
+      session_dir: '/tmp/live-session',
+      tasks: [
+        {
+          task_id: 't_same',
+          raw_text: '推进前线',
+          status: 'running',
+          summary: '历史摘要：旧阻塞',
+          timestamp: 90,
+        },
+      ],
+    })
+    bus.emit('task_list', {
+      tasks: [
+        {
+          task_id: 't_same',
+          raw_text: '推进前线',
+          status: 'running',
+          timestamp: 100,
+          triage: {
+            status_line: '实时状态：等待能力模块恢复电力',
+          },
+        },
+      ],
+      pending_questions: [],
+    })
+    await wrapper.vm.$nextTick()
+
+    const options = wrapper.findAll('#task-trace-select option').map((item) => item.text())
+    expect(options.some((text) => text.includes('推进前线') && text.includes('实时状态：等待能力模块恢复电力'))).toBe(true)
+    expect(options.some((text) => text.includes('历史摘要：旧阻塞'))).toBe(false)
+  })
+
   it('renders replay_triage when current runtime triage is unavailable', async () => {
     const bus = createBus()
     const send = vi.fn()
