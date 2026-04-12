@@ -333,6 +333,7 @@ def _assert_application_runtime_ws_command_submit_merges_to_capability(
         loop = asyncio.get_running_loop()
         previous_handler = loop.get_exception_handler()
         background_errors: list[dict[str, Any]] = []
+        buffered_payloads: list[dict[str, Any]] = []
 
         def _capture_loop_exception(loop, context) -> None:
             del loop
@@ -509,6 +510,7 @@ def _assert_application_runtime_ws_command_submit_routes_to_recon(command_text: 
         loop = asyncio.get_running_loop()
         previous_handler = loop.get_exception_handler()
         background_errors: list[dict[str, Any]] = []
+        buffered_payloads: list[dict[str, Any]] = []
 
         def _capture_loop_exception(loop, context) -> None:
             del loop
@@ -2266,6 +2268,130 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
 
     asyncio.run(run())
     print("  PASS: application_runtime_ws_startup_smoke_and_background_publish")
+
+
+@pytest.mark.startup_smoke
+def test_application_runtime_ws_reconnect_sync_replays_current_baseline() -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        logging_system.clear()
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+        background_errors: list[dict[str, Any]] = []
+        buffered_payloads: list[dict[str, Any]] = []
+
+        def _capture_loop_exception(loop, context) -> None:
+            del loop
+            background_errors.append(dict(context))
+
+        loop.set_exception_handler(_capture_loop_exception)
+        try:
+            async def _recv_json(
+                ws: aiohttp.ClientWebSocketResponse,
+                *,
+                predicate,
+                timeout_s: float = 3.0,
+                max_messages: int = 40,
+            ) -> dict[str, Any]:
+                for index, payload in enumerate(list(buffered_payloads)):
+                    if predicate(payload):
+                        return buffered_payloads.pop(index)
+                deadline = loop.time() + timeout_s
+                seen = 0
+                while seen < max_messages and loop.time() < deadline:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    assert msg.type == aiohttp.WSMsgType.TEXT
+                    payload = json.loads(msg.data)
+                    if predicate(payload):
+                        return payload
+                    buffered_payloads.append(payload)
+                    seen += 1
+                raise AssertionError("expected websocket payload not received before timeout")
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                ws_port = _free_tcp_port()
+                cfg = RuntimeConfig(
+                    ws_host="127.0.0.1",
+                    ws_port=ws_port,
+                    enable_ws=True,
+                    enable_voice=False,
+                    log_session_root=str(Path(tmpdir) / "logs"),
+                    benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                    benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                    log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+                )
+                runtime = ApplicationRuntime(
+                    config=cfg,
+                    task_llm=provider,
+                    adjutant_llm=provider,
+                    api=api,
+                    world_source=source,
+                )
+                try:
+                    await runtime.start()
+
+                    async with aiohttp.ClientSession() as session:
+                        async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as first_ws:
+                            await first_ws.send_json({"type": "sync_request"})
+                            seen_types: set[str] = set()
+                            for _ in range(12):
+                                msg = await first_ws.receive(timeout=2.0)
+                                assert msg.type == aiohttp.WSMsgType.TEXT
+                                payload = json.loads(msg.data)
+                                seen_types.add(str(payload.get("type")))
+                                if {"world_snapshot", "task_list", "session_catalog"} <= seen_types:
+                                    break
+                            assert {"world_snapshot", "task_list", "session_catalog"} <= seen_types
+
+                        reconnect_task = runtime.kernel.create_task("重连后同步任务", TaskKind.MANAGED, 50)
+
+                        async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as second_ws:
+                            await second_ws.send_json({"type": "sync_request"})
+
+                            world_snapshot = await _recv_json(
+                                second_ws,
+                                predicate=lambda payload: payload.get("type") == "world_snapshot",
+                            )
+                            assert "runtime_fault_state" in world_snapshot.get("data", {})
+
+                            task_list = await _recv_json(
+                                second_ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and any(
+                                        item.get("task_id") == reconnect_task.task_id
+                                        for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            assert any(
+                                item.get("task_id") == reconnect_task.task_id
+                                and item.get("raw_text") == "重连后同步任务"
+                                for item in list(task_list.get("data", {}).get("tasks", []) or [])
+                                if isinstance(item, dict)
+                            )
+
+                            session_catalog = await _recv_json(
+                                second_ws,
+                                predicate=lambda payload: payload.get("type") == "session_catalog",
+                            )
+                            assert "sessions" in session_catalog.get("data", {})
+
+                    runtime.bridge.on_tick(1, 0.0)
+                    await asyncio.sleep(0.1)
+                    assert background_errors == [], background_errors
+                finally:
+                    await runtime.stop()
+        finally:
+            logging_system.clear()
+            loop.set_exception_handler(previous_handler)
+
+    asyncio.run(run())
+    print("  PASS: application_runtime_ws_reconnect_sync_replays_current_baseline")
 
 
 @pytest.mark.startup_smoke
