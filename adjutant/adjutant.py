@@ -2005,13 +2005,18 @@ class Adjutant:
             world_sync_failure_threshold = int(world_sync.get("failure_threshold", 0) or 0)
         except Exception:
             world_sync_failure_threshold = 0
+        world_sync_error = str(
+            world_sync.get("last_error")
+            or world_sync.get("last_refresh_error")
+            or ""
+        )
         return {
             "type": kind,
             "ok": False,
             "response_text": self._stale_world_response_text(kind, world_sync),
             "routing": "stale_guard",
             "reason": "world_sync_stale",
-            "world_sync_error": str(world_sync.get("last_error") or ""),
+            "world_sync_error": world_sync_error,
             "world_sync_failures": world_sync_failures,
             "world_sync_failure_threshold": world_sync_failure_threshold,
         }

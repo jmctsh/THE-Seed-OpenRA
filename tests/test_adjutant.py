@@ -1561,6 +1561,43 @@ def test_stale_world_blocks_query_and_skips_llm():
     print("  PASS: stale_world_blocks_query_and_skips_llm")
 
 
+def test_stale_world_guard_uses_last_refresh_error_fallback() -> None:
+    class StaleWorldModel(MockWorldModel):
+        def refresh_health(self):
+            return {
+                "stale": True,
+                "consecutive_failures": 4,
+                "total_failures": 4,
+                "last_refresh_error": "actors:COMMAND_EXECUTION_ERROR",
+                "failure_threshold": 3,
+                "timestamp": time.time(),
+            }
+
+    mock_llm = MockProvider(responses=[])
+    kernel = MockKernel()
+    wm = StaleWorldModel()
+    adjutant = Adjutant(llm=mock_llm, kernel=kernel, world_model=wm)
+
+    async def run():
+        result = await adjutant.handle_player_input("现在战况如何？")
+        assert result["type"] == "query"
+        assert result["ok"] is False
+        assert result["routing"] == "stale_guard"
+        assert result["reason"] == "world_sync_stale"
+        assert "连续失败 4/3" in result["response_text"]
+        assert "actors:COMMAND_EXECUTION_ERROR" in result["response_text"]
+        assert result["world_sync_failures"] == 4
+        assert result["world_sync_failure_threshold"] == 3
+        assert result["world_sync_error"] == "actors:COMMAND_EXECUTION_ERROR"
+
+    asyncio.run(run())
+
+    assert len(mock_llm.call_log) == 0
+    assert kernel.created_tasks == []
+    assert kernel.started_jobs == []
+    print("  PASS: stale_world_guard_uses_last_refresh_error_fallback")
+
+
 def test_stale_world_blocks_classified_command_without_task_creation():
     class StaleWorldModel(MockWorldModel):
         def refresh_health(self):

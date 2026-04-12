@@ -871,6 +871,28 @@ def test_coordinator_alerts_surface_world_sync_error_detail() -> None:
     print("  PASS: coordinator_alerts_surface_world_sync_error_detail")
 
 
+def test_coordinator_alerts_use_last_refresh_error_fallback() -> None:
+    class _StaleWorldModel(_WorldModel):
+        def refresh_health(self):
+            return {
+                "stale": True,
+                "consecutive_failures": 4,
+                "total_failures": 4,
+                "last_refresh_error": "economy:COMMAND_EXECUTION_ERROR",
+                "failure_threshold": 3,
+                "timestamp": time.time(),
+            }
+
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_StaleWorldModel())
+    context = adjutant._build_context("现在怎么样")
+    alerts = context.coordinator_snapshot["alerts"]
+
+    assert any("连续失败 4/3" in str(alert.get("text", "")) for alert in alerts)
+    assert any("economy:COMMAND_EXECUTION_ERROR" in str(alert.get("text", "")) for alert in alerts)
+    assert "economy:COMMAND_EXECUTION_ERROR" in context.coordinator_snapshot["status_line"]
+    print("  PASS: coordinator_alerts_use_last_refresh_error_fallback")
+
+
 def test_coordinator_hints_merge_capability_followup_on_fulfilling_phase() -> None:
     adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_WorldModelFulfilling())
 
