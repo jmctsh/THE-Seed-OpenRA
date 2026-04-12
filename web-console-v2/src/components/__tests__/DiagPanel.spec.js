@@ -1089,6 +1089,85 @@ describe('DiagPanel', () => {
     expect(options).toContain('history-session · latest/failed=1/aborted=1')
   })
 
+  it('renders selected-session highlights and focuses the chosen task', async () => {
+    const bus = createBus()
+    const send = vi.fn(() => true)
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send,
+        on: bus.on,
+      },
+    })
+
+    bus.emit('session_catalog', {
+      sessions: [
+        {
+          session_dir: '/tmp/history-session',
+          session_name: 'history-session',
+        },
+      ],
+      selected_session_dir: '/tmp/history-session',
+    })
+    bus.emit('session_task_catalog', {
+      session_dir: '/tmp/history-session',
+      tasks: [
+        {
+          task_id: 't_fail',
+          label: '003',
+          raw_text: '建造雷达',
+          status: 'failed',
+          timestamp: 300,
+          summary: '缺少前置建筑',
+        },
+        {
+          task_id: 't_partial',
+          label: '004',
+          raw_text: '推进前线',
+          status: 'partial',
+          timestamp: 200,
+          summary: '部队不足，部分完成',
+        },
+        {
+          task_id: 't_wait',
+          label: '005',
+          raw_text: '侦察地图',
+          status: 'running',
+          timestamp: 100,
+          triage: {
+            status_line: '等待能力模块补足步兵',
+            waiting_reason: 'unit_request',
+          },
+        },
+        {
+          task_id: 't_ok',
+          label: '006',
+          raw_text: '发展经济',
+          status: 'succeeded',
+          timestamp: 50,
+          summary: '矿场已建成',
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    const highlightButtons = wrapper.findAll('.session-highlight-btn')
+    expect(highlightButtons).toHaveLength(3)
+    expect(wrapper.text()).toContain('003 · 缺少前置建筑')
+    expect(wrapper.text()).toContain('004 · 部队不足，部分完成')
+    expect(wrapper.text()).toContain('005 · 等待能力模块补足步兵')
+    expect(wrapper.text()).not.toContain('006 · 矿场已建成')
+
+    await highlightButtons[0].trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('#task-trace-select').element.value).toBe('t_fail')
+    expect(send.mock.calls.some(([type, payload]) => (
+      type === 'task_replay_request'
+      && payload.task_id === 't_fail'
+      && payload.session_dir === '/tmp/history-session'
+    ))).toBe(true)
+  })
+
   it('renders world-sync stale details from world_snapshot', async () => {
     const bus = createBus()
     const wrapper = mount(DiagPanel, {

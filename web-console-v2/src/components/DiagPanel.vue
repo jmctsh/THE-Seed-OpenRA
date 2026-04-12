@@ -57,6 +57,17 @@
           {{ item.status }}={{ item.count }}
         </span>
       </div>
+      <div v-if="selectedSessionHighlights.length" class="replay-tags session-highlights">
+        <button
+          v-for="item in selectedSessionHighlights"
+          :key="`session-highlight-${item.taskId}`"
+          type="button"
+          class="filter-btn replay-tag session-highlight-btn"
+          @click="focusDiagnosticsTask(item.taskId)"
+        >
+          {{ item.label }} · {{ item.detail }}
+        </button>
+      </div>
       <div
         v-if="selectedSessionWorldHealth"
         class="triage-meta session-health"
@@ -493,6 +504,36 @@ const selectedSessionWorldHealth = computed(() =>
 const selectedSessionTaskRollup = computed(() =>
   normalizeSessionTaskRollup(selectedSessionMeta.value?.task_rollup || null)
 )
+
+const selectedSessionHighlights = computed(() => {
+  if (!selectedSessionMeta.value) return []
+  return activeTaskCatalog.value
+    .map((task) => {
+      const detail = compactSingleLine(taskOptionDetail(task), 56)
+      if (!detail) return null
+      const status = String(task?.status || '').toLowerCase()
+      let severity = 0
+      if (status === 'failed') severity = 4
+      else if (status === 'partial') severity = 3
+      else if (status === 'aborted') severity = 2
+      else if (task?.triage?.blocking_reason || task?.triage?.waiting_reason) severity = 1
+      else if (!['succeeded', 'running'].includes(status)) severity = 1
+      if (severity <= 0) return null
+      return {
+        taskId: task.task_id,
+        label: compactSingleLine(task.label || formatTaskLabel(task.task_id), 12) || '任务',
+        detail,
+        severity,
+        timestamp: Number(task.timestamp || task.created_at || 0),
+      }
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (right.severity !== left.severity) return right.severity - left.severity
+      return right.timestamp - left.timestamp
+    })
+    .slice(0, 3)
+})
 
 const activeTaskCatalog = computed(() => {
   if (!selectedSessionDir.value) return [...liveTaskCatalog.value]
@@ -939,6 +980,12 @@ function requestReplay(taskId, { force = false, includeEntries = false } = {}) {
   if (sent) replayRequestedLevel[key] = neededLevel
 }
 
+function focusDiagnosticsTask(taskId) {
+  if (!taskId || taskId === 'ALL') return
+  selectedTaskId.value = taskId
+  requestReplay(taskId, { force: true, includeEntries: Boolean(replayExpanded[replayCacheKey(taskId)]) })
+}
+
 function scheduleReplayRefresh(taskId) {
   if (!taskId || taskId === 'ALL') return
   if (taskId !== selectedTaskId.value) return
@@ -1212,8 +1259,7 @@ onMounted(() => {
     if (!taskId) return
     const liveSession = currentSessionDir.value || ''
     if (liveSession) selectedSessionDir.value = liveSession
-    selectedTaskId.value = taskId
-    requestReplay(taskId, { force: true, includeEntries: Boolean(replayExpanded[replayCacheKey(taskId)]) })
+    focusDiagnosticsTask(taskId)
   }
   window.addEventListener('theseed:clear-ui', clearUiHandler)
   window.addEventListener('theseed:apply-diagnostics-focus', focusTaskHandler)
