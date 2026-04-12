@@ -699,6 +699,88 @@ def _derive_task_rollup(session_dir: Path) -> dict[str, Any]:
     return summarize_task_rollup(list_session_tasks(session_dir, limit=0))
 
 
+def _build_persistence_session_summary(
+    session_dir: Path,
+    *,
+    latest: Optional[Path],
+    current: Optional[Path],
+) -> dict[str, Any]:
+    metadata_path = session_dir / "session.json"
+    if not metadata_path.exists():
+        return {}
+
+    payload = _load_json_dict(metadata_path)
+    metadata_dirty = False
+    world_health = _compact_world_health_summary(
+        payload.get("world_health") if isinstance(payload.get("world_health"), dict) else {}
+    )
+    if not world_health:
+        world_health = _derive_world_health_summary(session_dir)
+        if world_health:
+            payload["world_health"] = world_health
+            metadata_dirty = True
+    runtime_fault_summary = _compact_runtime_fault_summary(
+        payload.get("runtime_fault_summary") if isinstance(payload.get("runtime_fault_summary"), dict) else {}
+    )
+    if not runtime_fault_summary:
+        runtime_fault_summary = _derive_runtime_fault_summary(session_dir)
+        if runtime_fault_summary:
+            payload["runtime_fault_summary"] = runtime_fault_summary
+            metadata_dirty = True
+    task_rollup = compact_task_rollup(
+        payload.get("task_rollup") if isinstance(payload.get("task_rollup"), dict) else {}
+    )
+    if not task_rollup:
+        task_rollup = _derive_task_rollup(session_dir)
+        if task_rollup:
+            payload["task_rollup"] = task_rollup
+            metadata_dirty = True
+    if metadata_dirty:
+        try:
+            metadata_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+    task_counts = payload.get("task_counts")
+    task_count = len(task_counts) if isinstance(task_counts, dict) else int(payload.get("task_file_count") or 0)
+    started_at = str(payload.get("started_at") or "")
+    return {
+        "session_name": str(payload.get("session_name") or session_dir.name),
+        "session_dir": str(session_dir.resolve()),
+        "started_at": started_at,
+        "ended_at": str(payload.get("ended_at") or ""),
+        "record_count": int(payload.get("record_count") or 0),
+        "task_count": task_count,
+        "task_file_count": int(payload.get("task_file_count") or task_count),
+        "pid": int(payload.get("pid") or 0),
+        "cwd": str(payload.get("cwd") or ""),
+        "metadata": payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+        "world_health": world_health,
+        "runtime_fault_summary": runtime_fault_summary,
+        "task_rollup": task_rollup,
+        "is_latest": latest is not None and session_dir.resolve() == latest.resolve(),
+        "is_current": current is not None and session_dir.resolve() == current.resolve(),
+        "mtime": session_dir.stat().st_mtime,
+    }
+
+
+def read_persistence_session(session_dir: Union[str, Path]) -> dict[str, Any]:
+    """Read lightweight metadata for one persisted runtime session."""
+    resolved = Path(session_dir).resolve()
+    if not resolved.exists() or not resolved.is_dir():
+        return {}
+    summary = _build_persistence_session_summary(
+        resolved,
+        latest=latest_session_dir(resolved.parent),
+        current=current_session_dir(),
+    )
+    if summary:
+        summary.pop("mtime", None)
+    return summary
+
+
 def list_persistence_sessions(
     base_dir: Union[str, Path] = "Logs/runtime",
     *,
@@ -715,66 +797,9 @@ def list_persistence_sessions(
     for child in sorted(base.iterdir(), reverse=True):
         if not child.is_dir():
             continue
-        metadata_path = child / "session.json"
-        if not metadata_path.exists():
-            continue
-        payload = _load_json_dict(metadata_path)
-        metadata_dirty = False
-        world_health = _compact_world_health_summary(
-            payload.get("world_health") if isinstance(payload.get("world_health"), dict) else {}
-        )
-        if not world_health:
-            world_health = _derive_world_health_summary(child)
-            if world_health:
-                payload["world_health"] = world_health
-                metadata_dirty = True
-        runtime_fault_summary = _compact_runtime_fault_summary(
-            payload.get("runtime_fault_summary") if isinstance(payload.get("runtime_fault_summary"), dict) else {}
-        )
-        if not runtime_fault_summary:
-            runtime_fault_summary = _derive_runtime_fault_summary(child)
-            if runtime_fault_summary:
-                payload["runtime_fault_summary"] = runtime_fault_summary
-                metadata_dirty = True
-        task_rollup = compact_task_rollup(
-            payload.get("task_rollup") if isinstance(payload.get("task_rollup"), dict) else {}
-        )
-        if not task_rollup:
-            task_rollup = _derive_task_rollup(child)
-            if task_rollup:
-                payload["task_rollup"] = task_rollup
-                metadata_dirty = True
-        if metadata_dirty:
-            try:
-                metadata_path.write_text(
-                    json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-            except OSError:
-                pass
-        task_counts = payload.get("task_counts")
-        task_count = len(task_counts) if isinstance(task_counts, dict) else int(payload.get("task_file_count") or 0)
-        started_at = str(payload.get("started_at") or "")
-        sessions.append(
-            {
-                "session_name": str(payload.get("session_name") or child.name),
-                "session_dir": str(child.resolve()),
-                "started_at": started_at,
-                "ended_at": str(payload.get("ended_at") or ""),
-                "record_count": int(payload.get("record_count") or 0),
-                "task_count": task_count,
-                "task_file_count": int(payload.get("task_file_count") or task_count),
-                "pid": int(payload.get("pid") or 0),
-                "cwd": str(payload.get("cwd") or ""),
-                "metadata": payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
-                "world_health": world_health,
-                "runtime_fault_summary": runtime_fault_summary,
-                "task_rollup": task_rollup,
-                "is_latest": latest is not None and child.resolve() == latest.resolve(),
-                "is_current": current is not None and child.resolve() == current.resolve(),
-                "mtime": child.stat().st_mtime,
-            }
-        )
+        summary = _build_persistence_session_summary(child, latest=latest, current=current)
+        if summary:
+            sessions.append(summary)
     sessions.sort(
         key=lambda item: (
             str(item.get("started_at") or ""),

@@ -11,6 +11,7 @@ from logging_system import (
     latest_session_dir,
     list_persistence_sessions,
     list_session_tasks,
+    read_persistence_session,
     read_task_replay_records,
 )
 from logging_system.task_rollup import summarize_task_rollup
@@ -166,6 +167,17 @@ def build_task_replay_payload(
     raw_entries = entries[-raw_entry_limit:]
     included_entries = raw_entries if include_entries else []
     log_path = str(resolved_session_dir / "tasks" / f"{task_id}.jsonl") if resolved_session_dir else None
+    bundle = bundle_builder(entries, resolved_session_dir)
+    session_summary = read_persistence_session(resolved_session_dir) if resolved_session_dir is not None else {}
+    runtime_fault_summary = (
+        session_summary.get("runtime_fault_summary") if isinstance(session_summary.get("runtime_fault_summary"), dict) else {}
+    )
+    if runtime_fault_summary and isinstance(bundle, dict):
+        session_context = bundle.get("session_context")
+        if not isinstance(session_context, dict):
+            session_context = {}
+        session_context["runtime_fault_summary"] = dict(runtime_fault_summary)
+        bundle["session_context"] = session_context
     return {
         "task_id": task_id,
         "session_dir": str(resolved_session_dir) if resolved_session_dir else None,
@@ -174,6 +186,6 @@ def build_task_replay_payload(
         "raw_entry_count": len(raw_entries),
         "raw_entries_truncated": len(raw_entries) < len(entries),
         "raw_entries_included": bool(include_entries),
-        "bundle": bundle_builder(entries, resolved_session_dir),
+        "bundle": bundle,
         "entries": included_entries,
     }

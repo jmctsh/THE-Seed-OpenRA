@@ -158,6 +158,19 @@
           last={{ selectedTaskReplayBundle.last_transition.label }}
         </span>
       </div>
+      <div v-if="selectedTaskReplaySessionRuntimeFault" class="replay-section">
+        <div class="replay-heading">Session Runtime Fault</div>
+        <div class="triage-meta">
+          <span>runtime_fault=seen</span>
+          <span>source={{ selectedTaskReplaySessionRuntimeFault.source }}</span>
+          <span v-if="selectedTaskReplaySessionRuntimeFault.stage">
+            stage={{ selectedTaskReplaySessionRuntimeFault.stage }}
+          </span>
+          <span v-if="selectedTaskReplaySessionRuntimeFault.error">
+            error={{ formatSessionHealthError(selectedTaskReplaySessionRuntimeFault.error) }}
+          </span>
+        </div>
+      </div>
       <div v-if="selectedReplayTriage" class="replay-section">
         <div class="replay-heading">{{ selectedTaskReplayBundle.current_runtime?.triage ? 'Current Runtime' : 'Replay Triage' }}</div>
         <div class="replay-overview">{{ selectedReplayTriage.status_line }}</div>
@@ -629,6 +642,10 @@ const selectedTaskReplayBundle = computed(() => {
   if (selectedTaskId.value === 'ALL') return null
   return replayBundleCache[replayCacheKey(selectedTaskId.value)] || null
 })
+
+const selectedTaskReplaySessionRuntimeFault = computed(() =>
+  normalizeSessionRuntimeFault(selectedTaskReplayBundle.value?.session_context?.runtime_fault_summary || null)
+)
 
 const selectedReplayTriage = computed(() => {
   const bundle = selectedTaskReplayBundle.value

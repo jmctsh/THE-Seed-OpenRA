@@ -212,6 +212,66 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('ready=Building:发电厂')
   })
 
+  it('renders session runtime fault context inside replay diagnostics', async () => {
+    const bus = createBus()
+    const send = vi.fn()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send,
+        on: bus.on,
+      },
+    })
+
+    bus.emit('task_list', {
+      tasks: [
+        {
+          task_id: 't_cap',
+          raw_text: '发展科技',
+          status: 'running',
+          timestamp: 100,
+          created_at: 90,
+          triage: {
+            status_line: '能力处理中',
+            state: 'running',
+          },
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('#task-trace-select').setValue('t_cap')
+    await wrapper.vm.$nextTick()
+
+    bus.emit('task_replay', {
+      task_id: 't_cap',
+      bundle: {
+        summary: '回放摘要',
+        entry_count: 3,
+        duration_s: 12.5,
+        session_context: {
+          runtime_fault_summary: {
+            degraded: true,
+            source: 'dashboard_publish',
+            stage: 'task_messages',
+            error: "RuntimeError('publish-boom')",
+            updated_at: 12,
+          },
+        },
+      },
+      raw_entry_count: 0,
+      entry_count: 3,
+      raw_entries_included: false,
+      raw_entries_truncated: false,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Session Runtime Fault')
+    expect(wrapper.text()).toContain('runtime_fault=seen')
+    expect(wrapper.text()).toContain('source=dashboard_publish')
+    expect(wrapper.text()).toContain('stage=task_messages')
+    expect(wrapper.text()).toContain("error=RuntimeError('publish-boom')")
+  })
+
   it('renders reservation lifecycle replay highlights with compact transition details', async () => {
     const bus = createBus()
     const send = vi.fn()

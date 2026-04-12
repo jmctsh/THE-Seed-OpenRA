@@ -2625,6 +2625,26 @@ def test_task_replay_request_returns_persisted_task_log():
                 + "\n",
                 encoding="utf-8",
             )
+            component_path = Path(session_dir) / "components" / "dashboard_publish.jsonl"
+            component_path.parent.mkdir(parents=True, exist_ok=True)
+            component_path.write_text(
+                json.dumps(
+                    {
+                        "timestamp": 126.0,
+                        "component": "dashboard_publish",
+                        "level": "ERROR",
+                        "message": "Dashboard publish stage failed",
+                        "event": "dashboard_publish_stage_failed",
+                        "data": {
+                            "stage": "task_messages",
+                            "error": "RuntimeError('publish-boom')",
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
             async def run():
                 await bridge.on_task_replay_request("t_demo", "client_7", session_dir=str(session_dir))
@@ -2678,6 +2698,13 @@ def test_task_replay_request_returns_persisted_task_log():
     assert payload["bundle"]["llm_turns"][0]["response_text"] == "先查询世界状态"
     assert payload["bundle"]["llm_turns"][0]["reasoning_content"] == "需要先确认当前侦察态势"
     assert payload["bundle"]["llm_turns"][0]["input_messages"][0]["role"] == "system"
+    assert payload["bundle"]["session_context"]["runtime_fault_summary"] == {
+        "degraded": True,
+        "source": "dashboard_publish",
+        "stage": "task_messages",
+        "error": "RuntimeError('publish-boom')",
+        "updated_at": 126.0,
+    }
     assert payload["bundle"]["unit_pipeline"]["unfulfilled_requests"][0]["request_id"] == "req_1"
     assert (
         payload["bundle"]["unit_pipeline"]["unfulfilled_requests"][0]["world_sync_last_error"]

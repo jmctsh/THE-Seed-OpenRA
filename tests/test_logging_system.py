@@ -1043,6 +1043,56 @@ def test_list_persistence_sessions_backfills_runtime_fault_summary_from_componen
     assert session_meta["runtime_fault_summary"] == runtime_fault_summary
 
 
+def test_read_persistence_session_backfills_runtime_fault_summary_from_component_logs() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        session_dir = base / "session-read-fault-backfill"
+        (session_dir / "components").mkdir(parents=True, exist_ok=True)
+        (base / "latest.txt").write_text("session-read-fault-backfill\n", encoding="utf-8")
+        (session_dir / "session.json").write_text(
+            json.dumps(
+                {
+                    "session_name": "session-read-fault-backfill",
+                    "started_at": "2026-04-12T00:00:00+00:00",
+                    "metadata": {"source": "unit-test"},
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (session_dir / "components" / "dashboard_publish.jsonl").write_text(
+            json.dumps(
+                {
+                    "timestamp": 18.0,
+                    "component": "dashboard_publish",
+                    "level": "ERROR",
+                    "message": "Dashboard publish stage failed",
+                    "event": "dashboard_publish_stage_failed",
+                    "data": {
+                        "stage": "task_messages",
+                        "error": "RuntimeError('publish-boom')",
+                    },
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        session_summary = logging_system.read_persistence_session(session_dir)
+        session_meta = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+
+    runtime_fault_summary = session_summary["runtime_fault_summary"]
+    assert runtime_fault_summary["degraded"] is True
+    assert runtime_fault_summary["source"] == "dashboard_publish"
+    assert runtime_fault_summary["stage"] == "task_messages"
+    assert runtime_fault_summary["error"] == "RuntimeError('publish-boom')"
+    assert runtime_fault_summary["updated_at"] == 18.0
+    assert session_meta["runtime_fault_summary"] == runtime_fault_summary
+
+
 def test_benchmark_summary_and_logging_integration() -> None:
     logging_system.install_benchmark_logging()
     try:
