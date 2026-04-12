@@ -342,8 +342,21 @@ class LiveTestRunner:
         logs = [item.get("data", {}).get("message", "") for item in list(self._logs)[-5:]]
         errors = [str(item.get("message") or "") for item in list(self._errors)[-3:]]
         task_messages = [str(item.get("content") or "") for item in list(self._task_messages)[-3:]]
+        world_snapshot = dict(self._world_snapshot or {})
+        runtime_state = world_snapshot.get("runtime_state") if isinstance(world_snapshot, dict) else {}
+        active_tasks = len(runtime_state.get("active_tasks", {}) or {}) if isinstance(runtime_state, dict) else 0
+        world_debug = {
+            "stale": bool(world_snapshot.get("stale", False)),
+            "sync_failures": int(world_snapshot.get("consecutive_refresh_failures", 0) or 0),
+            "failure_threshold": int(world_snapshot.get("failure_threshold", 0) or 0),
+            "last_refresh_error": str(world_snapshot.get("last_refresh_error") or ""),
+            "player_faction": str(world_snapshot.get("player_faction") or ""),
+            "capability_truth_blocker": str(world_snapshot.get("capability_truth_blocker") or ""),
+            "active_tasks": active_tasks,
+            "pending_questions": len(world_snapshot.get("pending_questions", []) or []),
+        }
         return (
-            f"notifications={notifications} logs={logs} "
+            f"world={world_debug} notifications={notifications} logs={logs} "
             f"errors={errors} task_messages={task_messages}"
         )
 

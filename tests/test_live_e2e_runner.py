@@ -103,6 +103,37 @@ def test_live_runner_captures_diagnostics_payloads_and_task_replay(monkeypatch) 
     assert "正在执行" in debug
 
 
+def test_live_runner_recent_debug_context_includes_world_truth(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    runner = live_e2e.LiveTestRunner()
+
+    runner._handle_message(
+        {
+            "type": "world_snapshot",
+            "data": {
+                "stale": True,
+                "consecutive_refresh_failures": 4,
+                "failure_threshold": 3,
+                "last_refresh_error": "actors:COMMAND_EXECUTION_ERROR",
+                "player_faction": "allied",
+                "capability_truth_blocker": "faction_roster_unsupported",
+                "pending_questions": [{"message_id": "q_1"}],
+                "runtime_state": {"active_tasks": {"t_cap": {"label": "001"}}},
+            },
+        }
+    )
+
+    debug = runner.recent_debug_context()
+    assert "'stale': True" in debug
+    assert "'sync_failures': 4" in debug
+    assert "'failure_threshold': 3" in debug
+    assert "'last_refresh_error': 'actors:COMMAND_EXECUTION_ERROR'" in debug
+    assert "'player_faction': 'allied'" in debug
+    assert "'capability_truth_blocker': 'faction_roster_unsupported'" in debug
+    assert "'active_tasks': 1" in debug
+    assert "'pending_questions': 1" in debug
+
+
 def test_live_runner_has_task_surface_from_update_or_message(monkeypatch) -> None:
     monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
     runner = live_e2e.LiveTestRunner()
