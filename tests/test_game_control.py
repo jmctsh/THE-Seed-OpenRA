@@ -52,6 +52,8 @@ class _CloseTrackingAPI:
 class _BridgeKernel:
     def __init__(self) -> None:
         self.reset_calls = 0
+        self.cancel_ok = True
+        self.cancelled_task_id: str | None = None
 
     def submit_player_response(self, response, *, now=None):
         del response, now
@@ -65,6 +67,10 @@ class _BridgeKernel:
 
     def reset_session(self) -> None:
         self.reset_calls += 1
+
+    def cancel_task(self, task_id: str) -> bool:
+        self.cancelled_task_id = task_id
+        return self.cancel_ok
 
 
 class _BridgeWS:
@@ -442,6 +448,62 @@ def test_runtime_bridge_question_reply_success_is_visible() -> None:
 
     asyncio.run(run())
     print("  PASS: runtime_bridge_question_reply_success_is_visible")
+
+
+def test_runtime_bridge_command_cancel_emits_notification_payload() -> None:
+    async def run() -> None:
+        kernel = _BridgeKernel()
+        bridge = RuntimeBridge(
+            kernel=kernel,
+            world_model=type("WM", (), {})(),
+            game_loop=_BridgeLoop(),
+            adjutant=None,
+        )
+        bridge.sync_runtime = lambda: None  # type: ignore[method-assign]
+
+        async def _noop_publish() -> None:
+            return None
+
+        bridge.publish_dashboard = _noop_publish  # type: ignore[method-assign]
+        ws = _BridgeWS()
+        bridge.attach_ws_server(ws)
+        await bridge.on_command_cancel("t_1", "client_1")
+
+        assert kernel.cancelled_task_id == "t_1"
+        assert ws.query_responses == []
+        assert len(ws.player_notifications) == 1
+        notification = ws.player_notifications[0]
+        assert notification["type"] == "command_cancel"
+        assert notification["content"] == "任务已取消"
+        assert notification["icon"] == "ℹ"
+        assert notification["data"] == {"task_id": "t_1", "ok": True}
+
+    asyncio.run(run())
+    print("  PASS: runtime_bridge_command_cancel_emits_notification_payload")
+
+
+def test_runtime_bridge_game_restart_without_runtime_emits_error_notification() -> None:
+    async def run() -> None:
+        bridge = RuntimeBridge(
+            kernel=_BridgeKernel(),
+            world_model=type("WM", (), {})(),
+            game_loop=_BridgeLoop(),
+            adjutant=None,
+        )
+        ws = _BridgeWS()
+        bridge.attach_ws_server(ws)
+        await bridge.on_game_restart(None, "client_1")
+
+        assert ws.query_responses == []
+        assert len(ws.player_notifications) == 1
+        notification = ws.player_notifications[0]
+        assert notification["type"] == "error"
+        assert notification["content"] == "游戏重启失败：runtime 未挂载"
+        assert notification["icon"] == "ℹ"
+        assert notification["data"] == {}
+
+    asyncio.run(run())
+    print("  PASS: runtime_bridge_game_restart_without_runtime_emits_error_notification")
 
 
 @pytest.mark.contract

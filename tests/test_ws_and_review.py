@@ -874,6 +874,135 @@ def test_sync_request_overlays_live_world_health_into_session_catalog():
     assert "max_consecutive_failures" not in world_health
 
 
+def test_sync_request_tolerates_runtime_fact_and_world_health_failures():
+    class FakeTask:
+        def __init__(self):
+            self.task_id = "t_cap"
+            self.raw_text = "发展科技"
+            self.kind = type("Kind", (), {"value": "managed"})()
+            self.priority = 70
+            self.status = TaskStatus.RUNNING
+            self.timestamp = 123.0
+            self.created_at = 120.0
+            self.label = "001"
+            self.is_capability = True
+
+    class FakeKernel:
+        def __init__(self):
+            self.task = FakeTask()
+
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return [self.task]
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self, task_id=None):
+            del task_id
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+        def runtime_state(self):
+            return {
+                "active_tasks": {
+                    "t_cap": {
+                        "is_capability": True,
+                        "label": "001",
+                        "status": "running",
+                    }
+                },
+                "capability_status": {
+                    "task_id": "t_cap",
+                    "label": "001",
+                    "phase": "idle",
+                },
+            }
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+        def compute_runtime_facts(self, task_id: str, *, include_buildable: bool = True):
+            assert include_buildable is False
+            raise RuntimeError(f"boom:{task_id}")
+
+        def refresh_health(self):
+            raise RuntimeError("health-boom")
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[tuple[str, dict[str, Any]]] = []
+
+        async def send_world_snapshot_to_client(self, client_id, snapshot):
+            self.sent.append(("world_snapshot", {"client_id": client_id, "snapshot": snapshot}))
+
+        async def send_task_list_to_client(self, client_id, tasks, pending_questions=None):
+            self.sent.append(("task_list", {"client_id": client_id, "tasks": tasks, "pending_questions": pending_questions}))
+
+        async def send_session_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_catalog", {"client_id": client_id, "payload": payload}))
+
+        async def send_session_task_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_task_catalog", {"client_id": client_id, "payload": payload}))
+
+        async def send_to_client(self, client_id, msg_type, data):
+            self.sent.append((msg_type, {"client_id": client_id, "data": data}))
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    ws = FakeWS()
+    bridge.attach_ws_server(ws)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bridge.log_session_root = tmpdir
+
+        async def run():
+            await bridge.on_sync_request("client_resilient")
+
+        asyncio.run(run())
+
+    world_snapshot = next(item for item in ws.sent if item[0] == "world_snapshot")[1]["snapshot"]
+    task_payload = next(item for item in ws.sent if item[0] == "task_list")[1]["tasks"][0]
+    session_catalog = next(item for item in ws.sent if item[0] == "session_catalog")[1]["payload"]
+
+    assert world_snapshot["player_faction"] == ""
+    assert world_snapshot["capability_truth_blocker"] == ""
+    assert task_payload["task_id"] == "t_cap"
+    assert task_payload["triage"]["phase"] == "idle"
+    assert task_payload["triage"]["blocking_reason"] == ""
+    assert session_catalog["sessions"] == []
+
+
 def test_build_session_catalog_preserves_persisted_world_health_counters_under_live_overlay():
     with tempfile.TemporaryDirectory() as tmpdir:
         session_dir = start_persistence_session(tmpdir, session_name="live-session")
