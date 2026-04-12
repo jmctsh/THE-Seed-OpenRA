@@ -936,20 +936,35 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
                             )
                             assert task_update_payload["data"]["task_id"] == task.task_id
 
-                            await ws.send_json({
-                                "type": "task_replay_request",
-                                "task_id": task.task_id,
-                                "include_entries": False,
-                            })
-                            replay_payload = await _recv_json(
-                                ws,
-                                predicate=lambda payload: (
-                                    payload.get("type") == "task_replay"
-                                    and payload.get("data", {}).get("task_id") == task.task_id
-                                ),
-                            )
-                            assert replay_payload["data"]["task_id"] == task.task_id
-                            assert replay_payload["data"]["raw_entries_included"] is False
+                            async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as observer_ws:
+                                await ws.send_json({
+                                    "type": "task_replay_request",
+                                    "task_id": task.task_id,
+                                    "include_entries": False,
+                                })
+                                replay_payload = await _recv_json(
+                                    ws,
+                                    predicate=lambda payload: (
+                                        payload.get("type") == "task_replay"
+                                        and payload.get("data", {}).get("task_id") == task.task_id
+                                    ),
+                                )
+                                assert replay_payload["data"]["task_id"] == task.task_id
+                                assert replay_payload["data"]["raw_entries_included"] is False
+
+                                observer_deadline = loop.time() + 0.3
+                                while loop.time() < observer_deadline:
+                                    try:
+                                        observer_msg = await asyncio.wait_for(
+                                            observer_ws.receive(),
+                                            timeout=max(0.05, observer_deadline - loop.time()),
+                                        )
+                                    except asyncio.TimeoutError:
+                                        break
+                                    if observer_msg.type != aiohttp.WSMsgType.TEXT:
+                                        continue
+                                    observer_payload = json.loads(observer_msg.data)
+                                    assert observer_payload.get("type") != "task_replay"
 
                             await ws.send_json({"type": "unknown_live_message"})
                             error_payload = await _recv_json(
