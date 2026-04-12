@@ -1034,6 +1034,133 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
     print("  PASS: application_runtime_ws_startup_smoke_and_background_publish")
 
 
+@pytest.mark.startup_smoke
+def test_application_runtime_ws_session_clear_retargets_requesting_client_only() -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+
+        async def _recv_json(
+            ws: aiohttp.ClientWebSocketResponse,
+            *,
+            predicate,
+            timeout_s: float = 3.0,
+            max_messages: int = 40,
+        ) -> dict[str, Any]:
+            deadline = loop.time() + timeout_s
+            seen = 0
+            while seen < max_messages and loop.time() < deadline:
+                msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                assert msg.type == aiohttp.WSMsgType.TEXT
+                payload = json.loads(msg.data)
+                if predicate(payload):
+                    return payload
+                seen += 1
+            raise AssertionError("expected websocket payload not received before timeout")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_root = Path(tmpdir) / "logs"
+            old_session_dir = logging_system.start_persistence_session(log_root, session_name="before-clear")
+            ws_port = _free_tcp_port()
+            cfg = RuntimeConfig(
+                ws_host="127.0.0.1",
+                ws_port=ws_port,
+                enable_ws=True,
+                enable_voice=False,
+                log_session_root=str(log_root),
+                benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+            )
+            runtime = ApplicationRuntime(
+                config=cfg,
+                task_llm=provider,
+                adjutant_llm=provider,
+                api=api,
+                world_source=source,
+            )
+            try:
+                await runtime.start()
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                        async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as observer_ws:
+                            await ws.send_json({"type": "sync_request"})
+                            initial_catalog = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "session_catalog"
+                                    and payload.get("data", {}).get("selected_session_dir")
+                                ),
+                            )
+                            assert initial_catalog["data"]["selected_session_dir"] == str(old_session_dir)
+
+                            await ws.send_json({"type": "session_clear"})
+
+                            cleared_payload = await _recv_json(
+                                ws,
+                                predicate=lambda payload: payload.get("type") == "session_cleared",
+                                max_messages=120,
+                            )
+                            assert cleared_payload["data"]["ok"] is True
+
+                            observer_cleared = await _recv_json(
+                                observer_ws,
+                                predicate=lambda payload: payload.get("type") == "session_cleared",
+                                max_messages=120,
+                            )
+                            assert observer_cleared["data"]["ok"] is True
+
+                            next_catalog = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                        payload.get("type") == "session_catalog"
+                                        and payload.get("data", {}).get("selected_session_dir")
+                                        and payload.get("data", {}).get("selected_session_dir") != str(old_session_dir)
+                                    ),
+                                    max_messages=120,
+                                )
+                            new_session_dir = next_catalog["data"]["selected_session_dir"]
+                            assert new_session_dir != str(old_session_dir)
+                            current_session_dir = logging_system.current_session_dir()
+                            assert current_session_dir is not None
+                            assert str(current_session_dir) == new_session_dir
+
+                            next_task_catalog = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "session_task_catalog"
+                                    and payload.get("data", {}).get("session_dir") == new_session_dir
+                                ),
+                                max_messages=120,
+                            )
+                            assert next_task_catalog["data"]["session_dir"] == new_session_dir
+
+                            observer_deadline = loop.time() + 0.4
+                            while loop.time() < observer_deadline:
+                                try:
+                                    observer_msg = await asyncio.wait_for(
+                                        observer_ws.receive(),
+                                        timeout=max(0.05, observer_deadline - loop.time()),
+                                    )
+                                except asyncio.TimeoutError:
+                                    break
+                                if observer_msg.type != aiohttp.WSMsgType.TEXT:
+                                    continue
+                                observer_payload = json.loads(observer_msg.data)
+                                assert observer_payload.get("type") not in {"session_catalog", "session_task_catalog"}
+            finally:
+                await runtime.stop()
+                logging_system.stop_persistence_session()
+
+            assert api.close_calls == 1
+
+    asyncio.run(run())
+    print("  PASS: application_runtime_ws_session_clear_retargets_requesting_client_only")
+
+
 @pytest.mark.mock_integration
 def test_application_runtime_publish_smoke_surfaces_truth_payloads() -> None:
     provider = MockProvider([])
