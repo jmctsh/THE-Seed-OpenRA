@@ -1337,6 +1337,168 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
 
 
 @pytest.mark.startup_smoke
+def test_application_runtime_ws_degradation_truth_stays_aligned_across_world_snapshot_session_catalog_and_task_replay() -> None:
+    provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        buffered_payloads: list[dict[str, Any]] = []
+
+        async def _recv_json(
+            ws: aiohttp.ClientWebSocketResponse,
+            *,
+            predicate,
+            timeout_s: float = 3.0,
+            max_messages: int = 120,
+        ) -> dict[str, Any]:
+            deadline = loop.time() + timeout_s
+            seen = 0
+            while seen < max_messages and loop.time() < deadline:
+                buffered_index = next(
+                    (idx for idx, payload in enumerate(buffered_payloads) if predicate(payload)),
+                    None,
+                )
+                if buffered_index is not None:
+                    return buffered_payloads.pop(buffered_index)
+                try:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                except asyncio.TimeoutError:
+                    break
+                assert msg.type == aiohttp.WSMsgType.TEXT
+                payload = json.loads(msg.data)
+                if predicate(payload):
+                    return payload
+                buffered_payloads.append(payload)
+                seen += 1
+            buffered_types = [str(payload.get("type")) for payload in buffered_payloads[-12:]]
+            raise AssertionError(f"expected websocket payload not received before timeout; buffered={buffered_types}")
+
+        async def _drain_ws(
+            ws: aiohttp.ClientWebSocketResponse,
+            *,
+            idle_s: float = 0.4,
+        ) -> None:
+            deadline = loop.time() + idle_s
+            while loop.time() < deadline:
+                try:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                except asyncio.TimeoutError:
+                    break
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    continue
+                buffered_payloads.append(json.loads(msg.data))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ws_port = _free_tcp_port()
+            log_root = Path(tmpdir) / "logs"
+            logging_system.start_persistence_session(log_root, session_name="fault-parity")
+            cfg = RuntimeConfig(
+                ws_host="127.0.0.1",
+                ws_port=ws_port,
+                enable_ws=True,
+                enable_voice=False,
+                log_session_root=str(log_root),
+                benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+            )
+            runtime = ApplicationRuntime(
+                config=cfg,
+                task_llm=provider,
+                adjutant_llm=provider,
+                api=api,
+                world_source=source,
+            )
+            try:
+                await runtime.start()
+                task = runtime.kernel.create_task("侦察前线", TaskKind.MANAGED, 50)
+                runtime.kernel.register_task_message(
+                    TaskMessage(
+                        message_id="m_fault_surface",
+                        task_id=task.task_id,
+                        type=TaskMessageType.TASK_INFO,
+                        content="等待诊断 fault 对齐",
+                    )
+                )
+                runtime.bridge.sync_runtime()
+                await runtime.bridge._publisher.publish_all()
+
+                runtime.game_loop.stop()
+                await runtime._stop_loop_task()
+
+                def _boom_refresh_health() -> dict[str, Any]:
+                    raise RuntimeError("health-boom")
+
+                runtime.bridge.world_model.refresh_health = _boom_refresh_health  # type: ignore[assignment]
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                        await ws.send_json({"type": "sync_request"})
+
+                        world_snapshot = await _recv_json(
+                            ws,
+                            predicate=lambda payload: (
+                                payload.get("type") == "world_snapshot"
+                                and payload.get("data", {}).get("runtime_fault_state", {}).get("degraded") is True
+                            ),
+                        )
+                        world_fault = world_snapshot["data"]["runtime_fault_state"]
+                        assert world_fault["source"] == "world_sync_probe"
+                        assert world_fault["stage"] == ""
+                        assert world_fault["error"] == "RuntimeError('health-boom')"
+                        assert world_fault["count"] == 1
+                        assert world_fault["first_at"] == world_fault["updated_at"]
+
+                        session_catalog = await _recv_json(
+                            ws,
+                            predicate=lambda payload: (
+                                payload.get("type") == "session_catalog"
+                                and bool(payload.get("data", {}).get("sessions"))
+                            ),
+                        )
+                        current_session = next(
+                            item
+                            for item in session_catalog["data"]["sessions"]
+                            if item.get("session_dir") == session_catalog["data"]["selected_session_dir"]
+                        )
+                        session_fault = current_session["runtime_fault_summary"]
+                        assert session_fault["source"] == world_fault["source"]
+                        assert session_fault["stage"] == world_fault["stage"]
+                        assert session_fault["error"] == world_fault["error"]
+                        assert session_fault["count"] == world_fault["count"]
+                        assert session_fault["first_at"] <= session_fault["updated_at"]
+                        assert abs(session_fault["updated_at"] - world_fault["updated_at"]) < 1.0
+
+                        await _drain_ws(ws)
+                        await ws.send_json(
+                            {
+                                "type": "task_replay_request",
+                                "task_id": task.task_id,
+                                "include_entries": False,
+                            }
+                        )
+                        replay_payload = await _recv_json(
+                            ws,
+                            predicate=lambda payload: (
+                                payload.get("type") == "task_replay"
+                                and payload.get("data", {}).get("task_id") == task.task_id
+                            ),
+                        )
+                        replay_fault = replay_payload["data"]["bundle"]["session_context"]["runtime_fault_summary"]
+                        assert replay_fault == session_fault
+            finally:
+                await runtime.stop()
+                logging_system.stop_persistence_session()
+
+        assert api.close_calls == 1
+
+    asyncio.run(run())
+    print("  PASS: application_runtime_ws_degradation_truth_stays_aligned_across_world_snapshot_session_catalog_and_task_replay")
+
+
+@pytest.mark.startup_smoke
 def test_application_runtime_ws_question_reply_round_trip_delivers_to_task_agent() -> None:
     provider = MockProvider([])
     source = MockWorldSource(make_frames())

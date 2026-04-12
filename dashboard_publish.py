@@ -68,10 +68,12 @@ class DashboardPublisher:
         except asyncio.CancelledError:
             pass
         except Exception as exc:
-            self._record_runtime_fault(source="dashboard_publish", stage="task", error=repr(exc))
+            timestamp = time.time()
+            self._record_runtime_fault(source="dashboard_publish", stage="task", error=repr(exc), timestamp=timestamp)
             slog.error(
                 "Dashboard publish task failed",
                 event="dashboard_publish_task_failed",
+                timestamp=timestamp,
                 error=repr(exc),
             )
         finally:
@@ -115,17 +117,26 @@ class DashboardPublisher:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            self._record_runtime_fault(source="dashboard_publish", stage=stage, error=repr(exc))
+            timestamp = time.time()
+            self._record_runtime_fault(source="dashboard_publish", stage=stage, error=repr(exc), timestamp=timestamp)
             slog.error(
                 "Dashboard publish stage failed",
                 event="dashboard_publish_stage_failed",
+                timestamp=timestamp,
                 stage=stage,
                 error=repr(exc),
             )
             return False
 
-    def _record_runtime_fault(self, *, source: str, stage: str, error: str) -> None:
-        now = time.time()
+    def _record_runtime_fault(
+        self,
+        *,
+        source: str,
+        stage: str,
+        error: str,
+        timestamp: Optional[float] = None,
+    ) -> None:
+        now = float(timestamp if timestamp is not None else time.time())
         previous_count = int(self._runtime_fault_state.get("count", 0) or 0)
         previous_first_at = float(self._runtime_fault_state.get("first_at", 0.0) or 0.0)
         self._runtime_fault_state = {
@@ -216,9 +227,14 @@ class DashboardPublisher:
             pending_questions=dashboard["pending_questions"],
         )
 
-    async def send_current_dashboard_to_client(self, client_id: str) -> None:
+    async def send_current_dashboard_to_client(
+        self,
+        client_id: str,
+        dashboard: Optional[dict[str, Any]] = None,
+    ) -> None:
         assert self.ws_server is not None
-        dashboard = self._dashboard_payload_builder()
+        if dashboard is None:
+            dashboard = self._dashboard_payload_builder()
         await self.ws_server.send_world_snapshot_to_client(
             client_id,
             dashboard["world_snapshot"],

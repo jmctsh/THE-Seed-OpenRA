@@ -390,9 +390,20 @@ class RuntimeBridge(InboundHandler):
     async def on_sync_request(self, client_id: str) -> None:
         """Client connected/reconnected — push full state immediately."""
         self.sync_runtime()
-        await self._publisher.send_current_dashboard_to_client(client_id)
+        world_sync = self._world_sync_health()
+        runtime_fault_state = self._runtime_fault_state()
+        dashboard = self._build_dashboard_payload(
+            current_world_health=world_sync,
+            current_runtime_fault_state=runtime_fault_state,
+        )
+        await self._publisher.send_current_dashboard_to_client(client_id, dashboard=dashboard)
         selected_session_dir = default_session_dir(self.log_session_root)
-        await self._send_session_catalog_to_client(client_id, selected_session_dir=selected_session_dir)
+        await self._send_session_catalog_to_client(
+            client_id,
+            selected_session_dir=selected_session_dir,
+            current_world_health=world_sync,
+            current_runtime_fault_state=runtime_fault_state,
+        )
         await self._send_session_tasks_to_client(client_id, session_dir=selected_session_dir)
         await self._publisher.replay_history(client_id)
 
@@ -515,14 +526,20 @@ class RuntimeBridge(InboundHandler):
         client_id: str,
         *,
         selected_session_dir: Optional[Path],
+        current_world_health: Optional[dict[str, Any]] = None,
+        current_runtime_fault_state: Optional[dict[str, Any]] = None,
     ) -> None:
         await self._publisher.send_session_catalog_to_client(
             client_id,
             build_session_catalog_payload(
                 self.log_session_root,
                 selected_session_dir=selected_session_dir,
-                current_world_health=self._world_sync_health(),
-                current_runtime_fault_state=self._runtime_fault_state(),
+                current_world_health=current_world_health if isinstance(current_world_health, dict) else self._world_sync_health(),
+                current_runtime_fault_state=(
+                    current_runtime_fault_state
+                    if isinstance(current_runtime_fault_state, dict)
+                    else self._runtime_fault_state()
+                ),
                 current_tasks=[
                     {
                         "task_id": task.task_id,
@@ -547,11 +564,21 @@ class RuntimeBridge(InboundHandler):
             ),
         )
 
-    def _build_dashboard_payload(self) -> dict[str, Any]:
+    def _build_dashboard_payload(
+        self,
+        *,
+        current_world_health: Optional[dict[str, Any]] = None,
+        current_runtime_fault_state: Optional[dict[str, Any]] = None,
+    ) -> dict[str, Any]:
         pending_questions = self.kernel.list_pending_questions()
         runtime_state = self.kernel.runtime_state()
         dashboard_runtime_facts = self._dashboard_runtime_facts()
-        world_sync = self._world_sync_health()
+        world_sync = current_world_health if isinstance(current_world_health, dict) else self._world_sync_health()
+        runtime_fault_state = (
+            dict(current_runtime_fault_state)
+            if isinstance(current_runtime_fault_state, dict)
+            else self._runtime_fault_state()
+        )
         world_snapshot = {
             **self.world_model.world_summary(),
             "runtime_state": runtime_state,
@@ -561,7 +588,7 @@ class RuntimeBridge(InboundHandler):
             "capability_truth_blocker": str(dashboard_runtime_facts.get("capability_truth_blocker") or ""),
             "unit_pipeline_preview": build_runtime_unit_pipeline_preview(runtime_state),
             "unit_pipeline_focus": build_runtime_unit_pipeline_focus(runtime_state),
-            "runtime_fault_state": self._runtime_fault_state(),
+            "runtime_fault_state": runtime_fault_state,
         }
         tasks = [
             self._task_to_dict(
@@ -627,6 +654,7 @@ class RuntimeBridge(InboundHandler):
             slog.warn(
                 "Runtime probe fault",
                 event="runtime_probe_fault",
+                timestamp=now,
                 source=next_fault_state["source"],
                 error=next_fault_state["error"],
             )
