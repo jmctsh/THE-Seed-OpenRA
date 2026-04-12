@@ -48,7 +48,7 @@ echo "==> Frontend control wiring"
   npm test -- --run src/components/__tests__/ChatView.spec.js -t \
     "sends question_reply from task-question options and disables them after answering|clears chat history on theseed:clear-ui and unregisters websocket handlers on unmount"
   npm test -- --run src/__tests__/App.spec.js -t \
-    "requests session_clear first and only clears UI after session_cleared arrives"
+    "requests session_clear first and only clears UI after session_cleared arrives|notifies backend and refreshes diagnostics when external task focus opens debug mode"
   npm test -- --run src/components/__tests__/TaskPanel.spec.js -t \
     "sends command_cancel for a running non-capability task"
 )
@@ -66,7 +66,7 @@ echo "  - diagnostics session discovery / replay visibility"
 echo "  - live unit-pipeline blocking-task visibility and focus jump"
 echo "  - primary ops status aggregation across stale/fault/truth/pipeline states"
 echo "  - frontend websocket transport contract"
-echo "  - frontend control wiring for question_reply / command_cancel / session_clear"
+echo "  - frontend control wiring for question_reply / command_cancel / session_clear / diagnostics late-open sync"
 echo
 echo "It is intentionally narrow."
 echo "Run the broader layered backend gate separately via:"

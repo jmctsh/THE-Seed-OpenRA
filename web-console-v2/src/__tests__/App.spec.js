@@ -75,6 +75,28 @@ describe('App', () => {
     }
   })
 
+  it('notifies backend and refreshes diagnostics when external task focus opens debug mode', async () => {
+    const wrapper = mount(App, {
+      global: {
+        stubs: {
+          ChatView: { template: '<div class="chat-stub" />' },
+          TaskPanel: { template: '<div class="task-stub" />' },
+          OpsPanel: { template: '<div class="ops-stub" />' },
+        },
+      },
+    })
+
+    expect(wrapper.find('.diag-panel').exists()).toBe(false)
+
+    window.dispatchEvent(new CustomEvent('theseed:focus-diagnostics-task', { detail: { taskId: 't_focus' } }))
+    await nextTick()
+    await nextTick()
+
+    expect(wrapper.find('.diag-panel').exists()).toBe(true)
+    expect(wsMock.send).toHaveBeenCalledWith('mode_switch', { mode: 'debug' })
+    expect(wsMock.send).toHaveBeenCalledWith('sync_request')
+  })
+
   it('requests session_clear first and only clears UI after session_cleared arrives', async () => {
     const clearEvents = []
     const handler = () => clearEvents.push('cleared')

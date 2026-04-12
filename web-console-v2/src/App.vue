@@ -60,10 +60,14 @@ const statusClass = computed(() => {
 })
 const showRightSidebar = computed(() => mode.value === 'debug' || opsVisible.value)
 
-function toggleMode() {
-  mode.value = mode.value === 'user' ? 'debug' : 'user'
+function applyMode(nextMode, { notifyBackend = true } = {}) {
+  mode.value = nextMode
   if (mode.value === 'user') opsVisible.value = false
-  send('mode_switch', { mode: mode.value })
+  if (notifyBackend) send('mode_switch', { mode: mode.value })
+}
+
+function toggleMode() {
+  applyMode(mode.value === 'user' ? 'debug' : 'user')
 }
 
 function toggleOps() {
@@ -75,8 +79,7 @@ function clearUi() {
 }
 
 function setMode(m) {
-  mode.value = m
-  if (m === 'user') opsVisible.value = false
+  applyMode(m, { notifyBackend: false })
 }
 
 on('session_cleared', () => {
@@ -89,8 +92,7 @@ onMounted(() => {
   focusDiagnosticsHandler = (event) => {
     const taskId = event?.detail?.taskId
     if (!taskId) return
-    mode.value = 'debug'
-    opsVisible.value = false
+    applyMode('debug')
     nextTick(() => {
       window.dispatchEvent(
         new CustomEvent('theseed:apply-diagnostics-focus', {
