@@ -656,6 +656,72 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('reservation=猛犸坦克 × 1 · 缺少前置')
   })
 
+  it('prefers current runtime triage over replay_triage when both are present', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('task_list', {
+      tasks: [
+        {
+          task_id: 't_cap',
+          raw_text: '发展科技',
+          status: 'running',
+          timestamp: 100,
+          created_at: 90,
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('#task-trace-select').setValue('t_cap')
+    await wrapper.vm.$nextTick()
+
+    bus.emit('task_replay', {
+      task_id: 't_cap',
+      bundle: {
+        summary: '回放摘要',
+        entry_count: 5,
+        duration_s: 9.0,
+        current_runtime: {
+          triage: {
+            status_line: '实时状态：等待能力任务交付',
+            state: 'waiting_units',
+            phase: 'reservation',
+            waiting_reason: 'unit_reservation',
+            reservation_ids: ['res_live'],
+          },
+        },
+        replay_triage: {
+          status_line: '历史状态：缺少前置建筑',
+          state: 'blocked',
+          phase: 'blocked',
+          waiting_reason: 'missing_prerequisite',
+          reservation_ids: ['res_hist'],
+        },
+      },
+      raw_entry_count: 0,
+      entry_count: 5,
+      raw_entries_included: false,
+      raw_entries_truncated: false,
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Current Runtime')
+    expect(wrapper.text()).toContain('实时状态：等待能力任务交付')
+    expect(wrapper.text()).toContain('state=waiting_units')
+    expect(wrapper.text()).toContain('phase=reservation')
+    expect(wrapper.text()).toContain('waiting=unit_reservation')
+    expect(wrapper.text()).toContain('reservations=1')
+    expect(wrapper.text()).not.toContain('Replay Triage')
+    expect(wrapper.text()).not.toContain('历史状态：缺少前置建筑')
+    expect(wrapper.text()).not.toContain('state=blocked')
+  })
+
   it('renders selected session world health summary from session_catalog', async () => {
     const bus = createBus()
     const wrapper = mount(DiagPanel, {
