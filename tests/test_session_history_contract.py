@@ -53,6 +53,61 @@ def test_session_history_payload_includes_structured_query_response_entries() ->
     assert query_responses[1]["message_id"] == "m_1"
 
 
+def test_session_history_payload_includes_structured_task_message_entries() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        session_dir = logging_system.start_persistence_session(tmpdir, session_name="task-message-history")
+        logger = logging_system.get_logger("kernel")
+        logger.info(
+            "Task message registered",
+            event="task_message_registered",
+            task_id="t_hist",
+            message_id="msg_info",
+            message_type="task_info",
+            content="保持推进",
+            priority=60,
+        )
+        logger.info(
+            "Task message registered",
+            event="task_message_registered",
+            task_id="t_hist",
+            message_id="msg_done",
+            message_type="task_complete_report",
+            content="侦察完成",
+            priority=80,
+        )
+        logger.info(
+            "需要确认",
+            event="task_question",
+            task_id="t_hist",
+            message_id="msg_q",
+            content="是否继续侦察？",
+            options=["继续", "停止"],
+            timeout_s=15,
+            default_option="继续",
+        )
+        logging_system.stop_persistence_session()
+
+        payload = build_session_history_payload(tmpdir, session_dir=session_dir)
+
+    task_messages = payload["task_message_entries"]
+    assert [item["message_type"] for item in task_messages] == [
+        "task_info",
+        "task_complete_report",
+        "task_question",
+    ]
+    assert task_messages[0]["message_id"] == "msg_info"
+    assert task_messages[0]["content"] == "保持推进"
+    assert task_messages[0]["priority"] == 60
+    assert task_messages[1]["message_id"] == "msg_done"
+    assert task_messages[1]["content"] == "侦察完成"
+    assert task_messages[1]["priority"] == 80
+    assert task_messages[2]["message_id"] == "msg_q"
+    assert task_messages[2]["content"] == "需要确认"
+    assert task_messages[2]["options"] == ["继续", "停止"]
+    assert task_messages[2]["timeout_s"] == 15.0
+    assert task_messages[2]["default_option"] == "继续"
+
+
 def test_session_history_payload_returns_empty_structured_lists_without_session() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         payload = build_session_history_payload(tmpdir, session_dir=None)
@@ -61,3 +116,4 @@ def test_session_history_payload_returns_empty_structured_lists_without_session(
     assert payload["benchmark_records"] == []
     assert payload["player_visible_entries"] == []
     assert payload["query_response_entries"] == []
+    assert payload["task_message_entries"] == []

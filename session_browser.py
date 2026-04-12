@@ -340,6 +340,57 @@ def _build_query_response_entries(records: list[dict[str, Any]]) -> list[dict[st
     return entries[-80:]
 
 
+def _task_message_entry(record: dict[str, Any]) -> Optional[dict[str, Any]]:
+    event = str(record.get("event") or "")
+    data = record.get("data") if isinstance(record.get("data"), dict) else {}
+    timestamp = float(record.get("timestamp", 0.0) or 0.0)
+
+    if event == "task_message_registered":
+        message_type = str(data.get("message_type") or "")
+        content = str(data.get("content") or "")
+        if not message_type or not content:
+            return None
+        return {
+            "timestamp": timestamp,
+            "task_id": str(data.get("task_id") or ""),
+            "message_id": str(data.get("message_id") or ""),
+            "message_type": message_type,
+            "content": content,
+            "priority": int(data.get("priority", 50) or 50),
+        }
+
+    if event in {"task_info", "task_warning", "task_complete_report", "task_question"}:
+        content = str(record.get("message") or data.get("content") or "")
+        if not content:
+            return None
+        entry = {
+            "timestamp": timestamp,
+            "task_id": str(data.get("task_id") or ""),
+            "message_id": str(data.get("message_id") or ""),
+            "message_type": event,
+            "content": content,
+            "priority": int(data.get("priority", 50) or 50),
+        }
+        if event == "task_question":
+            options = data.get("options")
+            if isinstance(options, list):
+                entry["options"] = [str(option) for option in options]
+            timeout_s = data.get("timeout_s")
+            if timeout_s is not None:
+                entry["timeout_s"] = float(timeout_s)
+            default_option = data.get("default_option")
+            if default_option is not None:
+                entry["default_option"] = str(default_option)
+        return entry
+
+    return None
+
+
+def _build_task_message_entries(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entries = [entry for entry in (_task_message_entry(record) for record in records) if entry is not None]
+    return entries[-120:]
+
+
 def build_session_history_payload(
     log_session_root: str,
     *,
@@ -355,6 +406,7 @@ def build_session_history_payload(
             "benchmark_records": [],
             "player_visible_entries": [],
             "query_response_entries": [],
+            "task_message_entries": [],
         }
     current = current_session_dir()
     is_live = current is not None and resolved.resolve() == current.resolve()
@@ -371,6 +423,7 @@ def build_session_history_payload(
         "benchmark_records": benchmark_records,
         "player_visible_entries": _build_player_visible_entries(log_entries),
         "query_response_entries": _build_query_response_entries(log_entries),
+        "task_message_entries": _build_task_message_entries(log_entries),
     }
 
 
