@@ -344,6 +344,29 @@ def _capability_recent_signals_view(signals: list[dict[str, Any]]) -> list[dict[
     return compact
 
 
+def _capability_recent_events_view(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep capability header events compact and focused on player/system cues."""
+    compact: list[dict[str, Any]] = []
+    for event in list(events or [])[-6:]:
+        if not isinstance(event, dict):
+            continue
+        entry: dict[str, Any] = {"type": str(event.get("type") or "")}
+        timestamp = event.get("timestamp")
+        if timestamp is not None:
+            entry["timestamp"] = timestamp
+        data = event.get("data")
+        if isinstance(data, dict):
+            filtered_data = {
+                key: data[key]
+                for key in ("text", "power_provided", "power_drained")
+                if key in data
+            }
+            if filtered_data:
+                entry["data"] = filtered_data
+        compact.append(entry)
+    return compact
+
+
 def _build_player_messages(events: list[dict[str, Any]]) -> str:
     """Build [player_messages] block from PLAYER_MESSAGE and LOW_POWER events, newest first."""
     now = time.time()
@@ -1210,17 +1233,19 @@ def context_to_message(packet: ContextPacket, *, is_capability: bool = False) ->
     header_rf = packet.runtime_facts or {}
     header_ws = None
     header_signals = packet.recent_signals
+    header_events = packet.recent_events
     if is_capability:
         header_rf = _capability_runtime_facts_view(header_rf)
         header_ws = _capability_world_summary_view(packet.world_summary or {})
         header_signals = _capability_recent_signals_view(packet.recent_signals)
+        header_events = _capability_recent_events_view(packet.recent_events)
 
     header = {
         "context_packet": {
             "task": packet.task,
             "jobs": packet.jobs,
             "recent_signals": header_signals,
-            "recent_events": packet.recent_events,
+            "recent_events": header_events,
             "open_decisions": packet.open_decisions,
             "other_active_tasks": packet.other_active_tasks,
             "runtime_facts": header_rf,

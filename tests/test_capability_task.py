@@ -627,6 +627,47 @@ def test_capability_header_recent_signals_are_compact() -> None:
     assert all(set(signal).issubset({"kind", "job_id", "summary", "result"}) for signal in signals)
 
 
+def test_capability_header_recent_events_are_compact() -> None:
+    packet = ContextPacket(
+        task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},
+        jobs=[],
+        world_summary={"economy": {}, "military": {}, "map": {}, "known_enemy": {}},
+        recent_signals=[],
+        recent_events=[
+            {
+                "type": "PLAYER_MESSAGE",
+                "timestamp": 1000 + i,
+                "data": {"text": f"msg-{i}", "raw_payload": {"unexpected": i}},
+            }
+            for i in range(4)
+        ]
+        + [
+            {
+                "type": "LOW_POWER",
+                "timestamp": 2000,
+                "data": {"power_provided": 50, "power_drained": 120, "unexpected": "x"},
+            },
+            {
+                "type": "ENEMY_DISCOVERED",
+                "timestamp": 3000,
+                "data": {"actor_id": 999, "position": [1, 2]},
+            },
+        ],
+        open_decisions=[],
+        runtime_facts={},
+    )
+    msg = context_to_message(packet, is_capability=True)
+    header_json = msg["content"].split("\n", 2)[1]
+    header = json.loads(header_json)
+    events = header["context_packet"]["recent_events"]
+    assert len(events) == 6
+    assert events[0]["type"] == "PLAYER_MESSAGE"
+    assert events[-1]["type"] == "ENEMY_DISCOVERED"
+    assert events[0]["data"] == {"text": "msg-0"}
+    assert events[4]["data"] == {"power_provided": 50, "power_drained": 120}
+    assert "data" not in events[-1]
+
+
 def test_capability_context_marks_deploy_mcv_as_action_not_production():
     packet = ContextPacket(
         task={"task_id": "t_test", "raw_text": "能力", "kind": "managed", "priority": 50, "status": "running", "created_at": time.time(), "timestamp": time.time()},
