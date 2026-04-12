@@ -569,12 +569,14 @@ def test_e2e_full_t1_t11_and_benchmarks() -> None:
         records_payload = json.loads(records_path.read_text(encoding="utf-8"))
         assert len(records_payload) == result["record_count"]
         assert result["record_count"] > 0
-        assert {"tag", "name", "started_at", "ended_at", "duration_ms", "metadata"}.issubset(records_payload[0])
+        required_record_fields = {"tag", "name", "started_at", "ended_at", "duration_ms", "metadata"}
+        assert all(required_record_fields.issubset(item) for item in records_payload)
 
         summary_payload = json.loads(summary_path.read_text(encoding="utf-8"))
         assert summary_payload == result["summary"]
         assert summary_payload
-        assert {"tag", "count", "avg_ms", "p95_ms", "max_ms", "total_ms"}.issubset(summary_payload[0])
+        required_summary_fields = {"tag", "count", "avg_ms", "p95_ms", "max_ms", "total_ms"}
+        assert all(required_summary_fields.issubset(item) for item in summary_payload)
 
         markdown = markdown_path.read_text(encoding="utf-8")
         assert "# Phase 7 E2E Benchmark Summary" in markdown
