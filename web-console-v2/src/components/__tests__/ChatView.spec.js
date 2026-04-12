@@ -118,4 +118,26 @@ describe('ChatView', () => {
     })
     expect(window.sessionStorage.getItem('theseed_chat_history_session')).toBeNull()
   })
+
+  it('renders sent player commands as player-side chat bubbles', async () => {
+    const bus = createBus()
+    const send = vi.fn(() => true)
+    const wrapper = mount(ChatView, {
+      props: {
+        connected: true,
+        send,
+        on: bus.on,
+      },
+    })
+
+    await wrapper.find('input').setValue('发展一下科技')
+    await wrapper.find('button:last-of-type').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(send).toHaveBeenCalledWith('command_submit', { text: '发展一下科技' })
+    const playerMsg = wrapper.find('.chat-msg.player')
+    expect(playerMsg.exists()).toBe(true)
+    expect(playerMsg.find('.msg-label').text()).toBe('玩家')
+    expect(playerMsg.find('.msg-content').text()).toBe('发展一下科技')
+  })
 })

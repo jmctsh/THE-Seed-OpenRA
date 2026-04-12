@@ -269,14 +269,23 @@ onUnmounted(() => {
 
 <style scoped>
 .chat-view { display: flex; flex-direction: column; height: 100%; }
-.chat-messages { flex: 1; overflow-y: auto; padding: 12px; }
-.chat-msg { margin-bottom: 8px; padding: 6px 10px; border-radius: 6px; font-size: 14px; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.chat-msg {
+  align-self: flex-start;
+  max-width: 88%;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+}
 .chat-msg.player {
+  align-self: flex-end;
   display: flex;
   justify-content: flex-end;
   align-items: baseline;
   gap: 8px;
   background: #e3f2fd;
+  text-align: right;
 }
 .chat-msg.player .msg-label {
   order: 3;

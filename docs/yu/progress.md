@@ -3,6 +3,11 @@ Closed a small but real operator-surface gap without touching the currently in-f
 
 I pinned both behaviors directly in [`web-console-v2/src/components/__tests__/TaskPanel.spec.js`](/Users/kamico/work/theseed/THE-Seed-OpenRA/web-console-v2/src/components/__tests__/TaskPanel.spec.js). The existing triage-chip test now asserts the richer reservation chips, and a new fake-timer regression proves a task card moves from `10s ago` to `12s ago` without any backend push. Verification: `cd web-console-v2 && npm test -- --run src/components/__tests__/TaskPanel.spec.js` (`8 passed`) and `cd web-console-v2 && npm run build` (`passed`).
 
+## [2026-04-13 00:20] DONE — `ChatView` 里的玩家消息现在明确是右侧气泡，并有回归锁住
+这个切片直接收你之前提过的一个 UI 细节，而不是只在 CSS 里模糊“看起来差不多”。此前 [`web-console-v2/src/components/ChatView.vue`](/Users/kamico/work/theseed/THE-Seed-OpenRA/web-console-v2/src/components/ChatView.vue) 虽然对 `.chat-msg.player` 做了右对齐内容布局，但整个消息容器仍然沿用普通块流，结果更像“整行都占着，只是内部文字靠右”，而不是一个真正落在右侧的玩家气泡。我把 `chat-messages` 收成纵向 flex 容器，让普通消息默认 `align-self: flex-start`，玩家消息显式 `align-self: flex-end`，并给消息卡片统一加上 `max-width` / `width: fit-content`，这样玩家输入现在会稳定贴右显示，而不是靠内容排列碰运气。
+
+我同时补了一条前端契约测试，而不是只靠肉眼。[`web-console-v2/src/components/__tests__/ChatView.spec.js`](/Users/kamico/work/theseed/THE-Seed-OpenRA/web-console-v2/src/components/__tests__/ChatView.spec.js) 现在覆盖了“发送一条玩家命令后，`command_submit` 必须发出，同时 DOM 中必须出现 `.chat-msg.player`，且其 `msg-label` 是 `玩家`、`msg-content` 保留原文本”的契约。验证：`cd web-console-v2 && npm test -- --run src/components/__tests__/ChatView.spec.js` (`3 passed`)；`cd web-console-v2 && npm run build` (`passed`)。
+
 ## [2026-04-13 00:18] DONE — Pinned `TaskPanel` task-age reactivity so时间标签不会再次静默冻结
 `TaskPanel` 里的任务年龄显示已经在实现上接入了 [`useTimeAgo()`](/Users/kamico/work/theseed/THE-Seed-OpenRA/web-console-v2/src/composables/useTimeAgo.js)，但之前没有任何前端契约测试锁住这件事。这类行为很容易在一次看似无害的模板/组合式 API 重构后退化成“只有 task_update 到来时年龄才刷新”，而操作侧往往要等很久才会注意到。我没有去改现有实现，只是在 [`web-console-v2/src/components/__tests__/TaskPanel.spec.js`](/Users/kamico/work/theseed/THE-Seed-OpenRA/web-console-v2/src/components/__tests__/TaskPanel.spec.js) 增加了一条定时器驱动的真实回归：固定系统时间、渲染一个运行中任务、断言初始 `task-meta` 显示 `1m ago`，然后推进 60 秒定时器并要求同一条任务在**没有任何 task_list/task_update 新消息**的情况下自动变成 `2m ago`。这条测试直接锁住了“前端自己的时间 tick 必须驱动任务年龄刷新”这一点，而不是依赖其他事件偶然把界面刷新带起来。验证：`cd web-console-v2 && npm test -- --run src/components/__tests__/TaskPanel.spec.js` (`9 passed`)。
 
