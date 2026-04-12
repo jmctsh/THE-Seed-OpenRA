@@ -245,6 +245,21 @@ def _free_tcp_port() -> int:
         return int(sock.getsockname()[1])
 
 
+def _make_deploy_frames() -> list[Frame]:
+    return [
+        Frame(
+            self_actors=[
+                Actor(actor_id=99, type="基地车", faction="自己", position=Location(500, 400), hppercent=100, activity="Idle"),
+                Actor(actor_id=1, type="矿车", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+            ],
+            enemy_actors=[],
+            economy=PlayerBaseInfo(Cash=2500, Resources=300, Power=80, PowerDrained=40, PowerProvided=100),
+            map_info=make_map(0.1, 0.05),
+            queues={},
+        )
+    ]
+
+
 def _assert_application_runtime_ws_command_submit_merges_to_capability(
     command_text: str,
     *,
@@ -579,6 +594,181 @@ def _assert_application_runtime_ws_command_submit_routes_to_recon(command_text: 
                             active_jobs = dict(refreshed_world_snapshot.get("data", {}).get("runtime_state", {}).get("active_jobs", {}) or {})
                             assert any(
                                 job.get("task_id") == recon_task_id and job.get("expert_type") == "ReconExpert"
+                                for job in active_jobs.values()
+                                if isinstance(job, dict)
+                            )
+
+                    runtime.bridge.on_tick(1, 0.0)
+                    await asyncio.sleep(0.1)
+                    assert background_errors == [], background_errors
+                finally:
+                    await runtime.stop()
+
+                assert api.close_calls == 1
+                assert runtime.ws_server is not None
+                assert runtime.ws_server.is_running is False
+        finally:
+            loop.set_exception_handler(previous_handler)
+            logging_system.clear()
+            benchmark.clear()
+
+    asyncio.run(run())
+
+
+def _assert_application_runtime_ws_command_submit_routes_to_deploy(command_text: str) -> None:
+    task_provider = MockProvider([])
+    adjutant_provider = MockProvider([])
+    source = MockWorldSource(_make_deploy_frames())
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        logging_system.clear()
+        benchmark.clear()
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+        background_errors: list[dict[str, Any]] = []
+
+        def _capture_loop_exception(loop, context) -> None:
+            del loop
+            background_errors.append(dict(context))
+
+        loop.set_exception_handler(_capture_loop_exception)
+        try:
+            buffered_payloads: list[dict[str, Any]] = []
+
+            async def _recv_json(
+                ws: aiohttp.ClientWebSocketResponse,
+                *,
+                predicate,
+                timeout_s: float = 3.0,
+                max_messages: int = 60,
+            ) -> dict[str, Any]:
+                for index, payload in enumerate(list(buffered_payloads)):
+                    if predicate(payload):
+                        return buffered_payloads.pop(index)
+                deadline = loop.time() + timeout_s
+                seen = 0
+                while seen < max_messages and loop.time() < deadline:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    assert msg.type == aiohttp.WSMsgType.TEXT
+                    payload = json.loads(msg.data)
+                    if predicate(payload):
+                        return payload
+                    buffered_payloads.append(payload)
+                    seen += 1
+                raise AssertionError("expected websocket payload not received before timeout")
+
+            async def _drain_ws(
+                ws: aiohttp.ClientWebSocketResponse,
+                *,
+                idle_s: float = 0.5,
+            ) -> None:
+                deadline = loop.time() + idle_s
+                while loop.time() < deadline:
+                    try:
+                        msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    except asyncio.TimeoutError:
+                        break
+                    if msg.type != aiohttp.WSMsgType.TEXT:
+                        continue
+                    buffered_payloads.append(json.loads(msg.data))
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                ws_port = _free_tcp_port()
+                cfg = RuntimeConfig(
+                    ws_host="127.0.0.1",
+                    ws_port=ws_port,
+                    enable_ws=True,
+                    enable_voice=False,
+                    log_session_root=str(Path(tmpdir) / "logs"),
+                    benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                    benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                    log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+                )
+                runtime = ApplicationRuntime(
+                    config=cfg,
+                    task_llm=task_provider,
+                    adjutant_llm=adjutant_provider,
+                    api=api,
+                    world_source=source,
+                )
+                try:
+                    await runtime.start()
+
+                    cap_id = runtime.kernel.capability_task_id
+                    assert cap_id is not None
+                    assert runtime.bridge.adjutant is runtime.adjutant
+
+                    async with aiohttp.ClientSession() as session:
+                        async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                            await ws.send_json({"type": "sync_request"})
+                            initial_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: payload.get("type") == "task_list",
+                            )
+                            initial_task_ids = {
+                                str(item.get("task_id") or "")
+                                for item in list(initial_task_list.get("data", {}).get("tasks", []) or [])
+                                if isinstance(item, dict) and str(item.get("task_id") or "")
+                            }
+                            assert cap_id in initial_task_ids
+                            await _drain_ws(ws)
+
+                            await ws.send_json({"type": "command_submit", "text": command_text})
+
+                            query_response_payload = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "query_response"
+                                    and payload.get("data", {}).get("response_type") == "command"
+                                    and payload.get("data", {}).get("expert_type") == "DeployExpert"
+                                ),
+                            )
+                            response = query_response_payload["data"]
+                            deploy_task_id = str(response.get("task_id") or "")
+                            assert response["ok"] is True
+                            assert response["routing"] == "nlu"
+                            assert response["nlu_route_intent"] == "deploy_mcv"
+                            assert response["expert_type"] == "DeployExpert"
+                            assert deploy_task_id
+                            assert deploy_task_id not in initial_task_ids
+                            assert response["answer"] == f"收到指令，已直接执行并创建任务 {deploy_task_id}"
+                            assert adjutant_provider.call_log == []
+
+                            await ws.send_json({"type": "sync_request"})
+                            refreshed_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and any(
+                                        item.get("task_id") == deploy_task_id
+                                        for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            task_entry = next(
+                                item
+                                for item in list(refreshed_task_list.get("data", {}).get("tasks", []) or [])
+                                if isinstance(item, dict) and item.get("task_id") == deploy_task_id
+                            )
+                            assert task_entry["raw_text"] == command_text
+                            assert task_entry["kind"] == "managed"
+
+                            refreshed_world_snapshot = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "world_snapshot"
+                                    and any(
+                                        job.get("task_id") == deploy_task_id and job.get("expert_type") == "DeployExpert"
+                                        for job in dict(payload.get("data", {}).get("runtime_state", {}).get("active_jobs", {}) or {}).values()
+                                        if isinstance(job, dict)
+                                    )
+                                ),
+                            )
+                            active_jobs = dict(refreshed_world_snapshot.get("data", {}).get("runtime_state", {}).get("active_jobs", {}) or {})
+                            assert any(
+                                job.get("task_id") == deploy_task_id and job.get("expert_type") == "DeployExpert"
                                 for job in active_jobs.values()
                                 if isinstance(job, dict)
                             )
@@ -2057,6 +2247,12 @@ def test_application_runtime_ws_command_submit_runtime_nlu_merge_hits_capability
 def test_application_runtime_ws_command_submit_routes_to_recon() -> None:
     _assert_application_runtime_ws_command_submit_routes_to_recon("探索地图")
     print("  PASS: application_runtime_ws_command_submit_routes_to_recon")
+
+
+@pytest.mark.startup_smoke
+def test_application_runtime_ws_command_submit_routes_to_deploy() -> None:
+    _assert_application_runtime_ws_command_submit_routes_to_deploy("部署基地车")
+    print("  PASS: application_runtime_ws_command_submit_routes_to_deploy")
 
 
 @pytest.mark.startup_smoke
