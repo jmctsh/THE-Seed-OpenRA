@@ -23,7 +23,8 @@ import main as main_module
 from llm import MockProvider
 from main import ApplicationRuntime, RuntimeBridge, RuntimeConfig
 from models import Event, Task, TaskKind, TaskMessage, TaskMessageType, TaskStatus
-from tests.test_world_model import MockWorldSource, make_frames
+from openra_api.models import Actor, Location, PlayerBaseInfo
+from tests.test_world_model import Frame, MockWorldSource, make_frames, make_map
 
 
 class _FakeCompletedProcess:
@@ -82,10 +83,33 @@ class _BridgeWS:
 class _BridgePublishWS:
     def __init__(self) -> None:
         self.is_running = True
+        self.world_snapshots: list[dict[str, Any]] = []
+        self.task_lists: list[dict[str, Any]] = []
+        self.task_updates: list[dict[str, Any]] = []
+        self.task_messages: list[dict[str, Any]] = []
+        self.player_notifications: list[dict[str, Any]] = []
         self.log_entries: list[dict[str, Any]] = []
         self.benchmarks: list[dict[str, Any]] = []
         self.client_messages: list[tuple[str, str, dict[str, Any]]] = []
         self.session_cleared = 0
+
+    async def send_world_snapshot(self, payload: dict[str, Any]) -> None:
+        self.world_snapshots.append(payload)
+
+    async def send_task_list(self, tasks: list[dict[str, Any]], pending_questions=None) -> None:
+        self.task_lists.append({
+            "tasks": list(tasks),
+            "pending_questions": list(pending_questions or []),
+        })
+
+    async def send_task_update(self, payload: dict[str, Any]) -> None:
+        self.task_updates.append(payload)
+
+    async def send_task_message(self, payload: dict[str, Any]) -> None:
+        self.task_messages.append(payload)
+
+    async def send_player_notification(self, payload: dict[str, Any]) -> None:
+        self.player_notifications.append(payload)
 
     async def send_log_entry(self, payload: dict[str, Any]) -> None:
         self.log_entries.append(payload)
@@ -607,6 +631,79 @@ def test_application_runtime_ws_startup_smoke_and_background_publish() -> None:
 
     asyncio.run(run())
     print("  PASS: application_runtime_ws_startup_smoke_and_background_publish")
+
+
+@pytest.mark.mock_integration
+def test_application_runtime_publish_smoke_surfaces_truth_payloads() -> None:
+    provider = MockProvider([])
+    source = MockWorldSource([
+        Frame(
+            self_actors=[
+                Actor(actor_id=1, type="建造厂", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle"),
+                Actor(actor_id=2, type="发电厂", faction="自己", position=Location(11, 10), hppercent=100, activity="Idle"),
+                Actor(actor_id=3, type="矿场", faction="自己", position=Location(12, 10), hppercent=100, activity="Idle"),
+                Actor(actor_id=4, type="战车工厂", faction="自己", position=Location(13, 10), hppercent=100, activity="Idle"),
+                Actor(actor_id=5, type="tent", faction="自己", position=Location(14, 10), hppercent=100, activity="Idle"),
+                Actor(actor_id=6, type="2tnk", faction="自己", position=Location(15, 10), hppercent=100, activity="Idle"),
+            ],
+            enemy_actors=[],
+            economy=PlayerBaseInfo(Cash=5000, Resources=0, Power=200, PowerDrained=120, PowerProvided=200),
+            map_info=make_map(0.1, 0.05),
+            queues={},
+        )
+    ])
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg = RuntimeConfig(
+                enable_ws=False,
+                enable_voice=False,
+                log_session_root=str(Path(tmpdir) / "logs"),
+                benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+            )
+            runtime = ApplicationRuntime(
+                config=cfg,
+                task_llm=provider,
+                adjutant_llm=provider,
+                api=api,
+                world_source=source,
+            )
+            try:
+                await runtime.start()
+                ws = _BridgePublishWS()
+                runtime.bridge.attach_ws_server(ws)
+                await runtime.bridge._publisher.publish_all()
+
+                assert ws.world_snapshots
+                world_snapshot = ws.world_snapshots[-1]
+                assert world_snapshot["player_faction"] == "allied"
+                assert world_snapshot["capability_truth_blocker"] == "faction_roster_unsupported"
+
+                assert ws.task_lists
+                tasks = list(ws.task_lists[-1]["tasks"] or [])
+                capability_task = next(task for task in tasks if task.get("is_capability"))
+                assert capability_task["triage"]["blocking_reason"] == "faction_roster_unsupported"
+                assert "真值受限" in capability_task["triage"]["status_line"]
+
+                capability_update = next(
+                    (
+                        payload
+                        for payload in ws.task_updates
+                        if str(payload.get("task_id") or "") == str(capability_task["task_id"] or "")
+                    ),
+                    None,
+                )
+                assert capability_update is not None
+                assert capability_update["triage"]["blocking_reason"] == "faction_roster_unsupported"
+                assert "阵营能力真值未覆盖" in capability_update["triage"]["status_line"]
+            finally:
+                await runtime.stop()
+
+    asyncio.run(run())
+    print("  PASS: application_runtime_publish_smoke_surfaces_truth_payloads")
 
 
 @pytest.mark.startup_smoke
