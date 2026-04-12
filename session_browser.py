@@ -315,6 +315,31 @@ def _build_player_visible_entries(records: list[dict[str, Any]]) -> list[dict[st
     return entries[-80:]
 
 
+def _query_response_entry(record: dict[str, Any]) -> Optional[dict[str, Any]]:
+    event = str(record.get("event") or "")
+    if event not in {"adjutant_response_sent", "query_response_sent"}:
+        return None
+    data = record.get("data") if isinstance(record.get("data"), dict) else {}
+    timestamp = float(record.get("timestamp", 0.0) or 0.0)
+    answer = str(record.get("message") or data.get("answer") or data.get("response_text") or "")
+    if not answer:
+        return None
+    return {
+        "timestamp": timestamp,
+        "task_id": str(data.get("task_id") or ""),
+        "answer": answer,
+        "response_type": str(data.get("response_type") or ""),
+        "ok": bool(data.get("ok", False)),
+        "message_id": str(data.get("message_id") or ""),
+        "existing_task_id": str(data.get("existing_task_id") or ""),
+    }
+
+
+def _build_query_response_entries(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entries = [entry for entry in (_query_response_entry(record) for record in records) if entry is not None]
+    return entries[-80:]
+
+
 def build_session_history_payload(
     log_session_root: str,
     *,
@@ -329,6 +354,7 @@ def build_session_history_payload(
             "log_entries": [],
             "benchmark_records": [],
             "player_visible_entries": [],
+            "query_response_entries": [],
         }
     current = current_session_dir()
     is_live = current is not None and resolved.resolve() == current.resolve()
@@ -344,6 +370,7 @@ def build_session_history_payload(
         "log_entries": log_entries,
         "benchmark_records": benchmark_records,
         "player_visible_entries": _build_player_visible_entries(log_entries),
+        "query_response_entries": _build_query_response_entries(log_entries),
     }
 
 

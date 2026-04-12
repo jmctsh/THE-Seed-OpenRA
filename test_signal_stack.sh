@@ -27,6 +27,7 @@ or task_replay_request_prefers_live_truth_for_active_task_bundle \
 or diagnostics_sync_request_refreshes_current_state_without_replaying_generic_history \
 or session_select_returns_catalog_and_task_catalog \
 or session_history_payload_includes_logged_adjutant_responses_and_notifications"
+python3 -m pytest tests/test_session_history_contract.py -q
 
 echo
 echo "==> Operator surface hints"
