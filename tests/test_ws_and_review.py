@@ -3521,6 +3521,79 @@ def test_build_live_task_payload_surfaces_task_specific_reservation_blocker_deta
     print("  PASS: build_live_task_payload_surfaces_task_specific_reservation_blocker_detail")
 
 
+def test_build_live_task_payload_surfaces_unit_pipeline_world_sync_detail():
+    class FakeTask:
+        task_id = "t_sync_req"
+        raw_text = "整点步兵"
+        kind = type("Kind", (), {"value": "managed"})()
+        priority = 60
+        status = type("Status", (), {"value": "running"})()
+        timestamp = 123.0
+        created_at = 120.0
+        label = "005"
+        is_capability = False
+
+    payload = build_live_task_payload(
+        FakeTask(),
+        [],
+        runtime_state={
+            "active_tasks": {"t_sync_req": {"label": "005"}},
+            "unfulfilled_requests": [
+                {
+                    "request_id": "req_1",
+                    "task_id": "t_sync_req",
+                    "task_label": "005",
+                    "unit_type": "e1",
+                    "queue_type": "Infantry",
+                    "count": 1,
+                    "fulfilled": 0,
+                    "remaining_count": 1,
+                    "reason": "world_sync_stale",
+                    "world_sync_last_error": "actors:COMMAND_EXECUTION_ERROR",
+                    "world_sync_consecutive_failures": 4,
+                    "world_sync_failure_threshold": 3,
+                }
+            ],
+            "unit_reservations": [
+                {
+                    "reservation_id": "res_1",
+                    "request_id": "req_1",
+                    "task_id": "t_sync_req",
+                    "unit_type": "e1",
+                    "queue_type": "Infantry",
+                    "count": 1,
+                    "remaining_count": 1,
+                    "status": "pending",
+                    "reason": "world_sync_stale",
+                    "world_sync_last_error": "economy:IGNORED_SHOULD_NOT_WIN",
+                    "world_sync_consecutive_failures": 9,
+                    "world_sync_failure_threshold": 7,
+                }
+            ],
+        },
+        list_pending_questions=lambda: [],
+        list_task_messages=lambda task_id: [],
+        world_stale=False,
+        log_session_dir=None,
+    )
+
+    triage = payload["triage"]
+    assert triage["state"] == "degraded"
+    assert triage["phase"] == "world_sync"
+    assert triage["waiting_reason"] == "world_sync_stale"
+    assert triage["blocking_reason"] == "world_sync_stale"
+    assert triage["reservation_preview"] == "步兵 × 1 · 等待世界同步恢复"
+    assert triage["world_stale"] is True
+    assert triage["world_sync_error"] == "actors:COMMAND_EXECUTION_ERROR"
+    assert triage["world_sync_failures"] == 4
+    assert triage["world_sync_failure_threshold"] == 3
+    assert "等待能力模块恢复世界同步：步兵 × 1" in triage["status_line"]
+    assert "failures=4/3" in triage["status_line"]
+    assert "actors:COMMAND_EXECUTION_ERROR" in triage["status_line"]
+    assert "economy:IGNORED_SHOULD_NOT_WIN" not in triage["status_line"]
+    print("  PASS: build_live_task_payload_surfaces_unit_pipeline_world_sync_detail")
+
+
 def test_build_live_task_payload_marks_request_dispatch_without_fake_blocker():
     class FakeTask:
         task_id = "t_attack"

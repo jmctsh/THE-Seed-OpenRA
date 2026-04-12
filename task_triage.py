@@ -431,6 +431,23 @@ def build_unit_pipeline_status_line(
     return status_line
 
 
+def _unit_pipeline_world_sync_detail(
+    request: dict[str, Any] | None,
+    reservation: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    reason = _unit_pipeline_reason(request, reservation)
+    if reason != "world_sync_stale":
+        return None
+    item = request if isinstance(request, dict) else reservation
+    if not isinstance(item, dict):
+        return None
+    return {
+        "error": str(item.get("world_sync_last_error") or "").strip(),
+        "failures": int(item.get("world_sync_consecutive_failures", 0) or 0),
+        "failure_threshold": int(item.get("world_sync_failure_threshold", 0) or 0),
+    }
+
+
 def _capability_fulfilling_detail(
     *,
     task_id: str,
@@ -1025,6 +1042,7 @@ def build_task_triage(
         ) if task_requests else None
         reason = _unit_pipeline_reason(first_request, first_reservation)
         state, phase, waiting_reason, blocking_reason = classify_unit_pipeline_reason(reason)
+        world_sync_detail = _unit_pipeline_world_sync_detail(first_request, first_reservation)
         return TaskTriageSnapshot(
             state=state,
             phase=phase,
@@ -1035,6 +1053,10 @@ def build_task_triage(
             active_job_id=active_job_id,
             reservation_ids=reservation_ids,
             reservation_preview=build_unit_pipeline_preview(first_request, first_reservation),
+            world_stale=world_sync_detail is not None,
+            world_sync_error=str((world_sync_detail or {}).get("error") or ""),
+            world_sync_failures=int((world_sync_detail or {}).get("failures", 0) or 0),
+            world_sync_failure_threshold=int((world_sync_detail or {}).get("failure_threshold", 0) or 0),
             active_group_size=active_group_size,
         )
 
