@@ -31,6 +31,31 @@
       <div v-if="selectedSessionMeta" class="task-log-path" :title="selectedSessionMeta.session_dir">
         🗂 {{ selectedSessionMeta.session_name }} · tasks={{ selectedSessionMeta.task_count }} · records={{ selectedSessionMeta.record_count }}
       </div>
+      <div
+        v-if="selectedSessionWorldHealth"
+        class="triage-meta session-health"
+        :title="selectedSessionWorldHealth.last_error || ''"
+      >
+        <span>{{ formatSessionHealthStatus(selectedSessionWorldHealth) }}</span>
+        <span v-if="selectedSessionWorldHealth.max_consecutive_failures">
+          sync_fail=max {{ selectedSessionWorldHealth.max_consecutive_failures }}<template v-if="selectedSessionWorldHealth.failure_threshold">/{{ selectedSessionWorldHealth.failure_threshold }}</template>
+        </span>
+        <span v-if="selectedSessionWorldHealth.stale_refreshes">
+          stale_refresh={{ selectedSessionWorldHealth.stale_refreshes }}
+        </span>
+        <span v-if="selectedSessionWorldHealth.slow_events">
+          slow={{ selectedSessionWorldHealth.slow_events }}
+        </span>
+        <span v-if="selectedSessionWorldHealth.max_totalMs">
+          max_refresh={{ selectedSessionWorldHealth.max_totalMs }}ms
+        </span>
+        <span v-if="selectedSessionWorldHealth.last_failure_layer">
+          layer={{ selectedSessionWorldHealth.last_failure_layer }}
+        </span>
+        <span v-if="selectedSessionWorldHealth.last_error">
+          last={{ formatSessionHealthError(selectedSessionWorldHealth.last_error) }}
+        </span>
+      </div>
       <label class="trace-label" for="task-trace-select">Task Trace</label>
       <select id="task-trace-select" v-model="selectedTaskId" class="trace-select">
         <option value="ALL">全部任务</option>
@@ -425,6 +450,10 @@ const selectedSessionMeta = computed(() =>
   sessionCatalog.value.find((item) => item.session_dir === selectedSessionDir.value) || null
 )
 
+const selectedSessionWorldHealth = computed(() =>
+  normalizeSessionWorldHealth(selectedSessionMeta.value?.world_health || null)
+)
+
 const activeTaskCatalog = computed(() => {
   if (!selectedSessionDir.value) return [...liveTaskCatalog.value]
   if (selectedSessionDir.value !== currentSessionDir.value) return [...sessionTaskCatalog.value]
@@ -575,6 +604,49 @@ function formatSessionOption(session) {
   else if (session.is_latest) flags.push('latest')
   const suffix = flags.length ? ` · ${flags.join('/')}` : ''
   return `${session.session_name}${suffix}`
+}
+
+function normalizeSessionWorldHealth(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const normalized = {
+    stale_seen: !!raw.stale_seen,
+    ended_stale: !!raw.ended_stale,
+    stale_refreshes: Number(raw.stale_refreshes || 0),
+    max_consecutive_failures: Number(raw.max_consecutive_failures || 0),
+    failure_threshold: Number(raw.failure_threshold || 0),
+    slow_events: Number(raw.slow_events || 0),
+    max_totalMs: Number(raw.max_total_ms || 0),
+    last_failure_layer: raw.last_failure_layer || '',
+    last_error: raw.last_error || '',
+  }
+  if (
+    !normalized.stale_seen
+    && !normalized.ended_stale
+    && !normalized.stale_refreshes
+    && !normalized.max_consecutive_failures
+    && !normalized.failure_threshold
+    && !normalized.slow_events
+    && !normalized.max_totalMs
+    && !normalized.last_failure_layer
+    && !normalized.last_error
+  ) {
+    return null
+  }
+  return normalized
+}
+
+function formatSessionHealthStatus(health) {
+  if (!health) return ''
+  if (health.ended_stale) return 'Session 世界同步异常'
+  if (health.stale_seen) return 'Session 曾出现世界同步异常'
+  if (health.slow_events) return 'Session 出现慢刷新'
+  return 'Session 运行摘要'
+}
+
+function formatSessionHealthError(error) {
+  if (!error) return ''
+  const text = String(error)
+  return text.length > 48 ? `${text.slice(0, 45)}...` : text
 }
 
 function refreshDiagnostics() {

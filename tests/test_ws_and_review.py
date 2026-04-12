@@ -765,6 +765,115 @@ def test_sync_request_propagates_world_stale_truth_consistently():
     print("  PASS: sync_request_propagates_world_stale_truth_consistently")
 
 
+def test_sync_request_overlays_live_world_health_into_session_catalog():
+    class FakeKernel:
+        def list_pending_questions(self):
+            return []
+
+        def list_tasks(self):
+            return []
+
+        def jobs_for_task(self, task_id):
+            del task_id
+            return []
+
+        def get_task_agent(self, task_id):
+            del task_id
+            return None
+
+        def active_jobs(self):
+            return []
+
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+        def runtime_state(self):
+            return {}
+
+    class FakeWorldModel:
+        def world_summary(self):
+            return {}
+
+        def refresh_health(self):
+            return {
+                "stale": True,
+                "consecutive_failures": 4,
+                "total_failures": 9,
+                "failure_threshold": 3,
+                "last_error": "actors:COMMAND_EXECUTION_ERROR",
+            }
+
+        def compute_runtime_facts(self, task_id: str, *, include_buildable: bool = True):
+            assert task_id == "__dashboard__"
+            assert include_buildable is False
+            return {}
+
+    class FakeGameLoop:
+        def register_agent(self, *args, **kwargs):
+            pass
+
+        def unregister_agent(self, *args, **kwargs):
+            pass
+
+        def register_job(self, *args, **kwargs):
+            pass
+
+        def unregister_job(self, *args, **kwargs):
+            pass
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[tuple[str, dict[str, Any]]] = []
+
+        async def send_world_snapshot_to_client(self, client_id, snapshot):
+            self.sent.append(("world_snapshot", {"client_id": client_id, "snapshot": snapshot}))
+
+        async def send_task_list_to_client(self, client_id, tasks, pending_questions=None):
+            self.sent.append(("task_list", {"client_id": client_id, "tasks": tasks, "pending_questions": pending_questions}))
+
+        async def send_session_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_catalog", {"client_id": client_id, "payload": payload}))
+
+        async def send_session_task_catalog_to_client(self, client_id, payload):
+            self.sent.append(("session_task_catalog", {"client_id": client_id, "payload": payload}))
+
+        async def send_to_client(self, client_id, msg_type, data):
+            self.sent.append((msg_type, {"client_id": client_id, "data": data}))
+
+    import tempfile
+
+    bridge = RuntimeBridge(
+        kernel=FakeKernel(),
+        world_model=FakeWorldModel(),
+        game_loop=FakeGameLoop(),
+    )
+    ws = FakeWS()
+    bridge.attach_ws_server(ws)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bridge.log_session_root = tmpdir
+        start_persistence_session(tmpdir, session_name="live-session")
+        try:
+            async def run():
+                await bridge.on_sync_request("client_live")
+
+            asyncio.run(run())
+        finally:
+            stop_persistence_session()
+
+    session_catalog = next(item for item in ws.sent if item[0] == "session_catalog")[1]["payload"]["sessions"]
+    assert len(session_catalog) == 1
+    assert session_catalog[0]["world_health"]["ended_stale"] is True
+    assert session_catalog[0]["world_health"]["stale_refreshes"] == 9
+    assert session_catalog[0]["world_health"]["max_consecutive_failures"] == 4
+    assert session_catalog[0]["world_health"]["failure_threshold"] == 3
+    assert session_catalog[0]["world_health"]["last_error"] == "actors:COMMAND_EXECUTION_ERROR"
+
+
 def test_runtime_bridge_publish_logs_batches_incrementally():
     logging_system.clear()
 

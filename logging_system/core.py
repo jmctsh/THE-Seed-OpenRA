@@ -42,6 +42,7 @@ class PersistentLogSession:
         self.record_count = 0
         self.task_counts: dict[str, int] = {}
         self.component_counts: dict[str, int] = {}
+        self.world_health_summary = _empty_world_health_summary()
 
     def append(self, record: "LogRecord") -> None:
         payload = record.to_json() + "\n"
@@ -62,6 +63,12 @@ class PersistentLogSession:
             with task_path.open("a", encoding="utf-8") as handle:
                 handle.write(payload)
             self.task_counts[task_id] = self.task_counts.get(task_id, 0) + 1
+        if record.component == "world_model":
+            _update_world_health_summary_from_event(
+                self.world_health_summary,
+                str(record.event or ""),
+                record.data if isinstance(record.data, dict) else {},
+            )
 
     def finalize(self) -> None:
         if not self.metadata_path.exists():
@@ -72,6 +79,9 @@ class PersistentLogSession:
         payload["component_counts"] = dict(sorted(self.component_counts.items()))
         payload["task_counts"] = dict(sorted(self.task_counts.items()))
         payload["task_file_count"] = len(self.task_counts)
+        world_health = _compact_world_health_summary(self.world_health_summary)
+        if world_health:
+            payload["world_health"] = world_health
         self.metadata_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
@@ -479,6 +489,108 @@ def _iter_jsonl_dicts(path: Path) -> Iterable[dict[str, Any]]:
         return
 
 
+def _empty_world_health_summary() -> dict[str, Any]:
+    return {
+        "stale_seen": False,
+        "ended_stale": False,
+        "stale_refreshes": 0,
+        "max_consecutive_failures": 0,
+        "failure_threshold": 0,
+        "last_error": "",
+        "last_error_detail": "",
+        "last_failure_layer": "",
+        "slow_events": 0,
+        "max_total_ms": 0.0,
+    }
+
+
+def _compact_world_health_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    normalized = {
+        "stale_seen": bool(summary.get("stale_seen")),
+        "ended_stale": bool(summary.get("ended_stale")),
+        "stale_refreshes": int(summary.get("stale_refreshes", 0) or 0),
+        "max_consecutive_failures": int(summary.get("max_consecutive_failures", 0) or 0),
+        "failure_threshold": int(summary.get("failure_threshold", 0) or 0),
+        "last_error": str(summary.get("last_error") or ""),
+        "last_error_detail": str(summary.get("last_error_detail") or ""),
+        "last_failure_layer": str(summary.get("last_failure_layer") or ""),
+        "slow_events": int(summary.get("slow_events", 0) or 0),
+        "max_total_ms": round(float(summary.get("max_total_ms", 0.0) or 0.0), 1),
+    }
+    if not any(
+        [
+            normalized["stale_seen"],
+            normalized["ended_stale"],
+            normalized["stale_refreshes"],
+            normalized["max_consecutive_failures"],
+            normalized["failure_threshold"],
+            normalized["last_error"],
+            normalized["last_error_detail"],
+            normalized["last_failure_layer"],
+            normalized["slow_events"],
+            normalized["max_total_ms"],
+        ]
+    ):
+        return {}
+    return normalized
+
+
+def _update_world_health_summary_from_event(summary: dict[str, Any], event: str, data: dict[str, Any]) -> None:
+    if event == "world_refresh_completed":
+        stale = bool(data.get("stale"))
+        consecutive_failures = int(data.get("consecutive_failures", 0) or 0)
+        failure_threshold = int(data.get("failure_threshold", 0) or 0)
+        if stale:
+            summary["stale_seen"] = True
+            summary["stale_refreshes"] = int(summary.get("stale_refreshes", 0) or 0) + 1
+        summary["ended_stale"] = stale
+        summary["max_consecutive_failures"] = max(
+            int(summary.get("max_consecutive_failures", 0) or 0),
+            consecutive_failures,
+        )
+        if failure_threshold:
+            summary["failure_threshold"] = max(
+                int(summary.get("failure_threshold", 0) or 0),
+                failure_threshold,
+            )
+        return
+
+    if event == "world_refresh_failed":
+        error = str(data.get("error") or "")
+        error_detail = str(data.get("error_detail") or "")
+        failure_layer = str(data.get("layer") or "")
+        failure_threshold = int(data.get("failure_threshold", 0) or 0)
+        if error:
+            summary["last_error"] = error
+        if error_detail:
+            summary["last_error_detail"] = error_detail
+        if failure_layer:
+            summary["last_failure_layer"] = failure_layer
+        if failure_threshold:
+            summary["failure_threshold"] = max(
+                int(summary.get("failure_threshold", 0) or 0),
+                failure_threshold,
+            )
+        return
+
+    if event == "world_refresh_slow":
+        total_ms = float(data.get("total_ms", 0.0) or 0.0)
+        summary["slow_events"] = int(summary.get("slow_events", 0) or 0) + 1
+        summary["max_total_ms"] = max(float(summary.get("max_total_ms", 0.0) or 0.0), total_ms)
+
+
+def _derive_world_health_summary(session_dir: Path) -> dict[str, Any]:
+    component_path = session_dir / "components" / "world_model.jsonl"
+    if not component_path.exists():
+        return {}
+    summary = _empty_world_health_summary()
+    for payload in _iter_jsonl_dicts(component_path):
+        event = str(payload.get("event") or "")
+        data = payload.get("data")
+        _update_world_health_summary_from_event(summary, event, data if isinstance(data, dict) else {})
+    return _compact_world_health_summary(summary)
+
+
 def list_persistence_sessions(
     base_dir: Union[str, Path] = "Logs/runtime",
     *,
@@ -499,6 +611,20 @@ def list_persistence_sessions(
         if not metadata_path.exists():
             continue
         payload = _load_json_dict(metadata_path)
+        world_health = _compact_world_health_summary(
+            payload.get("world_health") if isinstance(payload.get("world_health"), dict) else {}
+        )
+        if not world_health:
+            world_health = _derive_world_health_summary(child)
+            if world_health:
+                payload["world_health"] = world_health
+                try:
+                    metadata_path.write_text(
+                        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass
         task_counts = payload.get("task_counts")
         task_count = len(task_counts) if isinstance(task_counts, dict) else int(payload.get("task_file_count") or 0)
         started_at = str(payload.get("started_at") or "")
@@ -514,6 +640,7 @@ def list_persistence_sessions(
                 "pid": int(payload.get("pid") or 0),
                 "cwd": str(payload.get("cwd") or ""),
                 "metadata": payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {},
+                "world_health": world_health,
                 "is_latest": latest is not None and child.resolve() == latest.resolve(),
                 "is_current": current is not None and child.resolve() == current.resolve(),
                 "mtime": child.stat().st_mtime,

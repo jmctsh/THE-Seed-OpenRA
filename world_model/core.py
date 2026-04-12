@@ -349,6 +349,7 @@ class WorldModel:
             event_count=len(events),
             timestamp=timestamp,
             consecutive_failures=self._consecutive_refresh_failures,
+            failure_threshold=self.stale_failure_threshold,
         )
         return list(events)
 
@@ -1518,6 +1519,7 @@ class WorldModel:
             error=error,
             error_detail=detail,
             error_meta=self._extract_exception_meta(exc),
+            failure_threshold=self.stale_failure_threshold,
             suppressed_count=suppressed_count,
         )
         self._refresh_failure_log_state[layer] = {

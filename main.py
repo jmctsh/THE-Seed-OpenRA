@@ -515,6 +515,7 @@ class RuntimeBridge(InboundHandler):
             build_session_catalog_payload(
                 self.log_session_root,
                 selected_session_dir=selected_session_dir,
+                current_world_health=self._world_sync_health(),
             ),
         )
 

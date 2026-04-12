@@ -286,6 +286,48 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('reservation=猛犸坦克 × 1 · 缺少前置')
   })
 
+  it('renders selected session world health summary from session_catalog', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('session_catalog', {
+      sessions: [
+        {
+          session_dir: '/tmp/session-health',
+          session_name: 'session-health',
+          task_count: 1,
+          record_count: 12,
+          is_current: true,
+          world_health: {
+            stale_seen: true,
+            ended_stale: false,
+            stale_refreshes: 9,
+            max_consecutive_failures: 4,
+            failure_threshold: 3,
+            slow_events: 2,
+            max_total_ms: 154.2,
+            last_failure_layer: 'actors',
+            last_error: 'actors:COMMAND_EXECUTION_ERROR',
+          },
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Session 曾出现世界同步异常')
+    expect(wrapper.text()).toContain('sync_fail=max 4/3')
+    expect(wrapper.text()).toContain('stale_refresh=9')
+    expect(wrapper.text()).toContain('slow=2')
+    expect(wrapper.text()).toContain('max_refresh=154.2ms')
+    expect(wrapper.text()).toContain('layer=actors')
+    expect(wrapper.text()).toContain('last=actors:COMMAND_EXECUTION_ERROR')
+  })
+
   it('renders world-sync stale details from world_snapshot', async () => {
     const bus = createBus()
     const wrapper = mount(DiagPanel, {

@@ -154,6 +154,54 @@ def test_persistent_log_session_writes_all_and_task_files() -> None:
     assert json.loads(task_lines[0])["data"]["task_id"] == "t_1"
 
 
+def test_persistent_log_session_persists_world_health_summary() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        session_dir = logging_system.start_persistence_session(tmpdir, session_name="health-session")
+        world_logger = logging_system.get_logger("world_model")
+        world_logger.warn(
+            "WorldModel actors refresh failed",
+            event="world_refresh_failed",
+            layer="actors",
+            error="COMMAND_EXECUTION_ERROR",
+            error_detail="Attempted to get trait from destroyed object",
+            failure_threshold=3,
+        )
+        world_logger.debug(
+            "WorldModel refresh completed",
+            event="world_refresh_completed",
+            stale=True,
+            consecutive_failures=2,
+            failure_threshold=3,
+        )
+        world_logger.warn(
+            "Slow world refresh",
+            event="world_refresh_slow",
+            total_ms=154.2,
+        )
+        world_logger.debug(
+            "WorldModel refresh completed",
+            event="world_refresh_completed",
+            stale=False,
+            consecutive_failures=0,
+            failure_threshold=3,
+        )
+        logging_system.stop_persistence_session()
+
+        session_meta = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+
+    world_health = session_meta["world_health"]
+    assert world_health["stale_seen"] is True
+    assert world_health["ended_stale"] is False
+    assert world_health["stale_refreshes"] == 1
+    assert world_health["max_consecutive_failures"] == 2
+    assert world_health["failure_threshold"] == 3
+    assert world_health["last_error"] == "COMMAND_EXECUTION_ERROR"
+    assert world_health["last_error_detail"] == "Attempted to get trait from destroyed object"
+    assert world_health["last_failure_layer"] == "actors"
+    assert world_health["slow_events"] == 1
+    assert world_health["max_total_ms"] == 154.2
+
+
 def test_read_task_replay_records_falls_back_to_latest_session() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         session_dir = logging_system.start_persistence_session(
@@ -273,6 +321,92 @@ def test_list_persistence_sessions_and_session_tasks() -> None:
             "log_path": str((session_dir / "tasks" / "t_demo.jsonl").resolve()),
         }
     ]
+
+
+def test_list_persistence_sessions_backfills_world_health_from_component_logs() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        session_dir = base / "session-backfill"
+        (session_dir / "components").mkdir(parents=True, exist_ok=True)
+        (base / "latest.txt").write_text("session-backfill\n", encoding="utf-8")
+        (session_dir / "session.json").write_text(
+            json.dumps(
+                {
+                    "session_name": "session-backfill",
+                    "started_at": "2026-04-12T00:00:00+00:00",
+                    "metadata": {"source": "unit-test"},
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (session_dir / "components" / "world_model.jsonl").write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "timestamp": 10.0,
+                            "component": "world_model",
+                            "level": "WARN",
+                            "message": "WorldModel actors refresh failed",
+                            "event": "world_refresh_failed",
+                            "data": {
+                                "layer": "actors",
+                                "error": "COMMAND_EXECUTION_ERROR",
+                                "error_detail": "actor destroyed",
+                                "failure_threshold": 3,
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(
+                        {
+                            "timestamp": 11.0,
+                            "component": "world_model",
+                            "level": "DEBUG",
+                            "message": "WorldModel refresh completed",
+                            "event": "world_refresh_completed",
+                            "data": {
+                                "stale": True,
+                                "consecutive_failures": 3,
+                                "failure_threshold": 3,
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(
+                        {
+                            "timestamp": 12.0,
+                            "component": "world_model",
+                            "level": "WARN",
+                            "message": "Slow world refresh",
+                            "event": "world_refresh_slow",
+                            "data": {
+                                "total_ms": 167.4,
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        sessions = logging_system.list_persistence_sessions(base)
+        session_meta = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+
+    assert sessions[0]["world_health"]["stale_seen"] is True
+    assert sessions[0]["world_health"]["ended_stale"] is True
+    assert sessions[0]["world_health"]["stale_refreshes"] == 1
+    assert sessions[0]["world_health"]["max_consecutive_failures"] == 3
+    assert sessions[0]["world_health"]["failure_threshold"] == 3
+    assert sessions[0]["world_health"]["last_failure_layer"] == "actors"
+    assert sessions[0]["world_health"]["slow_events"] == 1
+    assert sessions[0]["world_health"]["max_total_ms"] == 167.4
+    assert session_meta["world_health"] == sessions[0]["world_health"]
 
 
 def test_benchmark_summary_and_logging_integration() -> None:

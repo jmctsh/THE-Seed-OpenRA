@@ -39,14 +39,45 @@ def resolve_session_dir(log_session_root: str, session_dir: Optional[str]) -> Op
     return candidate if candidate.exists() else None
 
 
+def _normalize_live_world_health(current_world_health: Optional[dict[str, Any]]) -> dict[str, Any]:
+    if not isinstance(current_world_health, dict):
+        return {}
+    stale = bool(current_world_health.get("stale"))
+    consecutive_failures = int(current_world_health.get("consecutive_failures", 0) or 0)
+    total_failures = int(current_world_health.get("total_failures", 0) or 0)
+    failure_threshold = int(current_world_health.get("failure_threshold", 0) or 0)
+    last_error = str(current_world_health.get("last_error") or "")
+    if not any([stale, consecutive_failures, total_failures, failure_threshold, last_error]):
+        return {}
+    return {
+        "stale_seen": stale or total_failures > 0 or consecutive_failures > 0 or bool(last_error),
+        "ended_stale": stale,
+        "stale_refreshes": total_failures,
+        "max_consecutive_failures": consecutive_failures,
+        "failure_threshold": failure_threshold,
+        "last_error": last_error,
+    }
+
+
 def build_session_catalog_payload(
     log_session_root: str,
     *,
     selected_session_dir: Optional[Path],
+    current_world_health: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """Assemble the session catalog payload for the diagnostics UI."""
+    sessions = list_persistence_sessions(log_session_root, limit=30)
+    live_world_health = _normalize_live_world_health(current_world_health)
+    if live_world_health:
+        for item in sessions:
+            if not item.get("is_current"):
+                continue
+            merged_world_health = dict(item.get("world_health") or {})
+            merged_world_health.update(live_world_health)
+            item["world_health"] = merged_world_health
+            break
     return {
-        "sessions": list_persistence_sessions(log_session_root, limit=30),
+        "sessions": sessions,
         "selected_session_dir": str(selected_session_dir) if selected_session_dir is not None else None,
     }
 
