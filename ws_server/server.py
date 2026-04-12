@@ -419,7 +419,10 @@ class WSServer:
     async def send_player_notification(self, notification: dict[str, Any]) -> None:
         await self.broadcast("player_notification", notification)
 
-    async def send_query_response(self, response: dict[str, Any]) -> None:
+    async def send_query_response(self, response: dict[str, Any], client_id: str | None = None) -> None:
+        if client_id:
+            await self.send_to_client(client_id, "query_response", response)
+            return
         await self.broadcast("query_response", response)
 
     async def send_task_message(self, message: dict[str, Any]) -> None:

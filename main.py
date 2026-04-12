@@ -321,7 +321,6 @@ class RuntimeBridge(InboundHandler):
         self._publisher.schedule_publish()
 
     async def on_command_submit(self, text: str, client_id: str) -> None:
-        del client_id
         try:
             if self.adjutant is None:
                 # Design intent: when Adjutant is unavailable (no LLM configured,
@@ -332,6 +331,7 @@ class RuntimeBridge(InboundHandler):
                 await self._publisher.emit_adjutant_response(
                     f"收到指令，已创建任务 {task.task_id}",
                     response_type="command",
+                    client_id=client_id,
                 )
                 self.sync_runtime()
                 await self.publish_dashboard()
@@ -344,6 +344,7 @@ class RuntimeBridge(InboundHandler):
                     response_text,
                     response_type=result.get("type", "info"),
                     ok=result.get("ok", True),
+                    client_id=client_id,
                     extra={
                         key: value
                         for key, value in result.items()
@@ -358,6 +359,7 @@ class RuntimeBridge(InboundHandler):
                 f"指令处理失败: {text[:50]}",
                 response_type="error",
                 ok=False,
+                client_id=client_id,
             )
 
     async def on_command_cancel(self, task_id: str, client_id: str) -> None:
@@ -375,7 +377,6 @@ class RuntimeBridge(InboundHandler):
         await self.publish_dashboard()
 
     async def on_question_reply(self, message_id: str, task_id: str, answer: str, client_id: str) -> None:
-        del client_id
         result = self.kernel.submit_player_response(
             PlayerResponse(message_id=message_id, task_id=task_id, answer=answer)
         )
@@ -383,6 +384,7 @@ class RuntimeBridge(InboundHandler):
             result.get("message", "已回复" if result.get("ok", False) else "回复失败"),
             response_type="reply",
             ok=result.get("ok", False),
+            client_id=client_id,
             extra={
                 "task_id": task_id,
                 "message_id": message_id,

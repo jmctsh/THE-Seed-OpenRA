@@ -498,6 +498,41 @@ def test_ws_send_to_client_targets_single_client():
     print("  PASS: ws_send_to_client_targets_single_client")
 
 
+def test_ws_query_response_can_target_single_client():
+    """Direct adjutant responses should only reach the requesting client when targeted."""
+    server = WSServer(config=WSServerConfig(host="127.0.0.1", port=18771))
+
+    async def run():
+        await server.start()
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.ws_connect("http://127.0.0.1:18771/ws") as ws1:
+                    async with session.ws_connect("http://127.0.0.1:18771/ws") as ws2:
+                        await asyncio.sleep(0.05)
+                        await server.send_query_response(
+                            {
+                                "answer": "只发给 client_1",
+                                "response_type": "command",
+                                "ok": True,
+                            },
+                            client_id="client_1",
+                        )
+                        msg1 = await asyncio.wait_for(ws1.receive(), timeout=1.0)
+                        payload1 = json.loads(msg1.data)
+                        assert payload1["type"] == "query_response"
+                        assert payload1["data"]["answer"] == "只发给 client_1"
+                        try:
+                            await asyncio.wait_for(ws2.receive(), timeout=0.2)
+                            raise AssertionError("second client unexpectedly received targeted query_response")
+                        except asyncio.TimeoutError:
+                            pass
+        finally:
+            await server.stop()
+
+    asyncio.run(run())
+    print("  PASS: ws_query_response_can_target_single_client")
+
+
 @pytest.mark.contract
 def test_sync_request_pushes_current_state_directly():
     """sync_request should deliver current snapshot/task list directly to the requesting client."""
@@ -891,9 +926,11 @@ def test_session_history_payload_includes_logged_adjutant_responses_and_notifica
             self.is_running = True
             self.query_responses: list[dict[str, Any]] = []
             self.player_notifications: list[dict[str, Any]] = []
+            self.query_response_targets: list[str | None] = []
 
-        async def send_query_response(self, payload):
+        async def send_query_response(self, payload, client_id=None):
             self.query_responses.append(payload)
+            self.query_response_targets.append(client_id)
 
         async def send_player_notification(self, payload):
             self.player_notifications.append(payload)
@@ -1035,9 +1072,11 @@ def test_dashboard_publisher_emit_adjutant_response_ignores_reserved_extra_field
         def __init__(self):
             self.is_running = True
             self.query_responses: list[dict[str, Any]] = []
+            self.query_response_targets: list[str | None] = []
 
-        async def send_query_response(self, payload):
+        async def send_query_response(self, payload, client_id=None):
             self.query_responses.append(payload)
+            self.query_response_targets.append(client_id)
 
     logged_info: list[dict[str, Any]] = []
 
@@ -1076,6 +1115,7 @@ def test_dashboard_publisher_emit_adjutant_response_ignores_reserved_extra_field
     assert publisher.ws_server.query_responses[0]["ok"] is True
     assert publisher.ws_server.query_responses[0]["response_type"] == "command"
     assert publisher.ws_server.query_responses[0]["task_id"] == "t_cmd"
+    assert publisher.ws_server.query_response_targets == [None]
     assert logged_info == [
         {
             "event": "adjutant_response_sent",
@@ -1087,6 +1127,49 @@ def test_dashboard_publisher_emit_adjutant_response_ignores_reserved_extra_field
         }
     ]
     print("  PASS: dashboard_publisher_emit_adjutant_response_ignores_reserved_extra_field_collisions")
+
+
+def test_dashboard_publisher_replay_history_filters_client_scoped_query_responses():
+    class FakeKernel:
+        def list_task_messages(self):
+            return []
+
+        def list_player_notifications(self):
+            return []
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[tuple[str, dict[str, Any]]] = []
+
+        async def send_to_client(self, client_id, msg_type, data):
+            self.sent.append((msg_type, {"client_id": client_id, "data": data}))
+
+    publisher = dashboard_publish_module.DashboardPublisher(
+        kernel=FakeKernel(),
+        ws_server=FakeWS(),
+        dashboard_payload_builder=lambda: {},
+        task_payload_builder=lambda *args, **kwargs: {},
+    )
+    publisher.recent_responses = [
+        {"answer": "global", "response_type": "info", "ok": True, "timestamp": 1.0},
+        {"answer": "to-a", "response_type": "command", "ok": True, "timestamp": 2.0, "_client_id": "client_a"},
+        {"answer": "to-b", "response_type": "reply", "ok": True, "timestamp": 3.0, "_client_id": "client_b"},
+    ]
+
+    asyncio.run(publisher.replay_history("client_b"))
+
+    query_responses = [
+        payload["data"]
+        for msg_type, payload in publisher.ws_server.sent
+        if msg_type == "query_response" and payload["client_id"] == "client_b"
+    ]
+    assert query_responses == [
+        {"answer": "global", "response_type": "info", "ok": True, "timestamp": 1.0},
+        {"answer": "to-b", "response_type": "reply", "ok": True, "timestamp": 3.0},
+    ]
+    assert all("_client_id" not in entry for entry in query_responses)
+    print("  PASS: dashboard_publisher_replay_history_filters_client_scoped_query_responses")
 
 
 def test_sync_request_propagates_world_stale_truth_consistently():

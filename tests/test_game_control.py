@@ -111,10 +111,12 @@ class _BridgeWS:
     def __init__(self) -> None:
         self.is_running = True
         self.query_responses: list[dict[str, Any]] = []
+        self.query_response_targets: list[str | None] = []
         self.player_notifications: list[dict[str, Any]] = []
 
-    async def send_query_response(self, payload: dict[str, Any]) -> None:
+    async def send_query_response(self, payload: dict[str, Any], client_id: str | None = None) -> None:
         self.query_responses.append(payload)
+        self.query_response_targets.append(client_id)
 
     async def send_player_notification(self, payload: dict[str, Any]) -> None:
         self.player_notifications.append(payload)
@@ -1799,10 +1801,78 @@ def test_runtime_bridge_command_feedback_uses_query_response() -> None:
         assert response["type"] == "command"
         assert response["echo_text"] == "生产5辆坦克"
         assert response["timestamp"] > 0
+        assert ws.query_response_targets == ["client_1"]
         assert ws.player_notifications == []
 
     asyncio.run(run())
     print("  PASS: runtime_bridge_command_feedback_uses_query_response")
+
+
+def test_runtime_bridge_command_feedback_without_adjutant_targets_requester() -> None:
+    class KernelWithCreateTask(_BridgeKernel):
+        def create_task(self, text: str, kind: str, priority: int):
+            del text, kind, priority
+            return type("TaskStub", (), {"task_id": "t_created"})()
+
+    async def run() -> None:
+        bridge = RuntimeBridge(
+            kernel=KernelWithCreateTask(),
+            world_model=type("WM", (), {})(),
+            game_loop=_BridgeLoop(),
+            adjutant=None,
+        )
+        bridge.sync_runtime = lambda: None  # type: ignore[method-assign]
+
+        async def _noop_publish() -> None:
+            return None
+
+        bridge.publish_dashboard = _noop_publish  # type: ignore[method-assign]
+        ws = _BridgeWS()
+        bridge.attach_ws_server(ws)
+        await bridge.on_command_submit("展开基地车", "client_fallback")
+
+        assert len(ws.query_responses) == 1
+        response = ws.query_responses[0]
+        assert response["answer"] == "收到指令，已创建任务 t_created"
+        assert response["response_type"] == "command"
+        assert response["ok"] is True
+        assert ws.query_response_targets == ["client_fallback"]
+
+    asyncio.run(run())
+    print("  PASS: runtime_bridge_command_feedback_without_adjutant_targets_requester")
+
+
+def test_runtime_bridge_command_failure_feedback_targets_requester() -> None:
+    class ExplodingAdjutant:
+        async def handle_player_input(self, text: str) -> dict[str, Any]:
+            raise RuntimeError(f"boom:{text}")
+
+    async def run() -> None:
+        bridge = RuntimeBridge(
+            kernel=_BridgeKernel(),
+            world_model=type("WM", (), {})(),
+            game_loop=_BridgeLoop(),
+            adjutant=ExplodingAdjutant(),
+        )
+        bridge.sync_runtime = lambda: None  # type: ignore[method-assign]
+
+        async def _noop_publish() -> None:
+            return None
+
+        bridge.publish_dashboard = _noop_publish  # type: ignore[method-assign]
+        ws = _BridgeWS()
+        bridge.attach_ws_server(ws)
+        await bridge.on_command_submit("高风险指令", "client_error")
+
+        assert len(ws.query_responses) == 1
+        response = ws.query_responses[0]
+        assert response["answer"] == "指令处理失败: 高风险指令"
+        assert response["response_type"] == "error"
+        assert response["ok"] is False
+        assert ws.query_response_targets == ["client_error"]
+
+    asyncio.run(run())
+    print("  PASS: runtime_bridge_command_failure_feedback_targets_requester")
 
 
 def test_runtime_bridge_question_reply_success_is_visible() -> None:
@@ -1832,6 +1902,7 @@ def test_runtime_bridge_question_reply_success_is_visible() -> None:
         assert response["message_id"] == "msg_1"
         assert response["status"] == "delivered"
         assert response["timestamp"] > 0
+        assert ws.query_response_targets == ["client_1"]
         assert ws.player_notifications == []
 
     asyncio.run(run())

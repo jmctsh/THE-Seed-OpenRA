@@ -302,6 +302,7 @@ class DashboardPublisher:
         response_type: str,
         ok: bool = True,
         extra: Optional[dict[str, Any]] = None,
+        client_id: str | None = None,
     ) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
             return
@@ -313,12 +314,17 @@ class DashboardPublisher:
         if extra:
             payload.update(extra)
         payload["timestamp"] = time.time()
-        self.recent_responses.append(dict(payload))
+        history_entry = dict(payload)
+        if client_id:
+            history_entry["_client_id"] = client_id
+        self.recent_responses.append(history_entry)
         if len(self.recent_responses) > 100:
             self.recent_responses = self.recent_responses[-100:]
         log_extra = dict(extra or {})
         for reserved_key in ("event", "content", "response_type", "ok", "timestamp"):
             log_extra.pop(reserved_key, None)
+        if client_id:
+            log_extra["client_id"] = client_id
         slog.info(
             answer,
             event="adjutant_response_sent",
@@ -327,7 +333,7 @@ class DashboardPublisher:
             ok=ok,
             **log_extra,
         )
-        await self.ws_server.send_query_response(payload)
+        await self.ws_server.send_query_response(payload, client_id=client_id)
 
     async def replay_history(self, client_id: str) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
@@ -365,7 +371,13 @@ class DashboardPublisher:
             await self.ws_server.send_to_client(client_id, "player_notification", notification)
 
         for response in self.recent_responses[-100:]:
-            await self.ws_server.send_to_client(client_id, "query_response", response)
+            if not isinstance(response, dict):
+                continue
+            target_client_id = str(response.get("_client_id") or "").strip()
+            if target_client_id and target_client_id != client_id:
+                continue
+            payload = {key: value for key, value in response.items() if key != "_client_id"}
+            await self.ws_server.send_to_client(client_id, "query_response", payload)
 
     def _task_message_payload(self, message: Any) -> dict[str, Any]:
         payload: dict[str, Any] = {
