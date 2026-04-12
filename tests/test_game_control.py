@@ -1737,6 +1737,20 @@ def test_application_runtime_ws_session_clear_retargets_requesting_client_only()
                 seen += 1
             raise AssertionError("expected websocket payload not received before timeout")
 
+        async def _drain_ws(
+            ws: aiohttp.ClientWebSocketResponse,
+            *,
+            idle_s: float = 0.5,
+        ) -> None:
+            deadline = loop.time() + idle_s
+            while loop.time() < deadline:
+                try:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                except asyncio.TimeoutError:
+                    break
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    continue
+
         with tempfile.TemporaryDirectory() as tmpdir:
             log_root = Path(tmpdir) / "logs"
             old_session_dir = logging_system.start_persistence_session(log_root, session_name="before-clear")
@@ -1760,10 +1774,27 @@ def test_application_runtime_ws_session_clear_retargets_requesting_client_only()
             )
             try:
                 await runtime.start()
+                transient_task = runtime.kernel.create_task("待清空任务", TaskKind.MANAGED, 50)
                 async with aiohttp.ClientSession() as session:
                     async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
                         async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as observer_ws:
                             await ws.send_json({"type": "sync_request"})
+                            initial_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and any(
+                                        item.get("task_id") == transient_task.task_id
+                                        for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            assert any(
+                                item["task_id"] == transient_task.task_id
+                                for item in initial_task_list["data"]["tasks"]
+                            )
+
                             initial_catalog = await _recv_json(
                                 ws,
                                 predicate=lambda payload: (
@@ -1772,6 +1803,8 @@ def test_application_runtime_ws_session_clear_retargets_requesting_client_only()
                                 ),
                             )
                             assert initial_catalog["data"]["selected_session_dir"] == str(old_session_dir)
+                            await _drain_ws(ws)
+                            await _drain_ws(observer_ws, idle_s=0.2)
 
                             await ws.send_json({"type": "session_clear"})
 
@@ -1813,6 +1846,61 @@ def test_application_runtime_ws_session_clear_retargets_requesting_client_only()
                                 max_messages=120,
                             )
                             assert next_task_catalog["data"]["session_dir"] == new_session_dir
+
+                            refreshed_world = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "world_snapshot"
+                                    and transient_task.task_id
+                                    not in (
+                                        payload.get("data", {})
+                                        .get("runtime_state", {})
+                                        .get("active_tasks", {})
+                                    )
+                                ),
+                                max_messages=160,
+                            )
+                            active_tasks = refreshed_world["data"]["runtime_state"]["active_tasks"]
+                            assert transient_task.task_id not in active_tasks
+                            assert runtime.kernel.capability_task_id in active_tasks
+
+                            refreshed_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and not any(
+                                        item.get("task_id") == transient_task.task_id
+                                        for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                                max_messages=160,
+                            )
+                            assert not any(
+                                item.get("task_id") == transient_task.task_id
+                                for item in refreshed_task_list["data"]["tasks"]
+                            )
+                            assert any(
+                                item.get("is_capability")
+                                for item in refreshed_task_list["data"]["tasks"]
+                            )
+
+                            observer_task_list = await _recv_json(
+                                observer_ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and not any(
+                                        item.get("task_id") == transient_task.task_id
+                                        for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                                max_messages=160,
+                            )
+                            assert not any(
+                                item.get("task_id") == transient_task.task_id
+                                for item in observer_task_list["data"]["tasks"]
+                            )
 
                             observer_deadline = loop.time() + 0.4
                             while loop.time() < observer_deadline:
@@ -1885,6 +1973,20 @@ def test_application_runtime_ws_game_restart_round_trip(monkeypatch) -> None:
                 seen += 1
             raise AssertionError("expected websocket payload not received before timeout")
 
+        async def _drain_ws(
+            ws: aiohttp.ClientWebSocketResponse,
+            *,
+            idle_s: float = 0.5,
+        ) -> None:
+            deadline = loop.time() + idle_s
+            while loop.time() < deadline:
+                try:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                except asyncio.TimeoutError:
+                    break
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    continue
+
         with tempfile.TemporaryDirectory() as tmpdir:
             ws_port = _free_tcp_port()
             cfg = RuntimeConfig(
@@ -1908,8 +2010,30 @@ def test_application_runtime_ws_game_restart_round_trip(monkeypatch) -> None:
             )
             try:
                 await runtime.start()
+                transient_task = runtime.kernel.create_task("待重启任务", TaskKind.MANAGED, 45)
                 async with aiohttp.ClientSession() as session:
                     async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                        await ws.send_json({"type": "sync_request"})
+
+                        initial_task_list = await _recv_json(
+                            ws,
+                            predicate=lambda payload: (
+                                payload.get("type") == "task_list"
+                                and any(
+                                    item.get("task_id") == transient_task.task_id
+                                    and item.get("status") == TaskStatus.RUNNING.value
+                                    for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                    if isinstance(item, dict)
+                                )
+                            ),
+                        )
+                        assert any(
+                            item.get("task_id") == transient_task.task_id
+                            and item.get("status") == TaskStatus.RUNNING.value
+                            for item in initial_task_list["data"]["tasks"]
+                        )
+                        await _drain_ws(ws)
+
                         await ws.send_json({"type": "game_restart", "save_path": "baseline.orasav"})
 
                         restarting_payload = await _recv_json(
@@ -1933,6 +2057,44 @@ def test_application_runtime_ws_game_restart_round_trip(monkeypatch) -> None:
                         assert complete_payload["data"]["data"]["save_path"] == "baseline.orasav"
                         assert calls["save_path"] == "baseline.orasav"
                         assert runtime.game_loop.is_running
+
+                        refreshed_world = await _recv_json(
+                            ws,
+                            predicate=lambda payload: (
+                                payload.get("type") == "world_snapshot"
+                                and transient_task.task_id
+                                not in (
+                                    payload.get("data", {})
+                                    .get("runtime_state", {})
+                                    .get("active_tasks", {})
+                                )
+                            ),
+                            max_messages=160,
+                        )
+                        assert (
+                            transient_task.task_id
+                            not in refreshed_world["data"]["runtime_state"]["active_tasks"]
+                        )
+
+                        refreshed_task_list = await _recv_json(
+                            ws,
+                            predicate=lambda payload: (
+                                payload.get("type") == "task_list"
+                                and any(
+                                    item.get("task_id") == transient_task.task_id
+                                    and item.get("status") == TaskStatus.ABORTED.value
+                                    for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                    if isinstance(item, dict)
+                                )
+                            ),
+                            max_messages=160,
+                        )
+                        assert any(
+                            item.get("task_id") == transient_task.task_id
+                            and item.get("status") == TaskStatus.ABORTED.value
+                            for item in refreshed_task_list["data"]["tasks"]
+                        )
+                        assert runtime.kernel.tasks[transient_task.task_id].status == TaskStatus.ABORTED
             finally:
                 await runtime.stop()
 
