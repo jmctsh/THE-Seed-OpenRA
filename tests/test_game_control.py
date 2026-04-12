@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import game_control
 import main as main_module
-from llm import MockProvider
+from llm import LLMResponse, MockProvider
 from main import ApplicationRuntime, RuntimeBridge, RuntimeConfig
 from models import Event, Task, TaskKind, TaskMessage, TaskMessageType, TaskStatus
 from openra_api.models import Actor, Location, PlayerBaseInfo
@@ -2258,7 +2258,15 @@ def test_application_runtime_ws_command_submit_routes_to_deploy() -> None:
 @pytest.mark.startup_smoke
 def test_application_runtime_ws_command_submit_query_stays_pure_query_path() -> None:
     task_provider = MockProvider([])
-    adjutant_provider = MockProvider([])
+    adjutant_provider = MockProvider(
+        responses=[
+            LLMResponse(text='{"type":"query","confidence":0.95}', model="mock"),
+            LLMResponse(
+                text="当前现金3200，经济稳定，己方单位正在推进，地图左侧仍有未知区域，敌军单位暂未接触，战况总体可控。",
+                model="mock",
+            ),
+        ]
+    )
     source = MockWorldSource(make_frames())
     api = _CloseTrackingAPI()
 
@@ -2335,14 +2343,7 @@ def test_application_runtime_ws_command_submit_query_stays_pure_query_path() -> 
                 )
                 try:
                     await runtime.start()
-
-                    runtime.bridge.adjutant = _BridgeAdjutant(
-                        {
-                            "type": "query",
-                            "ok": True,
-                            "response_text": "当前现金3200，经济稳定，己方单位正在推进，地图左侧仍有未知区域，敌军单位暂未接触，战况总体可控。",
-                        }
-                    )
+                    assert runtime.bridge.adjutant is runtime.adjutant
 
                     async with aiohttp.ClientSession() as session:
                         async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
@@ -2373,6 +2374,7 @@ def test_application_runtime_ws_command_submit_query_stays_pure_query_path() -> 
                             assert not response.get("task_id")
                             assert not response.get("existing_task_id")
                             assert "当前现金3200" in response["answer"]
+                            assert "战况总体可控" in response["answer"]
 
                             await _drain_ws(ws)
                             await ws.send_json({"type": "sync_request"})
@@ -2386,6 +2388,7 @@ def test_application_runtime_ws_command_submit_query_stays_pure_query_path() -> 
                                 if isinstance(item, dict) and str(item.get("task_id") or "")
                             }
                             assert refreshed_task_ids == initial_task_ids
+                            assert adjutant_provider.call_log
 
                     runtime.bridge.on_tick(1, 0.0)
                     await asyncio.sleep(0.1)
