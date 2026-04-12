@@ -46,6 +46,7 @@ Running `python3 tests/test_live_e2e.py` executes the full chain, but phase-by-p
 - Pass:
   - `生产3个步兵` increases `e1` count by at least 3.
   - The post-change task state stays healthy by the same rule as `phase_b`: no immediate `failed` / `aborted` / `partial`, and non-capability tasks should settle instead of hanging after the world-state delta appears.
+  - The runner can still pull matching diagnostics for that task (`session_task_catalog` contains the task id, and `task_replay` returns the same task id with non-empty high-signal status/summary).
 
 `phase_d`
 

@@ -419,6 +419,8 @@ class _StructureSuiteRunner:
         task: dict[str, Any] | None = None,
         task_snapshots: list[dict[str, Any]] | None = None,
         has_surface: bool = True,
+        session_task_catalog: dict[str, Any] | None = None,
+        replay_payload: dict[str, Any] | None = None,
     ) -> None:
         self._counts = list(counts)
         self._count_index = 0
@@ -428,6 +430,8 @@ class _StructureSuiteRunner:
         ]
         self._task_snapshot_index = 0
         self._has_surface = has_surface
+        self._session_task_catalog = dict(session_task_catalog or {})
+        self._replay_payload = dict(replay_payload or {})
 
     def extract_task_id(self, reply: str) -> str | None:
         return "t_build" if "t_build" in reply else None
@@ -457,6 +461,23 @@ class _StructureSuiteRunner:
                 return value
             return dict(self._task_snapshots[-1])
         return dict(self._task)
+
+    async def request_current_session_task_catalog(self, *, timeout: float = 5.0) -> dict[str, Any] | None:
+        del timeout
+        return dict(self._session_task_catalog) if self._session_task_catalog else None
+
+    async def request_task_replay(
+        self,
+        task_id: str,
+        *,
+        include_entries: bool = False,
+        session_dir: str | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any] | None:
+        del include_entries, session_dir, timeout
+        if task_id != "t_build" or not self._replay_payload:
+            return None
+        return dict(self._replay_payload)
 
     def recent_debug_context(self) -> str:
         return "debug-context"
@@ -800,6 +821,60 @@ def test_live_suite_phase_c_produce_infantry_fails_on_terminal_task_before_count
     async def run() -> None:
         with pytest.raises(RuntimeError, match="before infantry count increased by 3"):
             await suite.test_phase_c_produce_infantry()
+
+    asyncio.run(run())
+
+
+def test_live_suite_phase_c_produce_infantry_pulls_diagnostics_parity_after_success(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    suite = live_e2e.LiveTestSuite(
+        _StructureSuiteRunner(
+            counts=[5, 5, 8],
+            task={"task_id": "t_build", "status": "running"},
+            task_snapshots=[
+                {"task_id": "t_build", "status": "running"},
+                {"task_id": "t_build", "status": "running"},
+                {"task_id": "t_build", "status": "succeeded"},
+                {"task_id": "t_build", "status": "succeeded"},
+            ],
+            session_task_catalog={
+                "session_dir": "s_live",
+                "tasks": [
+                    {"task_id": "t_build", "status": "succeeded", "raw_text": "生产3个步兵"},
+                ],
+            },
+            replay_payload={
+                "task_id": "t_build",
+                "bundle": {
+                    "summary": "步兵已到位",
+                    "current_runtime": {"task_id": "t_build", "status": "succeeded"},
+                },
+            },
+        )
+    )
+
+    async def _fake_send_command(text: str, timeout: float = 30.0) -> str:
+        del timeout
+        assert text == "生产3个步兵"
+        return "收到指令，已创建任务 t_build"
+
+    suite.runner.send_command = _fake_send_command  # type: ignore[method-assign]
+
+    fake_now = {"value": 305.0}
+
+    def _fake_time() -> float:
+        return fake_now["value"]
+
+    async def _fake_sleep(delay: float) -> None:
+        fake_now["value"] += delay
+
+    monkeypatch.setattr(live_e2e.time, "time", _fake_time)
+    monkeypatch.setattr(live_e2e.asyncio, "sleep", _fake_sleep)
+
+    async def run() -> None:
+        result = await suite.test_phase_c_produce_infantry()
+        assert "catalog_status=succeeded" in result
+        assert "replay_status=succeeded" in result
 
     asyncio.run(run())
 

@@ -216,6 +216,34 @@ class LiveTestRunner:
             return None
         return dict(self._task_replays.get(task_id) or {})
 
+    async def request_current_session_task_catalog(
+        self,
+        *,
+        timeout: float = 5.0,
+    ) -> Optional[dict[str, Any]]:
+        session_catalog = self.latest_session_catalog()
+        session_dir = str(session_catalog.get("selected_session_dir") or "")
+        if not session_dir:
+            sessions = list(session_catalog.get("sessions") or [])
+            for item in sessions:
+                if not isinstance(item, dict):
+                    continue
+                candidate = str(item.get("session_dir") or "")
+                if candidate:
+                    session_dir = candidate
+                    break
+        if not session_dir:
+            return None
+        self._session_task_catalog = {}
+        await self._send({"type": "session_select", "session_dir": session_dir})
+        ok = await self.wait_for_ws_state(
+            lambda: str(self._session_task_catalog.get("session_dir") or "") == session_dir,
+            timeout=timeout,
+        )
+        if not ok:
+            return None
+        return dict(self._session_task_catalog)
+
     async def send_player_input_response(
         self,
         text: str,
@@ -514,6 +542,72 @@ class LiveTestSuite:
             f"last_status={last_status or 'unknown'}; reply={reply}; {self.runner.recent_debug_context()}"
         )
 
+    async def _verify_diagnostics_pull_parity(
+        self,
+        *,
+        task_id: str,
+        timeout: float = 5.0,
+    ) -> str:
+        task_catalog = await self.runner.request_current_session_task_catalog(timeout=timeout)
+        if not isinstance(task_catalog, dict):
+            raise RuntimeError(
+                f"diagnostics pull parity failed: session_task_catalog unavailable for task {task_id}; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        tasks = [
+            item for item in list(task_catalog.get("tasks") or []) if isinstance(item, dict)
+        ]
+        catalog_task = next(
+            (item for item in tasks if str(item.get("task_id") or "") == task_id),
+            None,
+        )
+        if catalog_task is None:
+            raise RuntimeError(
+                f"diagnostics pull parity failed: task {task_id} missing from session_task_catalog; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        session_dir = str(task_catalog.get("session_dir") or "")
+        replay = await self.runner.request_task_replay(
+            task_id,
+            include_entries=False,
+            session_dir=session_dir or None,
+            timeout=timeout,
+        )
+        if not isinstance(replay, dict):
+            raise RuntimeError(
+                f"diagnostics pull parity failed: task_replay unavailable for task {task_id}; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        if str(replay.get("task_id") or "") != task_id:
+            raise RuntimeError(
+                f"diagnostics pull parity failed: task_replay returned mismatched task_id for {task_id}; "
+                f"payload={replay!r}; {self.runner.recent_debug_context()}"
+            )
+        bundle = replay.get("bundle") if isinstance(replay.get("bundle"), dict) else {}
+        current_runtime = bundle.get("current_runtime") if isinstance(bundle.get("current_runtime"), dict) else {}
+        live_task = self.runner.get_task(task_id)
+        if isinstance(live_task, dict) and isinstance(current_runtime, dict):
+            live_status = str(live_task.get("status") or "")
+            replay_status = str(current_runtime.get("status") or "")
+            if live_status and replay_status and live_status != replay_status:
+                raise RuntimeError(
+                    f"diagnostics pull parity failed: live status {live_status} != replay status {replay_status} "
+                    f"for task {task_id}; {self.runner.recent_debug_context()}"
+                )
+        if not (
+            str(bundle.get("summary") or "").strip()
+            or str((bundle.get("replay_triage") or {}).get("status_line") or "").strip()
+            or str((current_runtime or {}).get("status") or "").strip()
+        ):
+            raise RuntimeError(
+                f"diagnostics pull parity failed: replay bundle carried no high-signal summary for task {task_id}; "
+                f"payload={replay!r}; {self.runner.recent_debug_context()}"
+            )
+        return (
+            f"catalog_status={str(catalog_task.get('status') or '')}, "
+            f"replay_status={str((current_runtime or {}).get('status') or '')}"
+        )
+
     async def _require_task_surface(self, reply: str, *, timeout: float = 10.0) -> Optional[str]:
         task_id = self.runner.extract_task_id(reply)
         if task_id is None:
@@ -676,7 +770,7 @@ class LiveTestSuite:
     async def test_phase_c_produce_infantry(self) -> str:
         before = self.runner.count_matching_actors("e1", faction="己方")
         reply = await self.runner.send_command("生产3个步兵")
-        return await self._wait_for_actor_count_increase_result(
+        result = await self._wait_for_actor_count_increase_result(
             expected="e1",
             before=before,
             reply=reply,
@@ -684,6 +778,11 @@ class LiveTestSuite:
             min_delta=3,
             label="infantry count",
         )
+        task_id = self.runner.extract_task_id(reply)
+        if task_id:
+            parity = await self._verify_diagnostics_pull_parity(task_id=task_id, timeout=5.0)
+            return f"{result}; {parity}"
+        return result
 
     async def test_phase_d_recon(self) -> str:
         before_positions = self.runner.matching_actor_positions(SCOUT_CANDIDATE_TYPES, faction="己方")
