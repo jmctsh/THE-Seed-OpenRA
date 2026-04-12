@@ -341,6 +341,93 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain('detail=Attempted to get trait from destroyed object')
   })
 
+  it('renders live unit pipeline focus detail inside the live runtime block', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('world_snapshot', {
+      runtime_state: {
+        capability_status: {
+          task_id: 't_cap',
+          task_label: '001',
+          phase: 'dispatch',
+        },
+        active_tasks: {
+          t_cap: { label: '001' },
+        },
+        active_jobs: {},
+        unfulfilled_requests: [{ request_id: 'req_1' }],
+        unit_reservations: [{ reservation_id: 'res_1' }],
+      },
+      unit_pipeline_preview: '能力在途：重坦 × 2',
+      unit_pipeline_focus: {
+        detail: '缺少前置建筑',
+        task_id: 't_block',
+        task_label: '004',
+        request_count: 2,
+        reservation_count: 1,
+      },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Live Runtime')
+    expect(wrapper.text()).toContain('能力在途：重坦 × 2')
+    expect(wrapper.text()).toContain('focus_req=2')
+    expect(wrapper.text()).toContain('focus_res=1')
+    expect(wrapper.text()).toContain('focus=#004 · 缺少前置建筑')
+    expect(wrapper.find('button.session-highlight-btn').text()).toContain('定位到阻塞任务')
+  })
+
+  it('dispatches diagnostics focus event from live unit pipeline focus action', async () => {
+    const bus = createBus()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send: () => {},
+        on: bus.on,
+      },
+    })
+    const handler = vi.fn()
+    window.addEventListener('theseed:focus-diagnostics-task', handler)
+
+    try {
+      bus.emit('world_snapshot', {
+        runtime_state: {
+          capability_status: {
+            task_id: 't_cap',
+            task_label: '001',
+            phase: 'dispatch',
+          },
+          active_tasks: {
+            t_cap: { label: '001' },
+          },
+          active_jobs: {},
+        },
+        unit_pipeline_preview: '能力在途：重坦 × 2',
+        unit_pipeline_focus: {
+          detail: '缺少前置建筑',
+          task_id: 't_block',
+          task_label: '004',
+          request_count: 2,
+          reservation_count: 1,
+        },
+      })
+      await wrapper.vm.$nextTick()
+
+      const button = wrapper.find('button.session-highlight-btn')
+      await button.trigger('click')
+
+      expect(handler).toHaveBeenCalledTimes(1)
+      expect(handler.mock.calls[0][0].detail).toEqual({ taskId: 't_block' })
+    } finally {
+      window.removeEventListener('theseed:focus-diagnostics-task', handler)
+    }
+  })
+
   it('renders reservation lifecycle replay highlights with compact transition details', async () => {
     const bus = createBus()
     const send = vi.fn()

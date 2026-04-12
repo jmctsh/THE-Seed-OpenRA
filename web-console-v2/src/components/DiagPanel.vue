@@ -43,6 +43,28 @@
       <div v-if="liveRuntimeSummary.unitPipelinePreview" class="replay-overview">
         {{ liveRuntimeSummary.unitPipelinePreview }}
       </div>
+      <div
+        v-if="liveRuntimeSummary.unitPipelineFocusDetail || liveRuntimeSummary.unitPipelineFocusRequestCount || liveRuntimeSummary.unitPipelineFocusReservationCount"
+        class="triage-meta"
+      >
+        <span v-if="liveRuntimeSummary.unitPipelineFocusRequestCount">
+          focus_req={{ liveRuntimeSummary.unitPipelineFocusRequestCount }}
+        </span>
+        <span v-if="liveRuntimeSummary.unitPipelineFocusReservationCount">
+          focus_res={{ liveRuntimeSummary.unitPipelineFocusReservationCount }}
+        </span>
+        <span v-if="liveRuntimeSummary.unitPipelineFocusDetail">
+          focus={{ liveRuntimeSummary.unitPipelineFocusTaskLabel ? `#${liveRuntimeSummary.unitPipelineFocusTaskLabel} · ${liveRuntimeSummary.unitPipelineFocusDetail}` : liveRuntimeSummary.unitPipelineFocusDetail }}
+        </span>
+        <button
+          v-if="liveRuntimeSummary.unitPipelineFocusTaskId"
+          type="button"
+          class="filter-btn replay-tag session-highlight-btn"
+          @click="jumpToDiagnosticsTask(liveRuntimeSummary.unitPipelineFocusTaskId)"
+        >
+          定位到阻塞任务
+        </button>
+      </div>
     </div>
     <div class="trace-controls">
       <label class="trace-label" for="session-select">Session</label>
@@ -536,6 +558,13 @@ const runtimeFaultState = ref({
 })
 const liveRuntimeState = ref({})
 const liveUnitPipelinePreview = ref('')
+const liveUnitPipelineFocus = ref({
+  detail: '',
+  taskId: '',
+  taskLabel: '',
+  requestCount: 0,
+  reservationCount: 0,
+})
 const filterLevel = ref('ALL')
 const filterComponent = ref('ALL')
 const selectedTaskId = ref('ALL')
@@ -755,6 +784,11 @@ const liveRuntimeSummary = computed(() => {
     selectedTaskGroupSize: Number(selectedTaskRuntime?.active_group_size || 0),
     selectedTaskActors: formatActorPreview(selectedActorIds),
     unitPipelinePreview: String(liveUnitPipelinePreview.value || ''),
+    unitPipelineFocusDetail: String(liveUnitPipelineFocus.value.detail || ''),
+    unitPipelineFocusTaskId: String(liveUnitPipelineFocus.value.taskId || ''),
+    unitPipelineFocusTaskLabel: String(liveUnitPipelineFocus.value.taskLabel || ''),
+    unitPipelineFocusRequestCount: Number(liveUnitPipelineFocus.value.requestCount || 0),
+    unitPipelineFocusReservationCount: Number(liveUnitPipelineFocus.value.reservationCount || 0),
   }
 
   if (
@@ -768,6 +802,9 @@ const liveRuntimeSummary = computed(() => {
     && !summary.selectedTaskGroupSize
     && !summary.selectedTaskActors
     && !summary.unitPipelinePreview
+    && !summary.unitPipelineFocusDetail
+    && !summary.unitPipelineFocusRequestCount
+    && !summary.unitPipelineFocusReservationCount
   ) {
     return null
   }
@@ -1127,6 +1164,15 @@ function focusDiagnosticsTask(taskId) {
   requestReplay(taskId, { force: true, includeEntries: Boolean(replayExpanded[replayCacheKey(taskId)]) })
 }
 
+function jumpToDiagnosticsTask(taskId) {
+  if (!taskId || taskId === 'ALL') return
+  window.dispatchEvent(
+    new CustomEvent('theseed:focus-diagnostics-task', {
+      detail: { taskId },
+    }),
+  )
+}
+
 function scheduleReplayRefresh(taskId) {
   if (!taskId || taskId === 'ALL') return
   if (taskId !== selectedTaskId.value) return
@@ -1168,6 +1214,13 @@ function clearDiagnostics() {
   sessionTaskCatalog.value = []
   liveRuntimeState.value = {}
   liveUnitPipelinePreview.value = ''
+  liveUnitPipelineFocus.value = {
+    detail: '',
+    taskId: '',
+    taskLabel: '',
+    requestCount: 0,
+    reservationCount: 0,
+  }
   selectedSessionDir.value = ''
   selectedTaskId.value = 'ALL'
   filterLevel.value = 'ALL'
@@ -1249,10 +1302,18 @@ if (props.on) {
     const nextCapabilityTruthBlocker = String(msg.data?.capability_truth_blocker || '')
     const nextCapabilityTruthFaction = String(msg.data?.player_faction || '')
     const nextRuntimeFault = msg.data?.runtime_fault_state || {}
+    const nextUnitPipelineFocus = msg.data?.unit_pipeline_focus || {}
     liveRuntimeState.value = msg.data?.runtime_state && typeof msg.data.runtime_state === 'object'
       ? msg.data.runtime_state
       : {}
     liveUnitPipelinePreview.value = String(msg.data?.unit_pipeline_preview || '')
+    liveUnitPipelineFocus.value = {
+      detail: String(nextUnitPipelineFocus.detail || ''),
+      taskId: String(nextUnitPipelineFocus.task_id || ''),
+      taskLabel: String(nextUnitPipelineFocus.task_label || ''),
+      requestCount: Number(nextUnitPipelineFocus.request_count || 0),
+      reservationCount: Number(nextUnitPipelineFocus.reservation_count || 0),
+    }
 
     worldSyncStale.value = nextWorldSyncStale
     worldSyncFailures.value = nextWorldSyncFailures
