@@ -1519,6 +1519,153 @@ def test_application_runtime_ws_question_reply_round_trip_delivers_to_task_agent
 
 
 @pytest.mark.startup_smoke
+def test_application_runtime_ws_command_submit_real_adjutant_capability_merge() -> None:
+    task_provider = MockProvider([])
+    adjutant_provider = MockProvider([])
+    source = MockWorldSource(make_frames())
+    api = _CloseTrackingAPI()
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+        background_errors: list[dict[str, Any]] = []
+
+        def _capture_loop_exception(loop, context) -> None:
+            del loop
+            background_errors.append(dict(context))
+
+        loop.set_exception_handler(_capture_loop_exception)
+        try:
+            async def _recv_json(
+                ws: aiohttp.ClientWebSocketResponse,
+                *,
+                predicate,
+                timeout_s: float = 3.0,
+                max_messages: int = 60,
+            ) -> dict[str, Any]:
+                deadline = loop.time() + timeout_s
+                seen = 0
+                while seen < max_messages and loop.time() < deadline:
+                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    assert msg.type == aiohttp.WSMsgType.TEXT
+                    payload = json.loads(msg.data)
+                    if predicate(payload):
+                        return payload
+                    seen += 1
+                raise AssertionError("expected websocket payload not received before timeout")
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                ws_port = _free_tcp_port()
+                cfg = RuntimeConfig(
+                    ws_host="127.0.0.1",
+                    ws_port=ws_port,
+                    enable_ws=True,
+                    enable_voice=False,
+                    log_session_root=str(Path(tmpdir) / "logs"),
+                    benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+                    benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+                    log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+                )
+                runtime = ApplicationRuntime(
+                    config=cfg,
+                    task_llm=task_provider,
+                    adjutant_llm=adjutant_provider,
+                    api=api,
+                    world_source=source,
+                )
+                try:
+                    await runtime.start()
+
+                    cap_id = runtime.kernel.capability_task_id
+                    assert cap_id is not None
+                    assert runtime.bridge.adjutant is runtime.adjutant
+
+                    async with aiohttp.ClientSession() as session:
+                        async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as ws:
+                            await ws.send_json({"type": "sync_request"})
+                            initial_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and any(
+                                        item.get("task_id") == cap_id
+                                        for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            initial_tasks = list(initial_task_list.get("data", {}).get("tasks", []) or [])
+                            initial_task_ids = {
+                                str(item.get("task_id") or "")
+                                for item in initial_tasks
+                                if isinstance(item, dict)
+                            }
+                            assert cap_id in initial_task_ids
+
+                            await ws.send_json({"type": "command_submit", "text": "建造电厂"})
+
+                            query_response_payload = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "query_response"
+                                    and payload.get("data", {}).get("response_type") == "command"
+                                    and payload.get("data", {}).get("existing_task_id") == cap_id
+                                ),
+                            )
+                            response = query_response_payload["data"]
+                            assert response["ok"] is True
+                            assert response["merged"] is True
+                            assert response["existing_task_id"] == cap_id
+                            assert "已转发给经济规划" in response["answer"]
+
+                            runtime_state = runtime.kernel.runtime_state()
+                            capability_status = dict(runtime_state.get("capability_status") or {})
+                            assert list(capability_status.get("recent_directives") or [])[-1] == "建造电厂"
+                            assert adjutant_provider.call_log == []
+
+                            await ws.send_json({"type": "sync_request"})
+                            refreshed_task_list = await _recv_json(
+                                ws,
+                                predicate=lambda payload: (
+                                    payload.get("type") == "task_list"
+                                    and any(
+                                        item.get("task_id") == cap_id
+                                        for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                        if isinstance(item, dict)
+                                    )
+                                ),
+                            )
+                            refreshed_tasks = [
+                                item
+                                for item in list(refreshed_task_list.get("data", {}).get("tasks", []) or [])
+                                if isinstance(item, dict)
+                            ]
+                            assert any(
+                                item.get("task_id") == cap_id and item.get("is_capability") is True
+                                for item in refreshed_tasks
+                            )
+                            assert not any(
+                                item.get("raw_text") == "建造电厂" and item.get("task_id") != cap_id
+                                for item in refreshed_tasks
+                            )
+
+                    runtime.bridge.on_tick(1, 0.0)
+                    await asyncio.sleep(0.1)
+                    assert background_errors == [], background_errors
+                finally:
+                    await runtime.stop()
+
+                assert api.close_calls == 1
+                assert runtime.ws_server is not None
+                assert runtime.ws_server.is_running is False
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+    asyncio.run(run())
+    print("  PASS: application_runtime_ws_command_submit_real_adjutant_capability_merge")
+
+
+@pytest.mark.startup_smoke
 def test_application_runtime_ws_question_reply_task_mismatch_preserves_pending_question() -> None:
     provider = MockProvider([])
     source = MockWorldSource(make_frames())
