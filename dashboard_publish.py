@@ -57,7 +57,24 @@ class DashboardPublisher:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             return
-        self.publish_task = loop.create_task(self.publish_all())
+        task = loop.create_task(self.publish_all())
+        task.add_done_callback(self._handle_publish_task_done)
+        self.publish_task = task
+
+    def _handle_publish_task_done(self, task: asyncio.Task[Any]) -> None:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            slog.error(
+                "Dashboard publish task failed",
+                event="dashboard_publish_task_failed",
+                error=repr(exc),
+            )
+        finally:
+            if self.publish_task is task:
+                self.publish_task = None
 
     def clear_runtime_state(self) -> None:
         if self.publish_task is not None and not self.publish_task.done():

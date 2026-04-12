@@ -1879,6 +1879,91 @@ def test_dashboard_publisher_logs_player_visible_task_messages(monkeypatch):
     print("  PASS: dashboard_publisher_logs_player_visible_task_messages")
 
 
+def test_dashboard_publisher_schedule_publish_logs_background_failures_without_unhandled_task(monkeypatch):
+    logged_errors: list[dict[str, Any]] = []
+
+    class FakeLogger:
+        def info(self, _message, **kwargs):
+            del _message, kwargs
+
+        def error(self, _message, **kwargs):
+            logged_errors.append(kwargs)
+
+    monkeypatch.setattr(dashboard_publish_module, "slog", FakeLogger())
+
+    class FakeKernel:
+        def list_task_messages(self):
+            return [
+                TaskMessage(
+                    message_id="m_info",
+                    task_id="t_demo",
+                    type=TaskMessageType.TASK_INFO,
+                    content="后台 publish 触发任务消息回调",
+                )
+            ]
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+            self.sent: list[dict[str, Any]] = []
+
+        async def send_task_message(self, payload):
+            self.sent.append(dict(payload))
+
+    async def _noop():
+        return None
+
+    def _crash(_message):
+        raise RuntimeError("boom")
+
+    async def run() -> None:
+        loop = asyncio.get_running_loop()
+        previous_handler = loop.get_exception_handler()
+        background_errors: list[dict[str, Any]] = []
+
+        def _capture_loop_exception(loop, context) -> None:
+            del loop
+            background_errors.append(dict(context))
+
+        loop.set_exception_handler(_capture_loop_exception)
+        try:
+            publisher = dashboard_publish_module.DashboardPublisher(
+                kernel=FakeKernel(),
+                ws_server=FakeWS(),
+                dashboard_payload_builder=lambda: {},
+                task_payload_builder=lambda *args, **kwargs: {},
+                task_message_callback=_crash,
+            )
+            publisher.broadcast_current_dashboard = _noop
+            publisher.publish_task_updates = _noop
+            publisher.publish_notifications = _noop
+            publisher.publish_logs = _noop
+            publisher.publish_benchmarks = _noop
+
+            publisher.schedule_publish()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+
+            assert publisher.publish_task is None
+            assert background_errors == [], background_errors
+            assert logged_errors == [
+                {
+                    "event": "dashboard_publish_task_failed",
+                    "error": "RuntimeError('boom')",
+                }
+            ]
+            assert len(publisher.ws_server.sent) == 1
+            assert publisher.ws_server.sent[0]["message_id"] == "m_info"
+            assert publisher.ws_server.sent[0]["task_id"] == "t_demo"
+            assert publisher.ws_server.sent[0]["type"] == TaskMessageType.TASK_INFO.value
+            assert publisher.ws_server.sent[0]["content"] == "后台 publish 触发任务消息回调"
+        finally:
+            loop.set_exception_handler(previous_handler)
+
+    asyncio.run(run())
+    print("  PASS: dashboard_publisher_schedule_publish_logs_background_failures_without_unhandled_task")
+
+
 def test_task_replay_request_returns_persisted_task_log():
     """Task replay should read persisted task logs and return them to one client."""
 
