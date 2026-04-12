@@ -769,6 +769,34 @@ def test_coordinator_alerts_dedup_capability_low_power_against_battlefield_low_p
     print("  PASS: coordinator_alerts_dedup_capability_low_power_against_battlefield_low_power")
 
 
+def test_coordinator_alerts_dedup_capability_queue_blocked_against_battlefield_queue_blocked() -> None:
+    class _QueueBlockedCapabilityWorldModel(_WorldModel):
+        def query(self, query_type: str, params=None):
+            result = super().query(query_type, params=params)
+            if query_type == "battlefield_snapshot":
+                result["queue_blocked"] = True
+                result["queue_blocked_reason"] = "paused"
+                result["queue_blocked_queue_types"] = ["Building"]
+            if query_type == "runtime_state":
+                result["capability_status"]["blocker"] = "queue_blocked"
+                result["capability_status"]["queue_blocked_count"] = 1
+            return result
+
+        def compute_runtime_facts(self, task_id: str, include_buildable: bool = False):
+            result = super().compute_runtime_facts(task_id, include_buildable=include_buildable)
+            result["ready_queue_items"] = []
+            return result
+
+    adjutant = Adjutant(llm=MockProvider(), kernel=_Kernel(), world_model=_QueueBlockedCapabilityWorldModel())
+
+    context = adjutant._build_context("现在怎么样")
+
+    alert_codes = [str(alert.get("code", "")) for alert in context.coordinator_snapshot["alerts"]]
+    assert "queue_blocked" in alert_codes
+    assert "capability_queue_blocked" not in alert_codes
+    print("  PASS: coordinator_alerts_dedup_capability_queue_blocked_against_battlefield_queue_blocked")
+
+
 def test_coordinator_alerts_surface_queue_block_reason() -> None:
     class _QueueBlockedWorldModel(_WorldModel):
         def query(self, query_type: str, params=None):
