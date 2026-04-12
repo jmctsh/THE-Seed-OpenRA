@@ -3391,6 +3391,72 @@ def test_main_entry_subprocess_short_start_does_not_crash_on_enable_voice() -> N
     print("  PASS: main_entry_subprocess_short_start_does_not_crash_on_enable_voice")
 
 
+@pytest.mark.startup_smoke
+def test_main_entry_subprocess_bind_failure_stops_persistence_session() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_root = Path(tmpdir) / "logs"
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        blocker.bind(("127.0.0.1", 0))
+        blocker.listen(1)
+        ws_port = blocker.getsockname()[1]
+
+        env = dict(os.environ)
+        env["PYTHONUNBUFFERED"] = "1"
+        cmd = [
+            sys.executable,
+            str(Path(main_module.__file__).resolve()),
+            "--llm-provider",
+            "mock",
+            "--llm-model",
+            "mock",
+            "--adjutant-llm-provider",
+            "mock",
+            "--adjutant-llm-model",
+            "mock",
+            "--skip-game-api-check",
+            "--ws-host",
+            "127.0.0.1",
+            "--ws-port",
+            str(ws_port),
+            "--benchmark-records-path",
+            str(Path(tmpdir) / "benchmark_records.json"),
+            "--benchmark-summary-path",
+            str(Path(tmpdir) / "benchmark_summary.json"),
+            "--log-export-path",
+            str(Path(tmpdir) / "runtime_logs.json"),
+            "--log-session-root",
+            str(log_root),
+        ]
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=repo_root,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+            )
+            output = proc.communicate(timeout=10)[0]
+        finally:
+            blocker.close()
+
+        assert proc.returncode == 1, output
+        assert "address already in use" in output
+
+        sessions = sorted(log_root.glob("session-*"))
+        assert sessions, "expected a persistence session even when subprocess startup fails"
+        session_meta = json.loads((sessions[-1] / "session.json").read_text(encoding="utf-8"))
+        assert session_meta["ended_at"]
+
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", ws_port))
+
+    print("  PASS: main_entry_subprocess_bind_failure_stops_persistence_session")
+
+
 def test_runtime_bridge_session_clear_resets_benchmark_publish_state() -> None:
     import benchmark
     import logging_system
