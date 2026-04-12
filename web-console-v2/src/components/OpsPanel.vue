@@ -28,6 +28,9 @@
       <span>能力真值受限: {{ capabilityTruthText }}</span>
       <span v-if="playerFaction">阵营: {{ playerFaction }}</span>
     </div>
+    <div v-if="unitPipelinePreview" class="game-status-detail pipeline-detail">
+      <span>能力在途: {{ unitPipelinePreview }}</span>
+    </div>
 
     <h3>Mode</h3>
     <div class="controls">
@@ -64,6 +67,7 @@ const statusText = ref('● 数据正常')
 const capabilityTruthBlocker = ref('')
 const playerFaction = ref('')
 const capabilityTruthText = ref('')
+const unitPipelinePreview = ref('')
 
 function formatCapabilityTruthText(blocker, faction) {
   if (blocker === 'faction_roster_unsupported') {
@@ -91,6 +95,7 @@ if (props.on) {
     capabilityTruthBlocker.value = String(data.capability_truth_blocker || '')
     playerFaction.value = String(data.player_faction || '')
     capabilityTruthText.value = formatCapabilityTruthText(capabilityTruthBlocker.value, playerFaction.value)
+    unitPipelinePreview.value = String(data.unit_pipeline_preview || '')
     statusText.value = gameStale.value
       ? `⚠ 数据过期${staleFailures.value ? ` (${staleFailures.value}${failureThreshold.value ? `/${failureThreshold.value}` : ''})` : ''}`
       : '● 数据正常'

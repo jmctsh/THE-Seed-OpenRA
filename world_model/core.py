@@ -44,6 +44,7 @@ from runtime_views import (
     build_battlefield_snapshot,
     build_runtime_state_snapshot,
 )
+from task_triage import build_runtime_unit_pipeline_preview
 from unit_registry import UnitRegistry, get_default_registry
 
 
@@ -628,6 +629,12 @@ class WorldModel:
         else:
             recommended_posture = "maintain_posture"
 
+        unit_pipeline_preview = build_runtime_unit_pipeline_preview(
+            {
+                "unfulfilled_requests": self._unfulfilled_requests,
+                "unit_reservations": self._unit_reservations,
+            }
+        )
         summary_text = f"我方{self_units} / 敌方{enemy_units}，战斗值{self_score:.0f}/{enemy_score:.0f}"
         if explored_pct is not None:
             summary_text += f"，探索{float(explored_pct) * 100:.1f}%"
@@ -647,6 +654,8 @@ class WorldModel:
             summary_text += f"，待处理请求{pending_requests}"
         if reservation_count:
             summary_text += f"，预留{reservation_count}"
+        if unit_pipeline_preview:
+            summary_text += f"，在途{unit_pipeline_preview}"
         if self_combat_units:
             summary_text += f"，可自由调度战斗单位{free_combat_units}/{self_combat_units}"
 
@@ -685,6 +694,7 @@ class WorldModel:
             pending_request_count=pending_requests,
             bootstrapping_request_count=bootstrapping_request_count,
             reservation_count=reservation_count,
+            unit_pipeline_preview=unit_pipeline_preview,
             stale=self.state.stale,
             capability_status=capability.to_dict(),
         ).to_dict()

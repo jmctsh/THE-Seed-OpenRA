@@ -81,4 +81,22 @@ describe('OpsPanel', () => {
     expect(wrapper.text()).toContain('demo capability roster 未覆盖 (allied)')
     expect(wrapper.text()).toContain('阵营: allied')
   })
+
+  it('renders unit pipeline preview from world_snapshot', async () => {
+    const bus = createBus()
+    const wrapper = mount(OpsPanel, {
+      props: {
+        connected: true,
+        send: () => {},
+        on: bus.on,
+      },
+    })
+
+    bus.emit('world_snapshot', {
+      unit_pipeline_preview: '步兵 × 1 · 待分发',
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('能力在途: 步兵 × 1 · 待分发')
+  })
 })

@@ -48,6 +48,7 @@ from runtime_views import (
     normalize_base_progression,
 )
 from task_triage import (
+    build_runtime_unit_pipeline_preview,
     build_task_triage_from_artifacts,
     capability_blocker_status_text,
     capability_coordinator_alert,
@@ -447,6 +448,7 @@ class Adjutant:
         pending_request_count = int(capability_status.pending_request_count or 0)
         bootstrapping_request_count = int(capability_status.bootstrapping_request_count or 0)
         reservation_count = len(runtime_snapshot.unit_reservations)
+        unit_pipeline_preview = build_runtime_unit_pipeline_preview(runtime_snapshot.to_dict())
         has_production = any(
             int(runtime_facts.get(field, 0) or 0) > 0
             for field in ("barracks_count", "war_factory_count", "airfield_count")
@@ -510,6 +512,8 @@ class Adjutant:
             summary_text += f"，待处理请求 {pending_request_count}"
         if reservation_count:
             summary_text += f"，预留 {reservation_count}"
+        if unit_pipeline_preview:
+            summary_text += f"，在途 {unit_pipeline_preview}"
         if total_combat_units:
             summary_text += f"，可自由调度战斗单位 {free_combat_units}/{total_combat_units}"
 
@@ -563,6 +567,7 @@ class Adjutant:
             pending_request_count=pending_request_count,
             bootstrapping_request_count=bootstrapping_request_count,
             reservation_count=reservation_count,
+            unit_pipeline_preview=unit_pipeline_preview,
             stale=bool(runtime_facts.get("world_sync_stale", False)),
             capability_status=capability_status,
         ).to_dict()
@@ -1104,6 +1109,10 @@ class Adjutant:
         phase_text = capability_phase_status_text(capability, prefix="能力层")
         if phase_text:
             parts.append(phase_text)
+
+        unit_pipeline_preview = str(battlefield.get("unit_pipeline_preview") or "")
+        if unit_pipeline_preview and all(unit_pipeline_preview not in part for part in parts):
+            parts.append(f"在途 {unit_pipeline_preview}")
 
         return "；".join(part for part in parts if part)
 
@@ -2306,6 +2315,9 @@ class Adjutant:
             summary_parts.append(f"增援请求 {reinforcement_request_count}")
         if blocker_text:
             summary_parts.append(blocker_text)
+        unit_pipeline_preview = build_runtime_unit_pipeline_preview(runtime_snapshot.to_dict())
+        if unit_pipeline_preview:
+            summary_parts.append(f"在途 {unit_pipeline_preview}")
         response_text = "收到经济指令，已转发给经济规划"
         if summary_parts:
             response_text += "（" + "；".join(summary_parts) + "）"

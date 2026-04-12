@@ -162,6 +162,34 @@ def build_unit_pipeline_preview(
     return preview
 
 
+def build_runtime_unit_pipeline_preview(runtime_state: RuntimeStateSnapshot | dict[str, Any] | None) -> str:
+    snapshot = RuntimeStateSnapshot.from_mapping(runtime_state)
+    requests = [
+        dict(item)
+        for item in list(snapshot.unfulfilled_requests or [])
+        if isinstance(item, dict)
+    ]
+    reservations = [
+        dict(item)
+        for item in list(snapshot.unit_reservations or [])
+        if isinstance(item, dict)
+    ]
+    if not requests and not reservations:
+        return ""
+    reservation = reservations[0] if reservations else None
+    request = None
+    if reservation is not None:
+        request_id = str(reservation.get("request_id") or "").strip()
+        if request_id:
+            request = next(
+                (item for item in requests if str(item.get("request_id") or "").strip() == request_id),
+                None,
+            )
+    if request is None and requests:
+        request = requests[0]
+    return build_unit_pipeline_preview(request, reservation)
+
+
 def _remaining_count(item: dict[str, Any]) -> int:
     if "remaining_count" in item:
         try:

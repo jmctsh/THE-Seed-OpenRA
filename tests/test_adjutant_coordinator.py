@@ -102,9 +102,7 @@ class _KernelWithRuntimeState(_Kernel):
                 "bootstrapping_request_count": 1,
                 "blocking_request_count": 2,
             },
-            "unit_reservations": [
-                {"reservation_id": "res_1", "task_id": "t_recon"},
-            ],
+            "unit_reservations": [{"reservation_id": "res_1", "task_id": "t_recon"}],
             "timestamp": time.time(),
         }
 
@@ -168,6 +166,7 @@ class _WorldModel:
                 "pending_request_count": 3,
                 "bootstrapping_request_count": 1,
                 "reservation_count": 1,
+                "unit_pipeline_preview": "步兵 × 1 · 待分发",
                 "stale": False,
             }
         if query_type == "runtime_state":
@@ -213,9 +212,7 @@ class _WorldModel:
                     "bootstrapping_request_count": 1,
                     "blocking_request_count": 2,
                 },
-                "unit_reservations": [
-                    {"reservation_id": "res_1", "task_id": "t_recon"},
-                ],
+                "unit_reservations": [{"reservation_id": "res_1", "task_id": "t_recon"}],
                 "timestamp": time.time(),
             }
         return {}
@@ -368,6 +365,35 @@ class _WorldModelBattlefieldFallback(_WorldModel):
     def query(self, query_type: str, params=None):
         if query_type == "battlefield_snapshot":
             return {}
+        if query_type == "runtime_state":
+            result = dict(super().query(query_type, params))
+            result["unit_reservations"] = [
+                {
+                    "reservation_id": "res_1",
+                    "request_id": "req_1",
+                    "task_id": "t_recon",
+                    "task_label": "002",
+                    "unit_type": "e1",
+                    "count": 1,
+                    "remaining_count": 1,
+                    "reason": "waiting_dispatch",
+                },
+            ]
+            result["unfulfilled_requests"] = [
+                {
+                    "request_id": "req_1",
+                    "task_id": "t_recon",
+                    "task_label": "002",
+                    "category": "infantry",
+                    "unit_type": "e1",
+                    "count": 1,
+                    "fulfilled": 0,
+                    "remaining_count": 1,
+                    "hint": "步兵",
+                    "reason": "waiting_dispatch",
+                },
+            ]
+            return result
         return super().query(query_type, params)
 
 
@@ -473,6 +499,7 @@ def test_battlefield_snapshot_prefers_runtime_query() -> None:
     assert snapshot["recommended_posture"] == "satisfy_requests"
     assert snapshot["threat_level"] == "medium"
     assert snapshot["reservation_count"] == 1
+    assert snapshot["unit_pipeline_preview"] == "步兵 × 1 · 待分发"
     assert snapshot["disabled_structure_count"] == 1
     assert snapshot["disabled_structures"] == ["雷达站(lowpower)"]
     print("  PASS: battlefield_snapshot_prefers_runtime_query")
@@ -497,6 +524,7 @@ def test_battlefield_snapshot_runtime_query_is_normalized() -> None:
                     "pending_request_count": "3",
                     "bootstrapping_request_count": "1",
                     "reservation_count": "2",
+                    "unit_pipeline_preview": "重坦 × 2 · 缺少前置",
                 }
             return super().query(query_type, params)
 
@@ -515,6 +543,7 @@ def test_battlefield_snapshot_runtime_query_is_normalized() -> None:
     assert snapshot["pending_request_count"] == 3
     assert snapshot["bootstrapping_request_count"] == 1
     assert snapshot["reservation_count"] == 2
+    assert snapshot["unit_pipeline_preview"] == "重坦 × 2 · 缺少前置"
     print("  PASS: battlefield_snapshot_runtime_query_is_normalized")
 
 
@@ -528,6 +557,7 @@ def test_battlefield_snapshot_fallback_reuses_runtime_state_and_facts() -> None:
     assert snapshot["pending_request_count"] == 3
     assert snapshot["bootstrapping_request_count"] == 1
     assert snapshot["reservation_count"] == 1
+    assert snapshot["unit_pipeline_preview"] == "步兵 × 1 · 待分发"
     assert snapshot["self_combat_units"] == 3
     assert snapshot["committed_combat_units"] == 3
     assert snapshot["free_combat_units"] == 0

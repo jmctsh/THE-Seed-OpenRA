@@ -333,6 +333,7 @@ class BattlefieldSnapshot:
     pending_request_count: int = 0
     bootstrapping_request_count: int = 0
     reservation_count: int = 0
+    unit_pipeline_preview: str = ""
     stale: bool = False
     capability_status: CapabilityStatusSnapshot = field(default_factory=CapabilityStatusSnapshot)
 
@@ -405,6 +406,7 @@ class BattlefieldSnapshot:
             pending_request_count=_to_int("pending_request_count"),
             bootstrapping_request_count=_to_int("bootstrapping_request_count"),
             reservation_count=_to_int("reservation_count"),
+            unit_pipeline_preview=str(raw.get("unit_pipeline_preview") or ""),
             stale=bool(raw.get("stale")),
             capability_status=CapabilityStatusSnapshot.from_mapping(raw.get("capability_status")),
         )
@@ -445,6 +447,7 @@ class BattlefieldSnapshot:
             "pending_request_count": self.pending_request_count,
             "bootstrapping_request_count": self.bootstrapping_request_count,
             "reservation_count": self.reservation_count,
+            "unit_pipeline_preview": self.unit_pipeline_preview,
             "stale": self.stale,
             "capability_status": self.capability_status.to_dict(),
         }
@@ -487,6 +490,7 @@ def build_battlefield_snapshot(
     bootstrapping_request_count: int,
     reservation_count: int,
     stale: bool,
+    unit_pipeline_preview: str = "",
     capability_status: CapabilityStatusSnapshot | dict[str, Any],
 ) -> BattlefieldSnapshot:
     """Build the normalized battlefield snapshot used by world queries."""
@@ -525,6 +529,7 @@ def build_battlefield_snapshot(
         pending_request_count=int(pending_request_count or 0),
         bootstrapping_request_count=int(bootstrapping_request_count or 0),
         reservation_count=int(reservation_count or 0),
+        unit_pipeline_preview=str(unit_pipeline_preview or ""),
         stale=bool(stale),
         capability_status=CapabilityStatusSnapshot.from_mapping(capability_status),
     )

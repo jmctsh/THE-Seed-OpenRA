@@ -122,6 +122,7 @@ def test_build_battlefield_snapshot_normalizes_numeric_fields() -> None:
         pending_request_count=2,
         bootstrapping_request_count=1,
         reservation_count=2,
+        unit_pipeline_preview="步兵 × 1 · 待分发",
         stale=False,
         capability_status={"task_id": "t_cap"},
     ).to_dict()
@@ -135,6 +136,7 @@ def test_build_battlefield_snapshot_normalizes_numeric_fields() -> None:
     assert snapshot["disabled_structures"] == ["雷达站(lowpower)", "防空炮(powerdown)"]
     assert snapshot["recommended_posture"] == "unblock_queue"
     assert snapshot["capability_status"]["task_id"] == "t_cap"
+    assert snapshot["unit_pipeline_preview"] == "步兵 × 1 · 待分发"
     print("  PASS: build_battlefield_snapshot_normalizes_numeric_fields")
 
 
@@ -195,6 +197,7 @@ def test_battlefield_snapshot_from_mapping_normalizes_query_payload() -> None:
             "pending_request_count": "3",
             "bootstrapping_request_count": "1",
             "reservation_count": "2",
+            "unit_pipeline_preview": "重坦 × 2 · 缺少前置",
             "capability_status": {"task_id": "t_cap", "phase": "dispatch"},
         }
     )
@@ -214,6 +217,7 @@ def test_battlefield_snapshot_from_mapping_normalizes_query_payload() -> None:
     assert payload["pending_request_count"] == 3
     assert payload["bootstrapping_request_count"] == 1
     assert payload["reservation_count"] == 2
+    assert payload["unit_pipeline_preview"] == "重坦 × 2 · 缺少前置"
     print("  PASS: battlefield_snapshot_from_mapping_normalizes_query_payload")
 
 
