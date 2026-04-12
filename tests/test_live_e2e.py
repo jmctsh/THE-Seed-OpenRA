@@ -470,6 +470,7 @@ class LiveTestRunner:
         active_tasks = len(runtime_state.get("active_tasks", {}) or {}) if isinstance(runtime_state, dict) else 0
         world_debug = {
             "stale": bool(world_snapshot.get("stale", False)),
+            "disconnected": bool(world_snapshot.get("disconnected", False)),
             "sync_failures": int(world_snapshot.get("consecutive_refresh_failures", 0) or 0),
             "failure_threshold": int(world_snapshot.get("failure_threshold", 0) or 0),
             "last_refresh_error": str(world_snapshot.get("last_refresh_error") or ""),
@@ -511,6 +512,39 @@ class LiveTestSuite:
         if not isinstance(active_tasks, dict):
             return set()
         return {str(task_id) for task_id in active_tasks.keys() if str(task_id)}
+
+    def _assert_runtime_preflight(self, *, label: str) -> dict[str, Any]:
+        snapshot = self.runner.latest_world_snapshot()
+        if not isinstance(snapshot, dict) or not snapshot:
+            raise RuntimeError(
+                f"{label} preflight failed: world_snapshot unavailable; {self.runner.recent_debug_context()}"
+            )
+        if bool(snapshot.get("disconnected", False)):
+            raise RuntimeError(
+                f"{label} preflight failed: world_snapshot indicates disconnected game; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        stale = bool(snapshot.get("stale", False))
+        sync_failures = int(snapshot.get("consecutive_refresh_failures", 0) or 0)
+        failure_threshold = int(snapshot.get("failure_threshold", 0) or 0)
+        if stale and failure_threshold > 0 and sync_failures >= failure_threshold:
+            raise RuntimeError(
+                f"{label} preflight failed: world_snapshot already stale before action; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        runtime_fault_state = snapshot.get("runtime_fault_state")
+        if isinstance(runtime_fault_state, dict) and bool(runtime_fault_state.get("degraded", False)):
+            raise RuntimeError(
+                f"{label} preflight failed: runtime fault already degraded before action; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        capability_truth_blocker = str(snapshot.get("capability_truth_blocker") or "").strip()
+        if capability_truth_blocker == "faction_roster_unsupported":
+            raise RuntimeError(
+                f"{label} preflight failed: current faction is not supported by the standard capability chain; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        return snapshot
 
     async def _wait_for_post_change_task_settle(
         self,
@@ -738,9 +772,16 @@ class LiveTestSuite:
         actors = self.runner.query_actors("己方")
         if not isinstance(actors, list):
             raise RuntimeError("GameAPI query_actor did not return a list")
+        if not actors:
+            raise RuntimeError(
+                f"GameAPI query_actor returned no self actors; likely not fully in-game yet; "
+                f"{self.runner.recent_debug_context()}"
+            )
+        self._assert_runtime_preflight(label="phase_a_connectivity")
         return f"backend ok, game api ok, self actors={len(actors)}"
 
     async def test_phase_b_deploy_mcv(self) -> str:
+        self._assert_runtime_preflight(label="phase_b_deploy_mcv")
         before = self.runner.count_matching_actors(["建造厂", "construction yard"], faction="己方")
         before_mcv = self.runner.count_matching_actors(["mcv", "基地车"], faction="己方")
         if before > 0 and before_mcv == 0:
@@ -756,11 +797,13 @@ class LiveTestSuite:
         )
 
     async def test_phase_b_build_power(self) -> str:
+        self._assert_runtime_preflight(label="phase_b_build_power")
         before = self.runner.count_matching_actors("powr", faction="己方")
         reply = await self.runner.send_command("建造电厂")
         return await self._wait_for_structure_result(expected="powr", before=before, reply=reply, timeout=120.0)
 
     async def test_phase_b_build_barracks(self) -> str:
+        self._assert_runtime_preflight(label="phase_b_build_barracks")
         before = self.runner.count_matching_actors(["barr", "tent"], faction="己方")
         reply = await self.runner.send_command("建造兵营")
         return await self._wait_for_structure_result(
@@ -771,11 +814,13 @@ class LiveTestSuite:
         )
 
     async def test_phase_b_build_refinery(self) -> str:
+        self._assert_runtime_preflight(label="phase_b_build_refinery")
         before = self.runner.count_matching_actors("proc", faction="己方")
         reply = await self.runner.send_command("建造矿场")
         return await self._wait_for_structure_result(expected="proc", before=before, reply=reply, timeout=120.0)
 
     async def test_phase_c_produce_infantry(self) -> str:
+        self._assert_runtime_preflight(label="phase_c_produce_infantry")
         before = self.runner.count_matching_actors("e1", faction="己方")
         reply = await self.runner.send_command("生产3个步兵")
         result = await self._wait_for_actor_count_increase_result(
@@ -793,6 +838,7 @@ class LiveTestSuite:
         return result
 
     async def test_phase_d_recon(self) -> str:
+        self._assert_runtime_preflight(label="phase_d_recon")
         before_positions = self.runner.matching_actor_positions(SCOUT_CANDIDATE_TYPES, faction="己方")
         if not before_positions:
             raise RuntimeError(
@@ -820,8 +866,9 @@ class LiveTestSuite:
         )
 
     async def test_phase_e_query(self) -> str:
+        before_world_snapshot = self._assert_runtime_preflight(label="phase_e_query")
         before_task_ids = self._task_ids(self.runner.latest_task_list())
-        before_active_task_ids = self._active_runtime_task_ids(self.runner.latest_world_snapshot())
+        before_active_task_ids = self._active_runtime_task_ids(before_world_snapshot)
         response = await self.runner.send_player_input_response("战况如何？", response_types={"query"})
         reply = str(
             response.get("answer")

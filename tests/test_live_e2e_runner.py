@@ -22,6 +22,11 @@ class _FakeGameAPI:
         self.language = language
         self.closed = False
 
+    @staticmethod
+    def is_server_running(*, host: str, port: int) -> bool:
+        del host, port
+        return True
+
     def query_actor(self, _param: Any) -> list[Any]:
         return []
 
@@ -136,6 +141,7 @@ def test_live_runner_recent_debug_context_includes_world_truth(monkeypatch) -> N
             "type": "world_snapshot",
             "data": {
                 "stale": True,
+                "disconnected": True,
                 "consecutive_refresh_failures": 4,
                 "failure_threshold": 3,
                 "last_refresh_error": "actors:COMMAND_EXECUTION_ERROR",
@@ -155,6 +161,7 @@ def test_live_runner_recent_debug_context_includes_world_truth(monkeypatch) -> N
 
     debug = runner.recent_debug_context()
     assert "'stale': True" in debug
+    assert "'disconnected': True" in debug
     assert "'sync_failures': 4" in debug
     assert "'failure_threshold': 3" in debug
     assert "'last_refresh_error': 'actors:COMMAND_EXECUTION_ERROR'" in debug
@@ -449,6 +456,76 @@ def test_live_runner_send_command_timeout_includes_runtime_fault_context(monkeyp
     asyncio.run(run())
 
 
+@pytest.mark.parametrize(
+    ("world_snapshot", "match"),
+    [
+        ({"disconnected": True, "runtime_fault_state": {}}, "phase_a_connectivity preflight failed: world_snapshot indicates disconnected game"),
+        (
+            {"stale": True, "consecutive_refresh_failures": 3, "failure_threshold": 3, "runtime_fault_state": {}},
+            "phase_a_connectivity preflight failed: world_snapshot already stale before action",
+        ),
+        (
+            {"stale": False, "runtime_fault_state": {"degraded": True, "source": "dashboard_publish"}},
+            "phase_a_connectivity preflight failed: runtime fault already degraded before action",
+        ),
+        (
+            {"stale": False, "capability_truth_blocker": "faction_roster_unsupported", "runtime_fault_state": {}},
+            "phase_a_connectivity preflight failed: current faction is not supported by the standard capability chain",
+        ),
+    ],
+)
+def test_live_suite_phase_a_fails_closed_on_unhealthy_runtime_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+    world_snapshot: dict[str, Any],
+    match: str,
+) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    runner = live_e2e.LiveTestRunner()
+    runner.check_backend_running = lambda: True  # type: ignore[method-assign]
+    runner.query_actors = lambda faction="己方": [Actor(actor_id=1, type="e1", position=Location(10, 10))]  # type: ignore[method-assign]
+    runner._world_snapshot = dict(world_snapshot)
+    suite = live_e2e.LiveTestSuite(runner)
+
+    async def run() -> None:
+        with pytest.raises(RuntimeError, match=match):
+            await suite.test_phase_a_connectivity()
+
+    asyncio.run(run())
+
+
+def test_live_suite_phase_a_fails_closed_when_self_actors_are_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    runner = live_e2e.LiveTestRunner()
+    runner.check_backend_running = lambda: True  # type: ignore[method-assign]
+    runner.query_actors = lambda faction="己方": []  # type: ignore[method-assign]
+    runner._world_snapshot = {"stale": False, "runtime_fault_state": {}}
+    suite = live_e2e.LiveTestSuite(runner)
+
+    async def run() -> None:
+        with pytest.raises(RuntimeError, match="GameAPI query_actor returned no self actors; likely not fully in-game yet"):
+            await suite.test_phase_a_connectivity()
+
+    asyncio.run(run())
+
+
+def test_live_suite_phase_a_returns_self_actor_count_when_runtime_is_healthy(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    runner = live_e2e.LiveTestRunner()
+    runner.check_backend_running = lambda: True  # type: ignore[method-assign]
+    runner.query_actors = lambda faction="己方": [  # type: ignore[method-assign]
+        Actor(actor_id=1, type="e1", position=Location(10, 10)),
+        Actor(actor_id=2, type="mcv", position=Location(12, 12)),
+    ]
+    runner._world_snapshot = {"stale": False, "runtime_fault_state": {}}
+    suite = live_e2e.LiveTestSuite(runner)
+
+    async def run() -> None:
+        result = await suite.test_phase_a_connectivity()
+        assert result == "backend ok, game api ok, self actors=2"
+
+    asyncio.run(run())
+
+
 class _StructureSuiteRunner:
     def __init__(
         self,
@@ -516,6 +593,9 @@ class _StructureSuiteRunner:
         if task_id != "t_build" or not self._replay_payload:
             return None
         return dict(self._replay_payload)
+
+    def latest_world_snapshot(self) -> dict[str, Any]:
+        return {"stale": False, "runtime_fault_state": {}}
 
     def recent_debug_context(self) -> str:
         return "debug-context"
