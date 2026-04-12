@@ -451,6 +451,7 @@ class RuntimeBridge(InboundHandler):
             and resolved_session_dir.resolve() == live_session_dir.resolve()
         )
         runtime_state = self.kernel.runtime_state()
+        replay_runtime_state = runtime_state if use_live_bundle else {}
         await self._publisher.send_task_replay_to_client(
             client_id,
             build_task_replay_payload(
@@ -476,7 +477,7 @@ class RuntimeBridge(InboundHandler):
                         lambda entries, _resolved_session_dir: build_task_replay_bundle(
                             task_id,
                             entries,
-                            runtime_state=runtime_state,
+                            runtime_state=replay_runtime_state,
                         )
                     )
                 ),

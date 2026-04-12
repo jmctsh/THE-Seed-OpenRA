@@ -1800,7 +1800,21 @@ def test_task_replay_request_keeps_historical_session_isolated_from_live_runtime
             return []
 
         def runtime_state(self):
-            return {"active_tasks": {"t_hist": {"label": "009"}}}
+            return {
+                "active_tasks": {"t_hist": {"label": "009"}},
+                "unit_reservations": [
+                    {
+                        "reservation_id": "res_live_leak",
+                        "task_id": "t_hist",
+                        "unit_type": "3tnk",
+                        "queue_type": "Vehicle",
+                        "count": 1,
+                        "remaining_count": 1,
+                        "status": "pending",
+                        "reason": "waiting_dispatch",
+                    }
+                ],
+            }
 
     class FakeWorldModel:
         def world_summary(self):
@@ -1897,6 +1911,7 @@ def test_task_replay_request_keeps_historical_session_isolated_from_live_runtime
     assert payload["session_dir"] != str(current_session)
     assert payload["bundle"]["current_runtime"] is None
     assert payload["bundle"]["status_line"] == ""
+    assert payload["bundle"]["unit_pipeline"]["unit_reservations"] == []
     assert payload["bundle"]["replay_triage"]["state"] == "completed"
     assert payload["bundle"]["replay_triage"]["phase"] == "succeeded"
     assert payload["bundle"]["summary"] == "历史任务已完成"
