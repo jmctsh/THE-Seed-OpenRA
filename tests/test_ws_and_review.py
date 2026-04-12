@@ -1863,6 +1863,7 @@ def test_sync_request_surfaces_unit_pipeline_preview_in_world_snapshot():
                         "task_label": "002",
                         "unit_type": "e1",
                         "count": 1,
+                        "status": "pending",
                         "remaining_count": 1,
                         "reason": "waiting_dispatch",
                     }
@@ -2710,13 +2711,11 @@ def test_dashboard_publisher_schedule_publish_logs_background_failures_without_u
 
             assert publisher.publish_task is None
             assert background_errors == [], background_errors
-            assert logged_errors == [
-                {
-                    "event": "dashboard_publish_stage_failed",
-                    "stage": "task_messages",
-                    "error": "RuntimeError('boom')",
-                }
-            ]
+            assert len(logged_errors) == 1
+            assert logged_errors[0]["event"] == "dashboard_publish_stage_failed"
+            assert logged_errors[0]["stage"] == "task_messages"
+            assert logged_errors[0]["error"] == "RuntimeError('boom')"
+            assert float(logged_errors[0]["timestamp"]) > 0
             assert len(publisher.ws_server.sent) == 1
             assert publisher.ws_server.sent[0]["message_id"] == "m_info"
             assert publisher.ws_server.sent[0]["task_id"] == "t_demo"
@@ -2787,13 +2786,11 @@ def test_dashboard_publisher_publish_all_continues_after_stage_failure(monkeypat
         "logs",
         "benchmarks",
     ]
-    assert logged_errors == [
-        {
-            "event": "dashboard_publish_stage_failed",
-            "stage": "task_messages",
-            "error": "RuntimeError('boom')",
-        }
-    ]
+    assert len(logged_errors) == 1
+    assert logged_errors[0]["event"] == "dashboard_publish_stage_failed"
+    assert logged_errors[0]["stage"] == "task_messages"
+    assert logged_errors[0]["error"] == "RuntimeError('boom')"
+    assert float(logged_errors[0]["timestamp"]) > 0
     print("  PASS: dashboard_publisher_publish_all_continues_after_stage_failure")
 
 
@@ -2883,12 +2880,10 @@ def test_dashboard_publisher_schedule_publish_logs_task_level_failure(monkeypatc
 
     asyncio.run(run())
 
-    assert logged_errors == [
-        {
-            "event": "dashboard_publish_task_failed",
-            "error": "RuntimeError('top-level boom')",
-        }
-    ]
+    assert len(logged_errors) == 1
+    assert logged_errors[0]["event"] == "dashboard_publish_task_failed"
+    assert logged_errors[0]["error"] == "RuntimeError('top-level boom')"
+    assert float(logged_errors[0]["timestamp"]) > 0
 
 
 def test_task_replay_request_returns_persisted_task_log():
