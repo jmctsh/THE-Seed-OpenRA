@@ -132,6 +132,9 @@
         :title="selectedSessionRuntimeFault.error || ''"
       >
         <span>runtime_fault=seen</span>
+        <span v-if="selectedSessionRuntimeFault.updated_at">
+          at={{ formatSessionFaultTime(selectedSessionRuntimeFault.updated_at) }}
+        </span>
         <span>source={{ selectedSessionRuntimeFault.source }}</span>
         <span v-if="selectedSessionRuntimeFault.stage">stage={{ selectedSessionRuntimeFault.stage }}</span>
         <span v-if="selectedSessionRuntimeFault.error">error={{ formatSessionHealthError(selectedSessionRuntimeFault.error) }}</span>
@@ -211,6 +214,9 @@
         <div class="replay-heading">Session Runtime Fault</div>
         <div class="triage-meta">
           <span>runtime_fault=seen</span>
+          <span v-if="selectedTaskReplaySessionRuntimeFault.updated_at">
+            at={{ formatSessionFaultTime(selectedTaskReplaySessionRuntimeFault.updated_at) }}
+          </span>
           <span>source={{ selectedTaskReplaySessionRuntimeFault.source }}</span>
           <span v-if="selectedTaskReplaySessionRuntimeFault.stage">
             stage={{ selectedTaskReplaySessionRuntimeFault.stage }}
@@ -871,7 +877,7 @@ function formatSessionOption(session) {
   else if (session.is_latest) flags.push('latest')
   const worldHealth = normalizeSessionWorldHealth(session.world_health || null)
   const runtimeFault = normalizeSessionRuntimeFault(session.runtime_fault_summary || null)
-  if (runtimeFault?.degraded) flags.push('fault')
+  if (runtimeFault?.degraded) flags.push(formatSessionFaultFlag(runtimeFault))
   if (worldHealth?.ended_stale) flags.push('stale')
   else if (worldHealth?.stale_seen) flags.push('sync')
   if (worldHealth?.max_consecutive_failures) {
@@ -974,6 +980,19 @@ function formatSessionHealthError(error) {
   if (!error) return ''
   const text = String(error)
   return text.length > 48 ? `${text.slice(0, 45)}...` : text
+}
+
+function formatSessionFaultFlag(fault) {
+  if (!fault?.degraded) return ''
+  const when = formatSessionFaultTime(fault.updated_at)
+  return when ? `fault@${when}` : 'fault'
+}
+
+function formatSessionFaultTime(ts) {
+  if (!ts) return ''
+  const date = new Date(Number(ts) * 1000)
+  if (Number.isNaN(date.getTime())) return ''
+  return `${date.toISOString().slice(11, 19)}Z`
 }
 
 function refreshDiagnostics() {
