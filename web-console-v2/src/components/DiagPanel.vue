@@ -150,6 +150,26 @@
         <span v-if="selectedSessionRuntimeFault.stage">stage={{ selectedSessionRuntimeFault.stage }}</span>
         <span v-if="selectedSessionRuntimeFault.error">error={{ formatSessionHealthError(selectedSessionRuntimeFault.error) }}</span>
       </div>
+      <div v-if="displayedOperatorMessages.length" class="replay-section session-operator-strip">
+        <div class="replay-heading">Operator Surface</div>
+        <div
+          v-for="item in displayedOperatorMessages"
+          :key="item.key"
+          class="triage-meta session-operator-row"
+        >
+          <span>{{ item.label }}@{{ formatSessionFaultTime(item.timestamp) }}</span>
+          <span v-if="item.taskLabel">task=#{{ item.taskLabel }}</span>
+          <span>{{ item.message }}</span>
+          <button
+            v-if="item.taskId"
+            type="button"
+            class="filter-btn replay-tag session-highlight-btn"
+            @click="focusDiagnosticsTask(item.taskId)"
+          >
+            定位
+          </button>
+        </div>
+      </div>
       <label class="trace-label" for="task-trace-select">Task Trace</label>
       <select id="task-trace-select" v-model="selectedTaskId" class="trace-select">
         <option value="ALL">全部任务</option>
@@ -601,6 +621,7 @@ const sessionCatalog = ref([])
 const sessionTaskCatalog = ref([])
 const selectedSessionDir = ref('')
 const traceEntries = ref([])
+const operatorMessages = ref([])
 const replayCache = reactive({})
 const replayBundleCache = reactive({})
 const replayMetaCache = reactive({})
@@ -660,6 +681,12 @@ const selectedSessionHighlights = computed(() => {
     })
     .slice(0, 3)
 })
+
+const displayedOperatorMessages = computed(() => (
+  [...operatorMessages.value]
+    .sort((left, right) => Number(right.timestamp || 0) - Number(left.timestamp || 0))
+    .slice(0, 6)
+))
 
 const activeTaskCatalog = computed(() => {
   if (!selectedSessionDir.value) return [...liveTaskCatalog.value]
@@ -1265,6 +1292,7 @@ function prefetchRecentReplays(tasks) {
 function clearDiagnostics() {
   logEntries.value = []
   traceEntries.value = []
+  operatorMessages.value = []
   liveTaskCatalog.value = []
   sessionCatalog.value = []
   sessionTaskCatalog.value = []
@@ -1313,6 +1341,13 @@ function normalizeLogEntry(entry) {
 function replaceSessionHistory(payload = {}) {
   const rawLogEntries = Array.isArray(payload.log_entries) ? payload.log_entries : []
   logEntries.value = rawLogEntries.map((entry) => normalizeLogEntry(entry)).slice(-500)
+  const rawOperatorEntries = Array.isArray(payload.player_visible_entries) ? payload.player_visible_entries : []
+  operatorMessages.value = (rawOperatorEntries.length
+    ? rawOperatorEntries.map((entry) => operatorMessageFromHistoryEntry(entry))
+    : rawLogEntries.map((entry) => operatorMessageFromLogRecord(entry))
+  )
+    .filter(Boolean)
+    .slice(-40)
   traceEntries.value = rawLogEntries
     .map((entry) => traceEntryFromLogRecord(entry))
     .filter((entry) => entry.taskId || entry.jobId)
@@ -1343,6 +1378,92 @@ function appendBenchmarkRecords(records) {
 function replaceBenchmarkSnapshot(records) {
   Object.keys(benchmarkStats).forEach((key) => delete benchmarkStats[key])
   appendBenchmarkRecords(records)
+}
+
+function normalizeOperatorMessage({ timestamp, label, taskId = '', message = '', detail = null }) {
+  const resolvedTaskId = String(taskId || '')
+  if (resolvedTaskId) registerTaskLabel(resolvedTaskId)
+  return {
+    key: [
+      String(timestamp || 0),
+      label,
+      resolvedTaskId,
+      String(message || ''),
+    ].join('|'),
+    timestamp: Number(timestamp || 0),
+    label: String(label || 'operator'),
+    taskId: resolvedTaskId,
+    taskLabel: resolvedTaskId ? formatTaskLabel(resolvedTaskId) : '',
+    message: replaceTaskIdsWithLabels(String(message || '')),
+    detail,
+  }
+}
+
+function addOperatorMessage(item) {
+  if (!item) return
+  operatorMessages.value.push(item)
+  if (operatorMessages.value.length > 40) operatorMessages.value.splice(0, operatorMessages.value.length - 40)
+}
+
+function operatorMessageFromLogRecord(record) {
+  const event = String(record?.event || '')
+  const data = record?.data && typeof record.data === 'object' ? record.data : {}
+  if (event === 'adjutant_response_sent') {
+    return normalizeOperatorMessage({
+      timestamp: record?.timestamp,
+      label: 'adjutant',
+      taskId: resolveTaskId(data) || '',
+      message: data.content || record?.message || '收到副官回复',
+      detail: data,
+    })
+  }
+  if (event === 'player_notification_sent') {
+    const nested = data?.data && typeof data.data === 'object' ? data.data : {}
+    return normalizeOperatorMessage({
+      timestamp: record?.timestamp,
+      label: 'notify',
+      taskId: resolveTaskId(nested) || resolveTaskId(data) || '',
+      message: data.content || record?.message || '收到通知',
+      detail: data,
+    })
+  }
+  if (event === 'task_message_registered' && ['task_info', 'task_warning'].includes(String(data?.message_type || ''))) {
+    return normalizeOperatorMessage({
+      timestamp: record?.timestamp,
+      label: String(data?.message_type || '') === 'task_warning' ? 'task_warning' : 'task_info',
+      taskId: resolveTaskId(data) || '',
+      message: data.content || record?.message || '收到任务消息',
+      detail: data,
+    })
+  }
+  if (['task_info', 'task_warning'].includes(event)) {
+    return normalizeOperatorMessage({
+      timestamp: record?.timestamp,
+      label: event,
+      taskId: resolveTaskId(data) || '',
+      message: data.content || record?.message || '收到任务消息',
+      detail: data,
+    })
+  }
+  return null
+}
+
+function operatorMessageFromHistoryEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null
+  const kind = String(entry.kind || '')
+  let label = 'operator'
+  if (kind === 'adjutant') label = 'adjutant'
+  else if (kind === 'notification') label = 'notify'
+  else if (kind === 'task_message') {
+    label = String(entry.message_type || '') === 'task_warning' ? 'task_warning' : 'task_info'
+  }
+  return normalizeOperatorMessage({
+    timestamp: entry.timestamp,
+    label,
+    taskId: entry.task_id || '',
+    message: entry.content || '',
+    detail: entry,
+  })
 }
 
 function formatJsonBlock(value) {
@@ -1464,8 +1585,14 @@ if (props.on) {
   offHandlers.push(props.on('query_response', (msg) => {
     if (!isSelectedSessionLive()) return
     const taskId = msg.data?.task_id || null
+    addOperatorMessage(normalizeOperatorMessage({
+      timestamp: msg.timestamp,
+      label: 'adjutant',
+      taskId,
+      message: msg.data?.answer || msg.data?.response_text || '收到副官回复',
+      detail: msg.data || null,
+    }))
     if (!taskId) return
-    registerTaskLabel(taskId)
     addTraceEntry({
       timestamp: msg.timestamp,
       source: 'adjutant',
@@ -1480,8 +1607,14 @@ if (props.on) {
   offHandlers.push(props.on('player_notification', (msg) => {
     if (!isSelectedSessionLive()) return
     const taskId = msg.data?.task_id || msg.data?.data?.task_id || null
+    addOperatorMessage(normalizeOperatorMessage({
+      timestamp: msg.timestamp,
+      label: 'notify',
+      taskId,
+      message: msg.data?.content || JSON.stringify(msg.data),
+      detail: msg.data || null,
+    }))
     if (!taskId) return
-    registerTaskLabel(taskId)
     addTraceEntry({
       timestamp: msg.timestamp,
       source: 'notify',
@@ -1497,6 +1630,13 @@ if (props.on) {
     if (!isSelectedSessionLive()) return
     const payload = msg.data || {}
     const taskId = payload.task_id || null
+    addOperatorMessage(normalizeOperatorMessage({
+      timestamp: msg.timestamp,
+      label: payload.type === 'task_warning' ? 'task_warning' : 'task_info',
+      taskId,
+      message: payload.content || JSON.stringify(payload),
+      detail: payload,
+    }))
     if (!taskId) return
     registerTaskLabel(taskId)
     addTraceEntry({

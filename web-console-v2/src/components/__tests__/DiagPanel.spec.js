@@ -1356,6 +1356,116 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).not.toContain('实时日志')
   })
 
+  it('renders historical operator messages from session_history and ignores live operator append while browsing a historical session', async () => {
+    const bus = createBus()
+    const send = vi.fn()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send,
+        on: bus.on,
+      },
+    })
+
+    bus.emit('session_catalog', {
+      sessions: [
+        {
+          session_dir: '/tmp/live-session',
+          session_name: 'live-session',
+          is_current: true,
+          is_latest: true,
+          task_count: 1,
+          record_count: 10,
+        },
+        {
+          session_dir: '/tmp/old-session',
+          session_name: 'old-session',
+          is_current: false,
+          is_latest: false,
+          task_count: 1,
+          record_count: 8,
+        },
+      ],
+      selected_session_dir: '/tmp/live-session',
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('#session-select').setValue('/tmp/old-session')
+    await wrapper.vm.$nextTick()
+
+    bus.emit('session_history', {
+      session_dir: '/tmp/old-session',
+      is_live: false,
+      log_entries: [
+        {
+          timestamp: 100,
+          component: 'dashboard_publish',
+          level: 'INFO',
+          message: '副官收到指令',
+          event: 'adjutant_response_sent',
+          data: { task_id: 't_hist', content: '副官收到指令' },
+        },
+        {
+          timestamp: 101,
+          component: 'dashboard_publish',
+          level: 'INFO',
+          message: '任务已取消',
+          event: 'player_notification_sent',
+          data: { content: '任务已取消', data: { task_id: 't_hist' } },
+        },
+      ],
+      player_visible_entries: [
+        {
+          kind: 'adjutant',
+          timestamp: 100,
+          task_id: 't_hist',
+          content: '副官收到指令',
+        },
+        {
+          kind: 'notification',
+          timestamp: 101,
+          task_id: 't_hist',
+          content: '任务已取消',
+        },
+        {
+          kind: 'task_message',
+          timestamp: 102,
+          task_id: 't_hist',
+          content: '侦察等待增援',
+          message_type: 'task_warning',
+        },
+      ],
+      benchmark_records: [],
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Operator Surface')
+    expect(wrapper.text()).toContain('adjutant@00:01:40Z')
+    expect(wrapper.text()).toContain('notify@00:01:41Z')
+    expect(wrapper.text()).toContain('task_warning@00:01:42Z')
+    expect(wrapper.text()).toContain('副官收到指令')
+    expect(wrapper.text()).toContain('任务已取消')
+    expect(wrapper.text()).toContain('侦察等待增援')
+
+    bus.emit('query_response', {
+      task_id: 't_live',
+      answer: '实时副官回复',
+    }, 200)
+    bus.emit('player_notification', {
+      content: '实时通知',
+      data: { task_id: 't_live' },
+    }, 201)
+    bus.emit('task_message', {
+      task_id: 't_live',
+      type: 'task_warning',
+      content: '实时任务警告',
+    }, 202)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('实时副官回复')
+    expect(wrapper.text()).not.toContain('实时通知')
+    expect(wrapper.text()).not.toContain('实时任务警告')
+  })
+
   it('renders compact task rollup hints in session selector options', async () => {
     const bus = createBus()
     const wrapper = mount(DiagPanel, {
