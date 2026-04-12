@@ -393,6 +393,7 @@ def build_task_replay_bundle(
             "agent_woken_requests_fulfilled",
             "unit_request_cancelled",
             "job_started",
+            "task_cancelled",
             "task_completed",
             "expert:progress",
             "expert:target_found",
@@ -407,6 +408,7 @@ def build_task_replay_bundle(
         preview
         for entry, preview in zip(entries, previews)
         if preview["label"] in {
+            "task_cancelled",
             "task_completed",
             "task_message_registered",
             "task_warning",
@@ -428,6 +430,7 @@ def build_task_replay_bundle(
             "agent_woken_requests_fulfilled",
             "unit_request_cancelled",
             "job_started",
+            "task_cancelled",
             "task_completed",
             "expert:progress",
             "expert:resource_lost",
@@ -443,7 +446,7 @@ def build_task_replay_bundle(
 
     last_transition = None
     for preview in reversed(highlights):
-        if preview["label"] in {"task_completed", "expert:task_complete", "job_aborted", "job_started"}:
+        if preview["label"] in {"task_cancelled", "task_completed", "expert:task_complete", "job_aborted", "job_started"}:
             last_transition = preview
             break
     if last_transition is None:
@@ -469,6 +472,9 @@ def build_task_replay_bundle(
     summary = "任务记录已加载"
     for entry in reversed(entries):
         data = _entry_data(entry)
+        if entry.get("event") == "task_cancelled":
+            summary = str(data.get("summary") or entry.get("message") or summary)
+            break
         if entry.get("event") == "task_completed":
             summary = str(data.get("summary") or entry.get("message") or summary)
             break
@@ -788,6 +794,9 @@ def build_task_replay_bundle(
                 world_sync_error = str(stale_detail.get("error") or "")
                 world_sync_failures = int(stale_detail.get("failures", 0) or 0)
                 world_sync_failure_threshold = int(stale_detail.get("failure_threshold", 0) or 0)
+        elif last_label == "task_cancelled":
+            state = "completed"
+            phase = "aborted"
         elif last_label == "task_completed":
             state = "completed"
             phase = "succeeded"

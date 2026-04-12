@@ -79,7 +79,13 @@ def cancel_task(
         task_actor_groups.pop(task_id, None)
         stop_task_runtime(task_runtimes, task_id)
         sync_world_runtime()
-        slog.info("Task cancelled", event="task_cancelled", task_id=task_id)
+        slog.info(
+            "Task cancelled",
+            event="task_cancelled",
+            task_id=task_id,
+            result="aborted",
+            summary="任务已取消",
+        )
         return True
 
 

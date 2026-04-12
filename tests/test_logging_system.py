@@ -668,6 +668,74 @@ def test_list_session_tasks_keeps_terminal_summary_over_later_task_message() -> 
     assert tasks[0]["summary"] == "缺少前置，部分完成"
 
 
+def test_list_session_tasks_marks_task_cancelled_as_aborted_terminal() -> None:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base = Path(tmpdir)
+        session_dir = base / "session-cancelled"
+        tasks_dir = session_dir / "tasks"
+        tasks_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / "session.json").write_text(
+            json.dumps(
+                {
+                    "session_name": "session-cancelled",
+                    "started_at": "2026-04-12T00:00:00+00:00",
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        (tasks_dir / "t_cancelled.jsonl").write_text(
+            "\n".join(
+                [
+                    json.dumps(
+                        {
+                            "timestamp": 10.0,
+                            "component": "kernel",
+                            "level": "INFO",
+                            "message": "Task created",
+                            "event": "task_created",
+                            "data": {
+                                "task_id": "t_cancelled",
+                                "task_label": "005",
+                                "raw_text": "停止推进",
+                                "kind": "managed",
+                                "priority": 60,
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                    json.dumps(
+                        {
+                            "timestamp": 12.0,
+                            "component": "kernel",
+                            "level": "INFO",
+                            "message": "Task cancelled",
+                            "event": "task_cancelled",
+                            "data": {
+                                "task_id": "t_cancelled",
+                                "result": "aborted",
+                                "summary": "任务已取消",
+                            },
+                        },
+                        ensure_ascii=False,
+                    ),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        tasks = logging_system.list_session_tasks(session_dir)
+
+    assert len(tasks) == 1
+    assert tasks[0]["task_id"] == "t_cancelled"
+    assert tasks[0]["status"] == "aborted"
+    assert tasks[0]["summary"] == "任务已取消"
+    assert "triage" not in tasks[0]
+
+
 def test_list_session_tasks_falls_back_to_constraint_violated_signal_summary() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         base = Path(tmpdir)

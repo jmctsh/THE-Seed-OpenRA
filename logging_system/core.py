@@ -894,6 +894,9 @@ def list_session_tasks(
                 if result:
                     status = result
                 summary = str(data.get("summary") or summary)
+            elif event == "task_cancelled":
+                status = "aborted"
+                summary = str(data.get("summary") or payload.get("message") or summary)
             elif event == "expert_signal" and str(data.get("signal_kind") or "") == "task_complete":
                 result = str(data.get("result") or "")
                 if result:

@@ -2079,14 +2079,19 @@ def test_application_runtime_ws_command_cancel_round_trip_updates_runtime_truth(
                 *,
                 predicate,
                 timeout_s: float = 3.0,
-                max_messages: int = 60,
+                max_messages: int = 240,
             ) -> dict[str, Any]:
                 deadline = loop.time() + timeout_s
                 seen = 0
                 while seen < max_messages and loop.time() < deadline:
-                    msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    try:
+                        msg = await ws.receive(timeout=max(0.05, deadline - loop.time()))
+                    except asyncio.TimeoutError:
+                        continue
                     assert msg.type == aiohttp.WSMsgType.TEXT
                     payload = json.loads(msg.data)
+                    if payload.get("type") in {"log_entry", "benchmark"}:
+                        continue
                     if predicate(payload):
                         return payload
                     seen += 1
@@ -2108,12 +2113,14 @@ def test_application_runtime_ws_command_cancel_round_trip_updates_runtime_truth(
 
             with tempfile.TemporaryDirectory() as tmpdir:
                 ws_port = _free_tcp_port()
+                log_root = Path(tmpdir) / "logs"
+                logging_system.start_persistence_session(log_root, session_name="cancel-round-trip")
                 cfg = RuntimeConfig(
                     ws_host="127.0.0.1",
                     ws_port=ws_port,
                     enable_ws=True,
                     enable_voice=False,
-                    log_session_root=str(Path(tmpdir) / "logs"),
+                    log_session_root=str(log_root),
                     benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
                     benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
                     log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
@@ -2193,11 +2200,76 @@ def test_application_runtime_ws_command_cancel_round_trip_updates_runtime_truth(
                             )
                             assert runtime.kernel.tasks[task.task_id].status == TaskStatus.ABORTED
 
+                            async with session.ws_connect(f"http://127.0.0.1:{ws_port}/ws") as diag_ws:
+                                await diag_ws.send_json({"type": "sync_request"})
+
+                                session_catalog_payload = await _recv_json(
+                                    diag_ws,
+                                    predicate=lambda payload: (
+                                        payload.get("type") == "session_catalog"
+                                        and payload.get("data", {}).get("selected_session_dir")
+                                    ),
+                                )
+                                selected_session_dir = str(session_catalog_payload["data"]["selected_session_dir"])
+                                current_session = next(
+                                    item
+                                    for item in list(session_catalog_payload["data"]["sessions"] or [])
+                                    if isinstance(item, dict) and item.get("session_dir") == selected_session_dir
+                                )
+                                assert int(
+                                    current_session["task_rollup"]["by_status"].get(TaskStatus.ABORTED.value, 0) or 0
+                                ) >= 1
+
+                                session_task_catalog_payload = await _recv_json(
+                                    diag_ws,
+                                    predicate=lambda payload: (
+                                        payload.get("type") == "session_task_catalog"
+                                        and payload.get("data", {}).get("session_dir") == selected_session_dir
+                                        and any(
+                                            item.get("task_id") == task.task_id
+                                            and item.get("status") == TaskStatus.ABORTED.value
+                                            for item in list(payload.get("data", {}).get("tasks", []) or [])
+                                            if isinstance(item, dict)
+                                        )
+                                    ),
+                                )
+                                cancelled_task = next(
+                                    item
+                                    for item in list(session_task_catalog_payload["data"]["tasks"] or [])
+                                    if isinstance(item, dict) and item.get("task_id") == task.task_id
+                                )
+                                assert cancelled_task["status"] == TaskStatus.ABORTED.value
+                                assert cancelled_task["summary"] in {"任务已取消", "Task cancelled"}
+
+                                await diag_ws.send_json(
+                                    {
+                                        "type": "task_replay_request",
+                                        "task_id": task.task_id,
+                                        "session_dir": selected_session_dir,
+                                        "include_entries": False,
+                                    }
+                                )
+                                task_replay_payload = await _recv_json(
+                                    diag_ws,
+                                    predicate=lambda payload: (
+                                        payload.get("type") == "task_replay"
+                                        and payload.get("data", {}).get("task_id") == task.task_id
+                                    ),
+                                )
+                                replay_bundle = task_replay_payload["data"]["bundle"]
+                                assert replay_bundle["replay_triage"]["state"] == "completed"
+                                assert replay_bundle["replay_triage"]["phase"] == "aborted"
+                                assert replay_bundle["summary"] in {"任务已取消", "Task cancelled"}
+                                current_runtime = replay_bundle.get("current_runtime")
+                                if isinstance(current_runtime, dict):
+                                    assert current_runtime.get("status") == TaskStatus.ABORTED.value
+
                     runtime.bridge.on_tick(1, 0.0)
                     await asyncio.sleep(0.1)
                     assert background_errors == [], background_errors
                 finally:
                     await runtime.stop()
+                    logging_system.stop_persistence_session()
 
                 assert api.close_calls == 1
                 assert runtime.ws_server is not None
