@@ -650,6 +650,19 @@ class LiveTestSuite:
             f"replay_status={str((current_runtime or {}).get('status') or '')}"
         )
 
+    async def _append_diagnostics_pull_parity_if_task_present(
+        self,
+        *,
+        result: str,
+        reply: str,
+        timeout: float = 5.0,
+    ) -> str:
+        task_id = self.runner.extract_task_id(reply)
+        if not task_id:
+            return result
+        parity = await self._verify_diagnostics_pull_parity(task_id=task_id, timeout=timeout)
+        return f"{result}; {parity}"
+
     async def _require_task_surface(self, reply: str, *, timeout: float = 10.0) -> Optional[str]:
         task_id = self.runner.extract_task_id(reply)
         if task_id is None:
@@ -787,7 +800,7 @@ class LiveTestSuite:
         if before > 0 and before_mcv == 0:
             return "skip: construction yard already exists and no undeployed mcv is present"
         reply = await self.runner.send_command("部署基地车")
-        return await self._wait_for_actor_count_increase_result(
+        result = await self._wait_for_actor_count_increase_result(
             expected=["建造厂", "construction yard"],
             before=before,
             reply=reply,
@@ -795,29 +808,33 @@ class LiveTestSuite:
             min_delta=1,
             label="construction yard count",
         )
+        return await self._append_diagnostics_pull_parity_if_task_present(result=result, reply=reply)
 
     async def test_phase_b_build_power(self) -> str:
         self._assert_runtime_preflight(label="phase_b_build_power")
         before = self.runner.count_matching_actors("powr", faction="己方")
         reply = await self.runner.send_command("建造电厂")
-        return await self._wait_for_structure_result(expected="powr", before=before, reply=reply, timeout=120.0)
+        result = await self._wait_for_structure_result(expected="powr", before=before, reply=reply, timeout=120.0)
+        return await self._append_diagnostics_pull_parity_if_task_present(result=result, reply=reply)
 
     async def test_phase_b_build_barracks(self) -> str:
         self._assert_runtime_preflight(label="phase_b_build_barracks")
         before = self.runner.count_matching_actors(["barr", "tent"], faction="己方")
         reply = await self.runner.send_command("建造兵营")
-        return await self._wait_for_structure_result(
+        result = await self._wait_for_structure_result(
             expected=["barr", "tent"],
             before=before,
             reply=reply,
             timeout=120.0,
         )
+        return await self._append_diagnostics_pull_parity_if_task_present(result=result, reply=reply)
 
     async def test_phase_b_build_refinery(self) -> str:
         self._assert_runtime_preflight(label="phase_b_build_refinery")
         before = self.runner.count_matching_actors("proc", faction="己方")
         reply = await self.runner.send_command("建造矿场")
-        return await self._wait_for_structure_result(expected="proc", before=before, reply=reply, timeout=120.0)
+        result = await self._wait_for_structure_result(expected="proc", before=before, reply=reply, timeout=120.0)
+        return await self._append_diagnostics_pull_parity_if_task_present(result=result, reply=reply)
 
     async def test_phase_c_produce_infantry(self) -> str:
         self._assert_runtime_preflight(label="phase_c_produce_infantry")
@@ -831,11 +848,7 @@ class LiveTestSuite:
             min_delta=3,
             label="infantry count",
         )
-        task_id = self.runner.extract_task_id(reply)
-        if task_id:
-            parity = await self._verify_diagnostics_pull_parity(task_id=task_id, timeout=5.0)
-            return f"{result}; {parity}"
-        return result
+        return await self._append_diagnostics_pull_parity_if_task_present(result=result, reply=reply)
 
     async def test_phase_d_recon(self) -> str:
         self._assert_runtime_preflight(label="phase_d_recon")
@@ -856,7 +869,7 @@ class LiveTestSuite:
         )
         if not ok:
             raise RuntimeError(f"ReconJob not visible in runtime_state.active_jobs; reply={reply}; snapshot={self.runner.latest_world_snapshot()}")
-        return await self._wait_for_matching_actor_movement_result(
+        result = await self._wait_for_matching_actor_movement_result(
             expected=SCOUT_CANDIDATE_TYPES,
             before_positions=before_positions,
             reply=reply,
@@ -864,6 +877,7 @@ class LiveTestSuite:
             min_manhattan_distance=2,
             label="scout movement",
         )
+        return await self._append_diagnostics_pull_parity_if_task_present(result=result, reply=reply)
 
     async def test_phase_e_query(self) -> str:
         before_world_snapshot = self._assert_runtime_preflight(label="phase_e_query")

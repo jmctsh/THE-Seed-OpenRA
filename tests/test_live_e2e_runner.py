@@ -665,12 +665,16 @@ class _ReconSuiteRunner:
         task: dict[str, Any] | None = None,
         has_surface: bool = True,
         active_jobs: dict[str, dict[str, Any]] | None = None,
+        session_task_catalog: dict[str, Any] | None = None,
+        replay_payload: dict[str, Any] | None = None,
     ) -> None:
         self._actor_snapshots = [list(snapshot) for snapshot in actor_snapshots]
         self._actor_index = 0
         self._task = dict(task) if isinstance(task, dict) else task
         self._has_surface = has_surface
         self._active_jobs = dict(active_jobs or {})
+        self._session_task_catalog = dict(session_task_catalog or {})
+        self._replay_payload = dict(replay_payload or {})
 
     def extract_task_id(self, reply: str) -> str | None:
         return "t_recon" if "t_recon" in reply else None
@@ -686,6 +690,23 @@ class _ReconSuiteRunner:
         if task_id != "t_recon" or self._task is None:
             return None
         return dict(self._task)
+
+    async def request_current_session_task_catalog(self, *, timeout: float = 5.0) -> dict[str, Any] | None:
+        del timeout
+        return dict(self._session_task_catalog) if self._session_task_catalog else None
+
+    async def request_task_replay(
+        self,
+        task_id: str,
+        *,
+        include_entries: bool = False,
+        session_dir: str | None = None,
+        timeout: float = 5.0,
+    ) -> dict[str, Any] | None:
+        del include_entries, session_dir, timeout
+        if task_id != "t_recon" or not self._replay_payload:
+            return None
+        return dict(self._replay_payload)
 
     def latest_world_snapshot(self) -> dict[str, Any]:
         return {"runtime_state": {"active_jobs": dict(self._active_jobs)}}
@@ -997,6 +1018,59 @@ def test_live_suite_phase_c_produce_infantry_pulls_diagnostics_parity_after_succ
     asyncio.run(run())
 
 
+def test_live_suite_phase_b_deploy_mcv_pulls_diagnostics_parity_after_success(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    suite = live_e2e.LiveTestSuite(
+        _StructureSuiteRunner(
+            counts=[0, 1, 0, 1],
+            task={"task_id": "t_build", "status": "running"},
+            task_snapshots=[
+                {"task_id": "t_build", "status": "running"},
+                {"task_id": "t_build", "status": "succeeded"},
+                {"task_id": "t_build", "status": "succeeded"},
+            ],
+            session_task_catalog={
+                "session_dir": "s_live",
+                "tasks": [
+                    {"task_id": "t_build", "status": "succeeded", "raw_text": "部署基地车"},
+                ],
+            },
+            replay_payload={
+                "task_id": "t_build",
+                "bundle": {
+                    "summary": "建造厂已展开",
+                    "current_runtime": {"task_id": "t_build", "status": "succeeded"},
+                },
+            },
+        )
+    )
+
+    async def _fake_send_command(text: str, timeout: float = 30.0) -> str:
+        del timeout
+        assert text == "部署基地车"
+        return "收到指令，已创建任务 t_build"
+
+    suite.runner.send_command = _fake_send_command  # type: ignore[method-assign]
+
+    fake_now = {"value": 307.0}
+
+    def _fake_time() -> float:
+        return fake_now["value"]
+
+    async def _fake_sleep(delay: float) -> None:
+        fake_now["value"] += delay
+
+    monkeypatch.setattr(live_e2e.time, "time", _fake_time)
+    monkeypatch.setattr(live_e2e.asyncio, "sleep", _fake_sleep)
+
+    async def run() -> None:
+        result = await suite.test_phase_b_deploy_mcv()
+        assert "catalog_status=succeeded" in result
+        assert "replay_status=succeeded" in result
+
+    asyncio.run(run())
+
+
 def test_live_suite_phase_b_deploy_mcv_fails_on_terminal_task_before_construction_yard_appears(monkeypatch) -> None:
     monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
     suite = live_e2e.LiveTestSuite(
@@ -1066,6 +1140,59 @@ def test_live_suite_phase_d_recon_fails_on_terminal_task_before_scout_movement(m
     async def run() -> None:
         with pytest.raises(RuntimeError, match="before scout movement"):
             await suite.test_phase_d_recon()
+
+    asyncio.run(run())
+
+
+def test_live_suite_phase_d_recon_pulls_diagnostics_parity_after_success(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    suite = live_e2e.LiveTestSuite(
+        _ReconSuiteRunner(
+            actor_snapshots=[
+                [Actor(actor_id=11, type="e1", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle")],
+                [Actor(actor_id=11, type="e1", faction="自己", position=Location(10, 10), hppercent=100, activity="Idle")],
+                [Actor(actor_id=11, type="e1", faction="自己", position=Location(13, 11), hppercent=100, activity="Move")],
+            ],
+            task={"task_id": "t_recon", "status": "running"},
+            active_jobs={"j_recon": {"task_id": "t_recon", "expert_type": "ReconExpert"}},
+            session_task_catalog={
+                "session_dir": "s_live",
+                "tasks": [
+                    {"task_id": "t_recon", "status": "running", "raw_text": "探索地图"},
+                ],
+            },
+            replay_payload={
+                "task_id": "t_recon",
+                "bundle": {
+                    "summary": "侦察进行中",
+                    "current_runtime": {"task_id": "t_recon", "status": "running"},
+                },
+            },
+        )
+    )
+
+    async def _fake_send_command(text: str, timeout: float = 30.0) -> str:
+        del timeout
+        assert text == "探索地图"
+        return "收到指令，已创建任务 t_recon"
+
+    suite.runner.send_command = _fake_send_command  # type: ignore[method-assign]
+
+    fake_now = {"value": 360.0}
+
+    def _fake_time() -> float:
+        return fake_now["value"]
+
+    async def _fake_sleep(delay: float) -> None:
+        fake_now["value"] += delay
+
+    monkeypatch.setattr(live_e2e.time, "time", _fake_time)
+    monkeypatch.setattr(live_e2e.asyncio, "sleep", _fake_sleep)
+
+    async def run() -> None:
+        result = await suite.test_phase_d_recon()
+        assert "catalog_status=running" in result
+        assert "replay_status=running" in result
 
     asyncio.run(run())
 
