@@ -983,6 +983,20 @@ def test_session_history_payload_includes_logged_adjutant_responses_and_notifica
         and entry.get("data", {}).get("data", {}).get("task_id") == "t_resp"
         for entry in payload["log_entries"]
     )
+    assert payload["player_visible_entries"] == [
+        {
+            "kind": "adjutant",
+            "timestamp": payload["player_visible_entries"][0]["timestamp"],
+            "task_id": "t_resp",
+            "content": "副官收到指令",
+        },
+        {
+            "kind": "notification",
+            "timestamp": payload["player_visible_entries"][1]["timestamp"],
+            "task_id": "t_resp",
+            "content": "任务已取消",
+        },
+    ]
     print("  PASS: session_history_payload_includes_logged_adjutant_responses_and_notifications")
 
 

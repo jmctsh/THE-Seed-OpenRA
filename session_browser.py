@@ -196,6 +196,61 @@ def _read_benchmark_records(path: Path) -> list[dict[str, Any]]:
     return [item for item in payload if isinstance(item, dict)]
 
 
+def _player_visible_entry(record: dict[str, Any]) -> Optional[dict[str, Any]]:
+    event = str(record.get("event") or "")
+    data = record.get("data") if isinstance(record.get("data"), dict) else {}
+    timestamp = float(record.get("timestamp", 0.0) or 0.0)
+    if event in {"adjutant_response_sent", "query_response_sent"}:
+        content = str(record.get("message") or data.get("answer") or data.get("response_text") or "")
+        if not content:
+            return None
+        return {
+            "kind": "adjutant",
+            "timestamp": timestamp,
+            "task_id": str(data.get("task_id") or ""),
+            "content": content,
+        }
+    if event == "player_notification_sent":
+        nested = data.get("data") if isinstance(data.get("data"), dict) else {}
+        content = str(record.get("message") or data.get("content") or "")
+        if not content:
+            return None
+        return {
+            "kind": "notification",
+            "timestamp": timestamp,
+            "task_id": str(data.get("task_id") or nested.get("task_id") or ""),
+            "content": content,
+        }
+    if event in {"task_info", "task_warning"}:
+        content = str(record.get("message") or data.get("content") or "")
+        if not content:
+            return None
+        return {
+            "kind": "task_message",
+            "timestamp": timestamp,
+            "task_id": str(data.get("task_id") or ""),
+            "content": content,
+            "message_type": event,
+        }
+    if event == "task_message_registered" and str(data.get("message_type") or "") in {"task_info", "task_warning"}:
+        content = str(data.get("content") or "")
+        if not content:
+            return None
+        return {
+            "kind": "task_message",
+            "timestamp": timestamp,
+            "task_id": str(data.get("task_id") or ""),
+            "content": content,
+            "message_type": str(data.get("message_type") or ""),
+        }
+    return None
+
+
+def _build_player_visible_entries(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entries = [entry for entry in (_player_visible_entry(record) for record in records) if entry is not None]
+    return entries[-80:]
+
+
 def build_session_history_payload(
     log_session_root: str,
     *,
@@ -209,6 +264,7 @@ def build_session_history_payload(
             "is_live": False,
             "log_entries": [],
             "benchmark_records": [],
+            "player_visible_entries": [],
         }
     current = current_session_dir()
     is_live = current is not None and resolved.resolve() == current.resolve()
@@ -223,6 +279,7 @@ def build_session_history_payload(
         "is_live": is_live,
         "log_entries": log_entries,
         "benchmark_records": benchmark_records,
+        "player_visible_entries": _build_player_visible_entries(log_entries),
     }
 
 
