@@ -718,6 +718,7 @@ def list_session_tasks(
                 summary = str(data.get("summary") or summary)
             elif event == "expert_signal" and str(data.get("signal_kind") or "") in {
                 "blocked",
+                "constraint_violated",
                 "risk_alert",
                 "resource_lost",
                 "progress",

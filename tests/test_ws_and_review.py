@@ -4598,6 +4598,7 @@ def test_session_clear_unregisters_runtime_bindings():
             self.job_id = job_id
             self.task_id = "t1"
             self.expert_type = "CombatExpert"
+            self.tick_interval = 1.0
             self.status = type("Status", (), {"value": "running"})()
             self.resources = []
             self.timestamp = 124.0
@@ -4651,33 +4652,18 @@ def test_session_clear_unregisters_runtime_bindings():
         def reset_snapshot(self):
             self.reset_calls += 1
 
-    class FakeGameLoop:
-        def __init__(self):
-            self.registered_agents: list[tuple[str, float]] = []
-            self.unregistered_agents: list[str] = []
-            self.registered_jobs: list[str] = []
-            self.unregistered_jobs: list[str] = []
+    class TrackingGameLoop(GameLoop):
+        def __init__(self, world_model, kernel):
+            super().__init__(world_model, kernel)
             self.reset_runtime_calls = 0
-
-        def register_agent(self, task_id, queue, review_interval=10.0, *, is_suspended=None):
-            del queue, is_suspended
-            self.registered_agents.append((task_id, review_interval))
-
-        def unregister_agent(self, task_id):
-            self.unregistered_agents.append(task_id)
-
-        def register_job(self, job):
-            self.registered_jobs.append(job.job_id)
-
-        def unregister_job(self, job_id):
-            self.unregistered_jobs.append(job_id)
 
         def reset_runtime_state(self):
             self.reset_runtime_calls += 1
+            super().reset_runtime_state()
 
     kernel = FakeKernel()
     world_model = FakeWorldModel()
-    game_loop = FakeGameLoop()
+    game_loop = TrackingGameLoop(world_model, kernel)
     bridge = RuntimeBridge(
         kernel=kernel,
         world_model=world_model,
@@ -4685,8 +4671,10 @@ def test_session_clear_unregisters_runtime_bindings():
     )
     bridge.sync_runtime()
 
-    assert game_loop.registered_agents == [("t1", 0.25)]
-    assert game_loop.registered_jobs == ["j1"]
+    assert set(game_loop._agents) == {"t1"}
+    assert set(game_loop._jobs) == {"j1"}
+    assert bridge._registered_agents == {"t1"}
+    assert bridge._registered_jobs == {"j1"}
 
     async def _noop_publish_dashboard():
         return None
@@ -4705,8 +4693,10 @@ def test_session_clear_unregisters_runtime_bindings():
     assert kernel.reset_calls == 1
     assert world_model.reset_calls == 1
     assert game_loop.reset_runtime_calls == 1
-    assert game_loop.unregistered_agents == ["t1"]
-    assert game_loop.unregistered_jobs == ["j1"]
+    assert game_loop._agents == {}
+    assert game_loop._jobs == {}
+    assert bridge._registered_agents == set()
+    assert bridge._registered_jobs == set()
     print("  PASS: session_clear_unregisters_runtime_bindings")
 
 
