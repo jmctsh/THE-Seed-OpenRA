@@ -47,14 +47,18 @@ def _normalize_live_world_health(current_world_health: Optional[dict[str, Any]])
     total_failures = int(current_world_health.get("total_failures", 0) or 0)
     failure_threshold = int(current_world_health.get("failure_threshold", 0) or 0)
     last_error = str(current_world_health.get("last_error") or "")
-    if not any([stale, consecutive_failures, total_failures, failure_threshold, last_error]):
+    last_error_detail = str(current_world_health.get("last_error_detail") or "")
+    if not any([stale, consecutive_failures, total_failures, failure_threshold, last_error, last_error_detail]):
         return {}
-    return {
+    normalized = {
         "stale_seen": stale or total_failures > 0 or consecutive_failures > 0 or bool(last_error),
         "ended_stale": stale,
         "failure_threshold": failure_threshold,
         "last_error": last_error,
     }
+    if last_error_detail:
+        normalized["last_error_detail"] = last_error_detail
+    return normalized
 
 
 def build_session_catalog_payload(
@@ -71,7 +75,12 @@ def build_session_catalog_payload(
             if not item.get("is_current"):
                 continue
             merged_world_health = dict(item.get("world_health") or {})
+            persisted_last_error = str(merged_world_health.get("last_error") or "")
             merged_world_health.update(live_world_health)
+            live_last_error = str(live_world_health.get("last_error") or "")
+            live_last_error_detail = str(live_world_health.get("last_error_detail") or "")
+            if live_last_error and live_last_error != persisted_last_error and not live_last_error_detail:
+                merged_world_health["last_error_detail"] = ""
             item["world_health"] = merged_world_health
             break
     return {

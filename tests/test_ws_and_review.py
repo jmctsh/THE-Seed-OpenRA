@@ -1004,7 +1004,7 @@ def test_sync_request_tolerates_runtime_fact_and_world_health_failures():
     assert session_catalog["sessions"] == []
 
 
-def test_build_session_catalog_preserves_persisted_world_health_counters_under_live_overlay():
+def test_build_session_catalog_clears_persisted_error_detail_when_live_overlay_changes_error():
     with tempfile.TemporaryDirectory() as tmpdir:
         session_dir = start_persistence_session(tmpdir, session_name="live-session")
         session_meta_path = session_dir / "session.json"
@@ -1042,6 +1042,43 @@ def test_build_session_catalog_preserves_persisted_world_health_counters_under_l
     assert world_health["stale_refreshes"] == 2
     assert world_health["max_consecutive_failures"] == 6
     assert world_health["failure_threshold"] == 3
+    assert world_health["last_error"] == "actors:COMMAND_EXECUTION_ERROR"
+    assert world_health["last_error_detail"] == ""
+
+
+def test_build_session_catalog_preserves_persisted_error_detail_when_live_overlay_keeps_same_error():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        session_dir = start_persistence_session(tmpdir, session_name="live-session")
+        session_meta_path = session_dir / "session.json"
+        session_meta = json.loads(session_meta_path.read_text(encoding="utf-8"))
+        session_meta["world_health"] = {
+            "stale_seen": True,
+            "ended_stale": False,
+            "stale_refreshes": 2,
+            "max_consecutive_failures": 6,
+            "failure_threshold": 3,
+            "last_error": "actors:COMMAND_EXECUTION_ERROR",
+            "last_error_detail": "Attempted to get trait from destroyed object",
+        }
+        session_meta_path.write_text(json.dumps(session_meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        try:
+            payload = build_session_catalog_payload(
+                tmpdir,
+                selected_session_dir=session_dir,
+                current_world_health={
+                    "stale": True,
+                    "consecutive_failures": 4,
+                    "total_failures": 9,
+                    "failure_threshold": 3,
+                    "last_error": "actors:COMMAND_EXECUTION_ERROR",
+                },
+            )
+        finally:
+            stop_persistence_session()
+
+    session_catalog = payload["sessions"]
+    assert len(session_catalog) == 1
+    world_health = session_catalog[0]["world_health"]
     assert world_health["last_error"] == "actors:COMMAND_EXECUTION_ERROR"
     assert world_health["last_error_detail"] == "Attempted to get trait from destroyed object"
 

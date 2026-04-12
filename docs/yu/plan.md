@@ -1,5 +1,5 @@
 ## Current
-Reservation replay ergonomics: the new lifecycle transition signals are now compactly readable in `DiagPanel` highlights without adding another bundle field. The next step is to reassess whether a dedicated `latest_reservation_transition` field is still necessary or whether the existing formatted highlights/timeline are already sufficient, then move on to the next yellow area outside reservation lifecycle if not.
+Runtime/test yellow-area selection: the reservation/session-health chain is no longer the main blocker. The next slice should come from the broader remaining yellow areas, with preference for a real runtime/test contract gap over more diagnostics polish.
 
 ## Queue
 Test-stack hardening from the 2026-04-12 audit: the live `command_submit` round-trip smoke, the live `session_clear` and `game_restart` mutating-control smokes, the true `main.py` `__main__` / shutdown-wrapper coverage, and the frontend selector fallback/merge-precedence blind spots are now closed. Remaining test work is broader regression coverage rather than a known high-signal false-green gap.
