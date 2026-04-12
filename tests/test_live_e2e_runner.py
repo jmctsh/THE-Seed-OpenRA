@@ -597,6 +597,40 @@ def test_live_suite_phase_c_produce_infantry_fails_on_terminal_task_before_count
     asyncio.run(run())
 
 
+def test_live_suite_phase_b_deploy_mcv_fails_on_terminal_task_before_construction_yard_appears(monkeypatch) -> None:
+    monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
+    suite = live_e2e.LiveTestSuite(
+        _StructureSuiteRunner(
+            counts=[0, 1, 0],
+            task={"task_id": "t_build", "status": "succeeded"},
+        )
+    )
+
+    async def _fake_send_command(text: str, timeout: float = 30.0) -> str:
+        del timeout
+        assert text == "部署基地车"
+        return "收到指令，已创建任务 t_build"
+
+    suite.runner.send_command = _fake_send_command  # type: ignore[method-assign]
+
+    fake_now = {"value": 250.0}
+
+    def _fake_time() -> float:
+        return fake_now["value"]
+
+    async def _fake_sleep(delay: float) -> None:
+        fake_now["value"] += delay
+
+    monkeypatch.setattr(live_e2e.time, "time", _fake_time)
+    monkeypatch.setattr(live_e2e.asyncio, "sleep", _fake_sleep)
+
+    async def run() -> None:
+        with pytest.raises(RuntimeError, match="before construction yard count increased by 1"):
+            await suite.test_phase_b_deploy_mcv()
+
+    asyncio.run(run())
+
+
 def test_live_suite_phase_e_query_requires_pure_query_contract(monkeypatch) -> None:
     monkeypatch.setattr(live_e2e, "GameAPI", _FakeGameAPI)
     suite = live_e2e.LiveTestSuite(

@@ -543,15 +543,14 @@ class LiveTestSuite:
         if before > 0 and before_mcv == 0:
             return "skip: construction yard already exists and no undeployed mcv is present"
         reply = await self.runner.send_command("部署基地车")
-        await self._require_task_surface(reply)
-        ok = await self.runner.wait_for_game_state(
-            lambda actors: self.runner.count_matching_actors(["建造厂", "construction yard"], faction="己方") > before,
+        return await self._wait_for_actor_count_increase_result(
+            expected=["建造厂", "construction yard"],
+            before=before,
+            reply=reply,
             timeout=90.0,
-            faction="己方",
+            min_delta=1,
+            label="construction yard count",
         )
-        if not ok:
-            raise RuntimeError(f"construction yard did not appear; reply={reply}; {self.runner.recent_debug_context()}")
-        return reply
 
     async def test_phase_b_build_power(self) -> str:
         before = self.runner.count_matching_actors("powr", faction="己方")
