@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional
 
 import benchmark
 
@@ -91,12 +91,29 @@ class DashboardPublisher:
         if self.ws_server is None or not self.ws_server.is_running:
             return
         async with self.publish_lock:
-            await self.broadcast_current_dashboard()
-            await self.publish_task_updates()
-            await self.publish_task_messages()
-            await self.publish_notifications()
-            await self.publish_logs()
-            await self.publish_benchmarks()
+            await self._run_publish_stage("dashboard", self.broadcast_current_dashboard)
+            await self._run_publish_stage("task_updates", self.publish_task_updates)
+            await self._run_publish_stage("task_messages", self.publish_task_messages)
+            await self._run_publish_stage("notifications", self.publish_notifications)
+            await self._run_publish_stage("logs", self.publish_logs)
+            await self._run_publish_stage("benchmarks", self.publish_benchmarks)
+
+    async def _run_publish_stage(
+        self,
+        stage: str,
+        publish: Callable[[], Awaitable[None]],
+    ) -> None:
+        try:
+            await publish()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            slog.error(
+                "Dashboard publish stage failed",
+                event="dashboard_publish_stage_failed",
+                stage=stage,
+                error=repr(exc),
+            )
 
     async def publish_task_updates(self) -> None:
         assert self.ws_server is not None

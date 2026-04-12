@@ -1948,7 +1948,8 @@ def test_dashboard_publisher_schedule_publish_logs_background_failures_without_u
             assert background_errors == [], background_errors
             assert logged_errors == [
                 {
-                    "event": "dashboard_publish_task_failed",
+                    "event": "dashboard_publish_stage_failed",
+                    "stage": "task_messages",
                     "error": "RuntimeError('boom')",
                 }
             ]
@@ -1962,6 +1963,74 @@ def test_dashboard_publisher_schedule_publish_logs_background_failures_without_u
 
     asyncio.run(run())
     print("  PASS: dashboard_publisher_schedule_publish_logs_background_failures_without_unhandled_task")
+
+
+def test_dashboard_publisher_publish_all_continues_after_stage_failure(monkeypatch):
+    logged_errors: list[dict[str, Any]] = []
+
+    class FakeLogger:
+        def error(self, _message, **kwargs):
+            logged_errors.append(kwargs)
+
+    monkeypatch.setattr(dashboard_publish_module, "slog", FakeLogger())
+
+    class FakeWS:
+        def __init__(self):
+            self.is_running = True
+
+    publisher = dashboard_publish_module.DashboardPublisher(
+        kernel=object(),
+        ws_server=FakeWS(),
+        dashboard_payload_builder=lambda: {},
+        task_payload_builder=lambda *args, **kwargs: {},
+    )
+
+    visited: list[str] = []
+
+    async def _dashboard():
+        visited.append("dashboard")
+
+    async def _task_updates():
+        visited.append("task_updates")
+
+    async def _task_messages():
+        visited.append("task_messages")
+        raise RuntimeError("boom")
+
+    async def _notifications():
+        visited.append("notifications")
+
+    async def _logs():
+        visited.append("logs")
+
+    async def _benchmarks():
+        visited.append("benchmarks")
+
+    publisher.broadcast_current_dashboard = _dashboard
+    publisher.publish_task_updates = _task_updates
+    publisher.publish_task_messages = _task_messages
+    publisher.publish_notifications = _notifications
+    publisher.publish_logs = _logs
+    publisher.publish_benchmarks = _benchmarks
+
+    asyncio.run(publisher.publish_all())
+
+    assert visited == [
+        "dashboard",
+        "task_updates",
+        "task_messages",
+        "notifications",
+        "logs",
+        "benchmarks",
+    ]
+    assert logged_errors == [
+        {
+            "event": "dashboard_publish_stage_failed",
+            "stage": "task_messages",
+            "error": "RuntimeError('boom')",
+        }
+    ]
+    print("  PASS: dashboard_publisher_publish_all_continues_after_stage_failure")
 
 
 def test_task_replay_request_returns_persisted_task_log():
