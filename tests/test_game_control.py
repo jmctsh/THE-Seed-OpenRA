@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import runpy
 import socket
 import sys
 import tempfile
@@ -542,6 +543,168 @@ def test_run_runtime_export_failure_still_stops_persistence_session(monkeypatch:
         assert latest_session is not None
         session_meta = json.loads((latest_session / "session.json").read_text(encoding="utf-8"))
         assert session_meta["ended_at"]
+
+
+def test_run_runtime_signal_handler_requests_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _SignalRuntime:
+        created: list["_SignalRuntime"] = []
+
+        def __init__(self, *, config: RuntimeConfig) -> None:
+            self.config = config
+            self.request_shutdown_calls = 0
+            self.stop_calls = 0
+            self._shutdown_event = asyncio.Event()
+            type(self).created.append(self)
+
+        async def start(self) -> None:
+            return None
+
+        async def wait_until_stopped(self) -> None:
+            await self._shutdown_event.wait()
+
+        def request_shutdown(self) -> None:
+            self.request_shutdown_calls += 1
+            self._shutdown_event.set()
+
+        async def stop(self) -> None:
+            self.stop_calls += 1
+            self._shutdown_event.set()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_root = Path(tmpdir) / "logs"
+        cfg = RuntimeConfig(
+            enable_ws=False,
+            verify_game_api=True,
+            llm_provider="mock",
+            llm_model="mock",
+            log_session_root=str(log_root),
+            benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+            benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+            log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+        )
+        monkeypatch.setattr(main_module.game_control.GameAPI, "is_server_running", staticmethod(lambda *args, **kwargs: True))
+        monkeypatch.setattr(main_module, "ApplicationRuntime", _SignalRuntime)
+
+        async def run() -> int:
+            loop = asyncio.get_running_loop()
+            registered: dict[Any, Any] = {}
+
+            def fake_add_signal_handler(sig, callback) -> None:
+                registered[sig] = callback
+                if len(registered) == 2:
+                    loop.call_soon(callback)
+
+            monkeypatch.setattr(loop, "add_signal_handler", fake_add_signal_handler)
+            return await main_module.run_runtime(cfg)
+
+        exit_code = asyncio.run(run())
+
+        runtime = _SignalRuntime.created[-1]
+        assert exit_code == 0
+        assert runtime.request_shutdown_calls == 1
+        assert runtime.stop_calls == 0
+
+
+def test_run_runtime_signal_fallback_requests_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _SignalRuntime:
+        created: list["_SignalRuntime"] = []
+
+        def __init__(self, *, config: RuntimeConfig) -> None:
+            self.config = config
+            self.request_shutdown_calls = 0
+            self.stop_calls = 0
+            self._shutdown_event = asyncio.Event()
+            type(self).created.append(self)
+
+        async def start(self) -> None:
+            return None
+
+        async def wait_until_stopped(self) -> None:
+            await self._shutdown_event.wait()
+
+        def request_shutdown(self) -> None:
+            self.request_shutdown_calls += 1
+            self._shutdown_event.set()
+
+        async def stop(self) -> None:
+            self.stop_calls += 1
+            self._shutdown_event.set()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_root = Path(tmpdir) / "logs"
+        cfg = RuntimeConfig(
+            enable_ws=False,
+            verify_game_api=True,
+            llm_provider="mock",
+            llm_model="mock",
+            log_session_root=str(log_root),
+            benchmark_records_path=str(Path(tmpdir) / "benchmark_records.json"),
+            benchmark_summary_path=str(Path(tmpdir) / "benchmark_summary.json"),
+            log_export_path=str(Path(tmpdir) / "runtime_logs.json"),
+        )
+        monkeypatch.setattr(main_module.game_control.GameAPI, "is_server_running", staticmethod(lambda *args, **kwargs: True))
+        monkeypatch.setattr(main_module, "ApplicationRuntime", _SignalRuntime)
+
+        async def run() -> int:
+            loop = asyncio.get_running_loop()
+            registered_fallbacks: dict[Any, Any] = {}
+
+            def fake_add_signal_handler(sig, callback) -> None:
+                del sig, callback
+                raise NotImplementedError()
+
+            def fake_signal(sig, handler):
+                registered_fallbacks[sig] = handler
+                if len(registered_fallbacks) == 2:
+                    loop.call_soon(handler, sig, None)
+                return None
+
+            monkeypatch.setattr(loop, "add_signal_handler", fake_add_signal_handler)
+            monkeypatch.setattr(main_module.signal, "signal", fake_signal)
+            return await main_module.run_runtime(cfg)
+
+        exit_code = asyncio.run(run())
+
+        runtime = _SignalRuntime.created[-1]
+        assert exit_code == 0
+        assert runtime.request_shutdown_calls == 1
+        assert runtime.stop_calls == 0
+
+
+def test_main_py_dunder_main_raises_system_exit(monkeypatch: pytest.MonkeyPatch) -> None:
+    observed: dict[str, Any] = {}
+
+    def fake_asyncio_run(coro):
+        observed["called"] = observed.get("called", 0) + 1
+        observed["coro_name"] = getattr(getattr(coro, "cr_code", None), "co_name", type(coro).__name__)
+        coro.close()
+        return 123
+
+    monkeypatch.setattr(asyncio, "run", fake_asyncio_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            str(Path(main_module.__file__)),
+            "--llm-provider",
+            "mock",
+            "--llm-model",
+            "mock",
+            "--adjutant-llm-provider",
+            "mock",
+            "--adjutant-llm-model",
+            "mock",
+            "--disable-ws",
+            "--skip-game-api-check",
+        ],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        runpy.run_path(str(Path(main_module.__file__)), run_name="__main__")
+
+    assert exc_info.value.code == 123
+    assert observed["called"] == 1
+    assert observed["coro_name"] == "run_runtime"
 
 
 @pytest.mark.contract
