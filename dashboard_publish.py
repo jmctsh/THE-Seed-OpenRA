@@ -260,6 +260,11 @@ class DashboardPublisher:
             return
         await self.ws_server.send_session_task_catalog_to_client(client_id, payload)
 
+    async def send_session_history_to_client(self, client_id: str, payload: dict[str, Any]) -> None:
+        if self.ws_server is None or not self.ws_server.is_running:
+            return
+        await self.ws_server.send_session_history_to_client(client_id, payload)
+
     async def send_task_replay_to_client(self, client_id: str, payload: dict[str, Any]) -> None:
         if self.ws_server is None or not self.ws_server.is_running:
             return

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import json
 from pathlib import Path
 from typing import Any, Optional
 
+import benchmark
 from logging_system import (
     current_session_dir,
     latest_session_dir,
     list_persistence_sessions,
     list_session_tasks,
+    records_from,
     read_persistence_session,
+    read_session_log_records,
     read_task_replay_records,
 )
 from logging_system.task_rollup import summarize_task_rollup
@@ -180,6 +184,50 @@ def build_session_task_catalog_payload(
         "session_dir": str(resolved) if resolved is not None else None,
         "tasks": list_session_tasks(resolved, limit=300) if resolved is not None else [],
     }
+
+
+def _read_benchmark_records(path: Path) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, list):
+        return []
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def build_session_history_payload(
+    log_session_root: str,
+    *,
+    session_dir: Optional[Path],
+) -> dict[str, Any]:
+    """Assemble a session-scoped diagnostics history payload."""
+    resolved = session_dir or default_session_dir(log_session_root)
+    if resolved is None:
+        return {
+            "session_dir": None,
+            "is_live": False,
+            "log_entries": [],
+            "benchmark_records": [],
+        }
+    current = current_session_dir()
+    is_live = current is not None and resolved.resolve() == current.resolve()
+    if is_live:
+        log_entries = [record.to_dict() for record in _live_log_records()]
+        benchmark_records = [record.to_dict() for record in benchmark.records_from(0)]
+    else:
+        log_entries = read_session_log_records(resolved, limit=500)
+        benchmark_records = _read_benchmark_records(resolved / "benchmark_records.json")
+    return {
+        "session_dir": str(resolved),
+        "is_live": is_live,
+        "log_entries": log_entries,
+        "benchmark_records": benchmark_records,
+    }
+
+
+def _live_log_records() -> list[Any]:
+    return [record for record in records_from(0) if record.component != "benchmark"][-500:]
 
 
 def build_task_replay_payload(

@@ -1276,6 +1276,86 @@ describe('DiagPanel', () => {
     expect(wrapper.text()).toContain("error=RuntimeError('publish-boom')")
   })
 
+  it('replaces pane history from session_history and ignores live log append while browsing a historical session', async () => {
+    const bus = createBus()
+    const send = vi.fn()
+    const wrapper = mount(DiagPanel, {
+      props: {
+        send,
+        on: bus.on,
+      },
+    })
+
+    bus.emit('session_catalog', {
+      sessions: [
+        {
+          session_dir: '/tmp/live-session',
+          session_name: 'live-session',
+          is_current: true,
+          is_latest: true,
+          task_count: 1,
+          record_count: 10,
+        },
+        {
+          session_dir: '/tmp/old-session',
+          session_name: 'old-session',
+          is_current: false,
+          is_latest: false,
+          task_count: 1,
+          record_count: 8,
+        },
+      ],
+      selected_session_dir: '/tmp/live-session',
+    })
+    await wrapper.vm.$nextTick()
+
+    await wrapper.find('#session-select').setValue('/tmp/old-session')
+    await wrapper.vm.$nextTick()
+
+    expect(send).toHaveBeenCalledWith('session_select', { session_dir: '/tmp/old-session' })
+
+    bus.emit('session_history', {
+      session_dir: '/tmp/old-session',
+      is_live: false,
+      log_entries: [
+        {
+          timestamp: 100,
+          component: 'kernel',
+          level: 'INFO',
+          message: '历史日志',
+          event: 'task_info',
+          data: { task_id: 't_hist' },
+        },
+      ],
+      benchmark_records: [
+        {
+          tag: 'tool_exec',
+          name: 'history_bench',
+          started_at: '2026-04-12T00:00:00+00:00',
+          ended_at: '2026-04-12T00:00:01+00:00',
+          duration_ms: 1,
+          metadata: {},
+        },
+      ],
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('历史日志')
+    expect(wrapper.text()).toContain('tool_exec')
+
+    bus.emit('log_entry', {
+      timestamp: 200,
+      component: 'kernel',
+      level: 'INFO',
+      message: '实时日志',
+      event: 'task_info',
+      data: { task_id: 't_live' },
+    })
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('实时日志')
+  })
+
   it('renders compact task rollup hints in session selector options', async () => {
     const bus = createBus()
     const wrapper = mount(DiagPanel, {

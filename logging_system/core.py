@@ -984,6 +984,22 @@ def list_session_tasks(
     return items
 
 
+def read_session_log_records(
+    session_dir: Union[str, Path],
+    *,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """Read persisted session-wide log records from ``all.jsonl``."""
+    base = Path(session_dir)
+    log_path = base / "all.jsonl"
+    if not log_path.exists():
+        return []
+    records = list(_iter_jsonl_dicts(log_path))
+    if limit > 0:
+        return records[-limit:]
+    return records
+
+
 def read_task_replay_records(
     task_id: str,
     *,

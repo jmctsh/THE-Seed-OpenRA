@@ -744,6 +744,9 @@ def test_diagnostics_sync_request_refreshes_current_state_without_replaying_gene
         async def send_session_task_catalog_to_client(self, client_id, payload):
             self.sent.append(("session_task_catalog", {"client_id": client_id, "payload": payload}))
 
+        async def send_session_history_to_client(self, client_id, payload):
+            self.sent.append(("session_history", {"client_id": client_id, "payload": payload}))
+
         async def send_to_client(self, client_id, msg_type, data):
             self.sent.append((msg_type, {"client_id": client_id, "data": data}))
 
@@ -766,14 +769,24 @@ def test_diagnostics_sync_request_refreshes_current_state_without_replaying_gene
     with benchmark.span("tool_exec", name="history_bench"):
         pass
 
-    async def run():
-        await bridge.on_diagnostics_sync_request("client_diag")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bridge.log_session_root = tmpdir
+        start_persistence_session(tmpdir, session_name="diag-sync")
+        try:
+            async def run():
+                await bridge.on_diagnostics_sync_request("client_diag")
 
-    asyncio.run(run())
+            asyncio.run(run())
+        finally:
+            stop_persistence_session()
 
     sent_types = [msg_type for msg_type, _ in ws.sent]
-    assert sent_types[:4] == ["world_snapshot", "task_list", "session_catalog", "session_task_catalog"]
+    assert sent_types[:5] == ["world_snapshot", "task_list", "session_catalog", "session_task_catalog", "session_history"]
     assert sent_types.count("world_snapshot") == 1
+    history_payload = next(item for item in ws.sent if item[0] == "session_history")[1]["payload"]
+    assert history_payload["is_live"] is True
+    assert [entry["message"] for entry in history_payload["log_entries"]] == ["历史日志"]
+    assert [entry["name"] for entry in history_payload["benchmark_records"]] == ["history_bench"]
     assert "log_entry" not in sent_types
     assert "benchmark" not in sent_types
     assert "task_message" not in sent_types
@@ -3624,6 +3637,9 @@ def test_session_select_returns_catalog_and_task_catalog():
         async def send_session_task_catalog_to_client(self, client_id, payload):
             self.sent.append(("session_task_catalog", {"client_id": client_id, "payload": payload}))
 
+        async def send_session_history_to_client(self, client_id, payload):
+            self.sent.append(("session_history", {"client_id": client_id, "payload": payload}))
+
     import tempfile
     from pathlib import Path
 
@@ -3655,7 +3671,40 @@ def test_session_select_returns_catalog_and_task_catalog():
                 + "\n",
                 encoding="utf-8",
             )
+            (Path(session_dir) / "all.jsonl").write_text(
+                json.dumps(
+                    {
+                        "timestamp": 11.0,
+                        "component": "kernel",
+                        "level": "INFO",
+                        "message": "历史日志",
+                        "event": "task_info",
+                        "data": {"task_id": "t_select"},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            (Path(session_dir) / "benchmark_records.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "tag": "tool_exec",
+                            "name": "history_bench",
+                            "started_at": "2026-04-12T00:00:00+00:00",
+                            "ended_at": "2026-04-12T00:00:01+00:00",
+                            "duration_ms": 1.0,
+                            "metadata": {},
+                        }
+                    ],
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
             bridge.log_session_root = tmpdir
+            stop_persistence_session()
 
             async def run():
                 await bridge.on_session_select(str(session_dir), "client_9")
@@ -3669,6 +3718,11 @@ def test_session_select_returns_catalog_and_task_catalog():
     assert ws.sent[1][0] == "session_task_catalog"
     assert ws.sent[1][1]["payload"]["tasks"][0]["task_id"] == "t_select"
     assert ws.sent[1][1]["payload"]["tasks"][0]["raw_text"] == "探索地图"
+    assert ws.sent[2][0] == "session_history"
+    assert ws.sent[2][1]["payload"]["session_dir"] == str(session_dir)
+    assert ws.sent[2][1]["payload"]["is_live"] is False
+    assert [entry["message"] for entry in ws.sent[2][1]["payload"]["log_entries"]] == ["历史日志"]
+    assert [entry["name"] for entry in ws.sent[2][1]["payload"]["benchmark_records"]] == ["history_bench"]
     print("  PASS: session_select_returns_catalog_and_task_catalog")
 
 

@@ -58,6 +58,7 @@ from models import PlayerResponse, TaskMessage, TaskMessageType, TaskStatus
 from openra_api.game_api import GameAPI
 from queue_manager import QueueManager, QueueManagerConfig
 from session_browser import (
+    build_session_history_payload,
     build_session_catalog_payload,
     build_session_task_catalog_payload,
     build_task_replay_payload,
@@ -394,6 +395,7 @@ class RuntimeBridge(InboundHandler):
     async def on_diagnostics_sync_request(self, client_id: str) -> None:
         """Diagnostics opened on a warm client — refresh state without replaying chat/task history."""
         await self._send_sync_baseline(client_id, include_history=False)
+        await self._send_session_history_to_client(client_id, session_dir=default_session_dir(self.log_session_root))
 
     async def _send_sync_baseline(self, client_id: str, *, include_history: bool) -> None:
         self.sync_runtime()
@@ -454,6 +456,7 @@ class RuntimeBridge(InboundHandler):
         )
         await self._send_session_catalog_to_client(client_id, selected_session_dir=selected_session_dir)
         await self._send_session_tasks_to_client(client_id, session_dir=selected_session_dir)
+        await self._send_session_history_to_client(client_id, session_dir=selected_session_dir)
 
     async def on_task_replay_request(
         self,
@@ -567,6 +570,20 @@ class RuntimeBridge(InboundHandler):
         await self._publisher.send_session_task_catalog_to_client(
             client_id,
             build_session_task_catalog_payload(
+                self.log_session_root,
+                session_dir=session_dir,
+            ),
+        )
+
+    async def _send_session_history_to_client(
+        self,
+        client_id: str,
+        *,
+        session_dir: Optional[Path],
+    ) -> None:
+        await self._publisher.send_session_history_to_client(
+            client_id,
+            build_session_history_payload(
                 self.log_session_root,
                 session_dir=session_dir,
             ),

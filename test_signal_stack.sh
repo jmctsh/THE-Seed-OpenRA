@@ -22,14 +22,16 @@ python3 -m pytest tests/test_ws_and_review.py -q -k \
   "sync_request_overlays_live_world_health_into_session_catalog \
 or dashboard_publish_fault_is_reflected_in_world_snapshot_runtime_fault_state \
 or task_replay_request_returns_persisted_task_log \
-or task_replay_request_prefers_live_truth_for_active_task_bundle"
+or task_replay_request_prefers_live_truth_for_active_task_bundle \
+or diagnostics_sync_request_refreshes_current_state_without_replaying_generic_history \
+or session_select_returns_catalog_and_task_catalog"
 
 echo
 echo "==> Operator surface hints"
 (
   cd web-console-v2
   npm test -- --run src/components/__tests__/DiagPanel.spec.js -t \
-    "renders selected session world health summary from session_catalog|renders stale and runtime-fault scan hints directly in session selector options|renders session world health context inside replay diagnostics|renders session runtime fault context inside replay diagnostics|renders live unit pipeline focus detail inside the live runtime block|dispatches diagnostics focus event from live unit pipeline focus action"
+    "renders selected session world health summary from session_catalog|renders stale and runtime-fault scan hints directly in session selector options|renders session world health context inside replay diagnostics|renders session runtime fault context inside replay diagnostics|renders live unit pipeline focus detail inside the live runtime block|dispatches diagnostics focus event from live unit pipeline focus action|replaces pane history from session_history and ignores live log append while browsing a historical session"
   npm test -- --run src/components/__tests__/OpsPanel.spec.js -t \
     "aggregates stale, runtime fault, capability truth, and pipeline blockage in the primary status"
 )
@@ -62,7 +64,7 @@ echo "  - live degradation truth parity across snapshot/catalog/replay"
 echo "  - deterministic + NLU-routed command_submit / question_reply / command_cancel control routes"
 echo "  - live world-health + runtime-fault propagation"
 echo "  - replay payload session-context truth"
-echo "  - diagnostics session discovery / replay visibility"
+echo "  - diagnostics session discovery / replay visibility / session-scoped history truth"
 echo "  - live unit-pipeline blocking-task visibility and focus jump"
 echo "  - primary ops status aggregation across stale/fault/truth/pipeline states"
 echo "  - frontend websocket transport contract"

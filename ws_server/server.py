@@ -4,7 +4,8 @@ Inbound: command_submit, command_cancel, mode_switch, question_reply, game_resta
          session_clear, session_select, task_replay_request, sync_request,
          diagnostics_sync_request
 Outbound: world_snapshot, task_update, task_list, log_entry, player_notification,
-          query_response, session_cleared, session_catalog, session_task_catalog
+          query_response, session_cleared, session_catalog, session_task_catalog,
+          session_history
 
 All payloads carry timestamp. JSON serialization. Built on aiohttp.
 """
@@ -348,6 +349,9 @@ class WSServer:
 
     async def send_session_task_catalog_to_client(self, client_id: str, payload: dict[str, Any]) -> None:
         await self.send_to_client(client_id, "session_task_catalog", payload)
+
+    async def send_session_history_to_client(self, client_id: str, payload: dict[str, Any]) -> None:
+        await self.send_to_client(client_id, "session_history", payload)
 
     async def send_world_snapshot(self, snapshot: dict[str, Any]) -> None:
         now = time.time()

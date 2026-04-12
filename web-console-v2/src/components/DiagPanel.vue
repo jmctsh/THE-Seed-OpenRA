@@ -1299,6 +1299,30 @@ function addLog(entry) {
   })
 }
 
+function normalizeLogEntry(entry) {
+  const message = replaceTaskIdsWithLabels(entry?.message || JSON.stringify(entry))
+  return {
+    component: entry?.component || entry?.tag || 'log',
+    level: entry?.level || 'INFO',
+    tag: entry?.event || entry?.tag || entry?.component || 'log',
+    message,
+    timestamp: entry?.timestamp || Date.now() / 1000,
+  }
+}
+
+function replaceSessionHistory(payload = {}) {
+  const rawLogEntries = Array.isArray(payload.log_entries) ? payload.log_entries : []
+  logEntries.value = rawLogEntries.map((entry) => normalizeLogEntry(entry)).slice(-500)
+  traceEntries.value = rawLogEntries
+    .map((entry) => traceEntryFromLogRecord(entry))
+    .filter((entry) => entry.taskId || entry.jobId)
+    .slice(-800)
+  replaceBenchmarkSnapshot(Array.isArray(payload.benchmark_records) ? payload.benchmark_records : [])
+  nextTick(() => {
+    if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
+  })
+}
+
 function appendBenchmarkRecords(records) {
   if (!Array.isArray(records)) return
   for (const record of records) {
@@ -1335,15 +1359,9 @@ let focusTaskHandler = null
 
 if (props.on) {
   offHandlers.push(props.on('log_entry', (msg) => {
+    if (!isSelectedSessionLive()) return
     const entry = msg.data || msg
-    const message = replaceTaskIdsWithLabels(entry.message || JSON.stringify(entry))
-    addLog({
-      component: entry.component || entry.tag || 'log',
-      level: entry.level || 'INFO',
-      tag: entry.event || entry.tag || entry.component || 'log',
-      message,
-      timestamp: entry.timestamp || msg.timestamp,
-    })
+    addLog(normalizeLogEntry(entry))
     const traceEntry = traceEntryFromLogRecord(entry)
     if (traceEntry.taskId || traceEntry.jobId) {
       addTraceEntry(traceEntry)
@@ -1406,9 +1424,10 @@ if (props.on) {
       lastWorldTruthSignature = nextWorldTruthSignature
       scheduleReplayRefresh(selectedTaskId.value)
     }
-    if (msg.data?.benchmark) replaceBenchmarkSnapshot(msg.data.benchmark)
+    if (isSelectedSessionLive() && msg.data?.benchmark) replaceBenchmarkSnapshot(msg.data.benchmark)
   }))
   offHandlers.push(props.on('benchmark', (msg) => {
+    if (!isSelectedSessionLive()) return
     if (!msg.data?.records) return
     if (msg.data?.replace) replaceBenchmarkSnapshot(msg.data.records)
     else appendBenchmarkRecords(msg.data.records)
@@ -1423,6 +1442,7 @@ if (props.on) {
     if (!task.task_id) return
     mergeLiveTask(task)
     registerTaskLabel(task.task_id)
+    if (!isSelectedSessionLive()) return
     addTraceEntry({
       timestamp: task.timestamp || msg.timestamp,
       source: 'task',
@@ -1442,6 +1462,7 @@ if (props.on) {
     }
   }))
   offHandlers.push(props.on('query_response', (msg) => {
+    if (!isSelectedSessionLive()) return
     const taskId = msg.data?.task_id || null
     if (!taskId) return
     registerTaskLabel(taskId)
@@ -1457,6 +1478,7 @@ if (props.on) {
     scheduleReplayRefresh(taskId)
   }))
   offHandlers.push(props.on('player_notification', (msg) => {
+    if (!isSelectedSessionLive()) return
     const taskId = msg.data?.task_id || msg.data?.data?.task_id || null
     if (!taskId) return
     registerTaskLabel(taskId)
@@ -1472,6 +1494,7 @@ if (props.on) {
     scheduleReplayRefresh(taskId)
   }))
   offHandlers.push(props.on('task_message', (msg) => {
+    if (!isSelectedSessionLive()) return
     const payload = msg.data || {}
     const taskId = payload.task_id || null
     if (!taskId) return
@@ -1518,6 +1541,13 @@ if (props.on) {
     const exists = activeTaskCatalog.value.some((task) => task.task_id === selectedTaskId.value)
     if (!exists) selectedTaskId.value = 'ALL'
     prefetchRecentReplays(activeTaskCatalog.value)
+  }))
+  offHandlers.push(props.on('session_history', (msg) => {
+    const payload = msg.data || {}
+    const targetSession = String(payload.session_dir || '')
+    const selected = selectedSessionDir.value || currentSessionDir.value || ''
+    if (selected && targetSession && selected !== targetSession) return
+    replaceSessionHistory(payload)
   }))
   offHandlers.push(props.on('session_cleared', () => {
     clearDiagnostics()
