@@ -322,6 +322,7 @@ class MockWorldModel:
                 "pending_request_count": 2,
                 "bootstrapping_request_count": 1,
                 "reservation_count": 1,
+                "unit_pipeline_preview": "重坦 × 2 · 待分发",
                 "stale": False,
                 "capability_status": capability_status,
                 "timestamp": time.time(),
@@ -2659,6 +2660,103 @@ def test_build_context_includes_coordinator_snapshot_and_task_status_lines():
     assert "group=2" in active_by_label["002"]["status_line"]
     assert "重坦×2" in active_by_label["002"]["status_line"]
     print("  PASS: build_context_includes_coordinator_snapshot_and_task_status_lines")
+
+
+def test_build_context_surfaces_unit_pipeline_focus_in_coordinator_alerts():
+    kernel = MockKernel()
+    cap_task = kernel.create_task("发展经济", "managed", 80)
+    cap_task.task_id = "t_cap"
+    cap_task.label = "001"
+    cap_task.is_capability = True
+    wait_task = kernel.create_task("前线补坦克", "managed", 60)
+    wait_task.task_id = "t_wait"
+    wait_task.label = "002"
+    kernel._runtime_state_override = RuntimeStateSnapshot(
+        active_tasks={
+            "t_cap": {
+                "raw_text": "发展经济",
+                "label": "001",
+                "status": "running",
+                "is_capability": True,
+                "active_group_size": 0,
+            },
+            "t_wait": {
+                "raw_text": "前线补坦克",
+                "label": "002",
+                "status": "running",
+                "is_capability": False,
+                "active_group_size": 0,
+            },
+        },
+        active_jobs={},
+        resource_bindings={},
+        constraints=[],
+        unfulfilled_requests=[
+            {
+                "request_id": "req_1",
+                "reservation_id": "res_1",
+                "task_id": "t_wait",
+                "task_label": "002",
+                "unit_type": "3tnk",
+                "count": 2,
+                "fulfilled": 0,
+                "reason": "missing_prerequisite",
+                "prerequisites": ["weap"],
+            }
+        ],
+        capability_status=CapabilityStatusSnapshot(
+            task_id="t_cap",
+            task_label="001",
+            status="running",
+            phase="dispatch",
+            blocker="missing_prerequisite",
+            active_job_types=["EconomyExpert"],
+            pending_request_count=1,
+            dispatch_request_count=1,
+            blocking_request_count=1,
+            prerequisite_gap_count=1,
+            recent_directives=["发展经济"],
+        ),
+        unit_reservations=[
+            {
+                "reservation_id": "res_1",
+                "request_id": "req_1",
+                "task_id": "t_wait",
+                "task_label": "002",
+                "unit_type": "3tnk",
+                "count": 2,
+                "assigned_count": 0,
+                "remaining_count": 2,
+                "status": "pending",
+                "reason": "missing_prerequisite",
+                "prerequisites": ["weap"],
+            }
+        ],
+        timestamp=time.time(),
+    ).to_dict()
+
+    adjutant = Adjutant(llm=MockProvider(), kernel=kernel, world_model=MockWorldModel())
+
+    ctx = adjutant._build_context("继续发展")
+
+    focus = ctx.coordinator_snapshot["unit_pipeline_focus"]
+    assert focus["task_id"] == "t_wait"
+    assert focus["task_label"] == "002"
+    assert focus["reason"] == "missing_prerequisite"
+    assert focus["request_count"] == 1
+    assert focus["reservation_count"] == 1
+    assert "战车工厂" in focus["detail"]
+
+    reservation_alert = next(
+        alert
+        for alert in ctx.coordinator_snapshot["alerts"]
+        if alert.get("code") == "reservation_waiting"
+    )
+    assert "#002" in reservation_alert["text"]
+    assert "战车工厂" in reservation_alert["text"]
+    assert "补位" in reservation_alert["text"]
+    assert "战车工厂" in ctx.coordinator_snapshot["status_line"]
+    print("  PASS: build_context_surfaces_unit_pipeline_focus_in_coordinator_alerts")
 
 
 def test_classify_input_sends_recent_completed_to_llm():

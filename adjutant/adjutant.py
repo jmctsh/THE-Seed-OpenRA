@@ -48,6 +48,7 @@ from runtime_views import (
     normalize_base_progression,
 )
 from task_triage import (
+    build_runtime_unit_pipeline_focus,
     build_runtime_unit_pipeline_preview,
     build_task_triage_from_artifacts,
     capability_blocker_status_text,
@@ -950,6 +951,7 @@ class Adjutant:
         }
         base_readiness = self._coordinator_base_readiness(base_state)
         info_experts = dict(runtime_facts.get("info_experts") or {})
+        unit_pipeline_focus = build_runtime_unit_pipeline_focus(runtime_state)
         return {
             "battlefield": battlefield,
             "base_state": base_state,
@@ -993,6 +995,7 @@ class Adjutant:
             "world_sync": dict(inputs.get("world_sync") or {}),
             "active_task_count": len(runtime_snapshot.active_tasks),
             "reservation_count": battlefield.get("reservation_count", len(runtime_snapshot.unit_reservations)),
+            "unit_pipeline_focus": unit_pipeline_focus,
         }
 
     @staticmethod
@@ -1005,6 +1008,7 @@ class Adjutant:
         capability = CapabilityStatusSnapshot.from_mapping(snapshot.get("capability") or {})
         task_overview = dict(snapshot.get("task_overview") or {})
         world_sync = dict(snapshot.get("world_sync") or {})
+        unit_pipeline_focus = dict(snapshot.get("unit_pipeline_focus") or {})
         alerts: list[dict[str, Any]] = []
 
         def add_alert(code: str, severity: str, text: str, *, target_label: str = "") -> None:
@@ -1080,7 +1084,12 @@ class Adjutant:
             more = f" 等{len(disabled_structures)} 个" if len(disabled_structures) > 2 else ""
             add_alert("disabled_structures", "warning", f"存在离线建筑：{preview}{more}")
         reservation_wait = int(task_overview.get("reservation_wait_count", 0) or 0)
-        if reservation_wait:
+        focus_detail = str(unit_pipeline_focus.get("detail") or unit_pipeline_focus.get("preview") or "")
+        focus_label = str(unit_pipeline_focus.get("task_label") or "")
+        if focus_detail:
+            prefix = f"任务 #{focus_label} " if focus_label else ""
+            add_alert("reservation_waiting", "info", f"{prefix}正在等待补位：{focus_detail}")
+        elif reservation_wait:
             add_alert("reservation_waiting", "info", f"{reservation_wait} 个任务正在等待补位")
         return alerts[:5]
 
@@ -1091,6 +1100,7 @@ class Adjutant:
         capability = dict(snapshot.get("capability") or {})
         base_readiness = dict(snapshot.get("base_readiness") or {})
         task_overview = dict(snapshot.get("task_overview") or {})
+        unit_pipeline_focus = dict(snapshot.get("unit_pipeline_focus") or {})
 
         parts: list[str] = []
         if alerts:
@@ -1111,9 +1121,18 @@ class Adjutant:
         if phase_text:
             parts.append(phase_text)
 
-        unit_pipeline_preview = str(battlefield.get("unit_pipeline_preview") or "")
-        if unit_pipeline_preview and all(unit_pipeline_preview not in part for part in parts):
-            parts.append(f"在途 {unit_pipeline_preview}")
+        unit_pipeline_focus_detail = str(unit_pipeline_focus.get("detail") or "").strip()
+        unit_pipeline_focus_label = str(unit_pipeline_focus.get("task_label") or "").strip()
+        if unit_pipeline_focus_detail:
+            focus_text = unit_pipeline_focus_detail
+            if unit_pipeline_focus_label:
+                focus_text = f"任务 #{unit_pipeline_focus_label} {focus_text}"
+            if all(unit_pipeline_focus_detail not in part for part in parts):
+                parts.append(f"补位 {focus_text}")
+        else:
+            unit_pipeline_preview = str(battlefield.get("unit_pipeline_preview") or "")
+            if unit_pipeline_preview and all(unit_pipeline_preview not in part for part in parts):
+                parts.append(f"在途 {unit_pipeline_preview}")
 
         return "；".join(part for part in parts if part)
 
