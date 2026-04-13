@@ -83,16 +83,28 @@ class DisadvantageAssessor:
     def _get_combat_units(self, world_state: Any, owner: str) -> List[Any]:
         """
         Filter actors to extract only mobile combat units.
-        This excludes Buildings (including defenses), Harvesters, and MCVs.
+        This explicitly excludes:
+          - Buildings and Defenses (ActorCategory.BUILDING)
+          - Harvesters (ActorCategory.HARVESTER)
+          - MCVs (ActorCategory.MCV)
+          - Non-combatant/Irrelevant units: engineers ('e6'), husks ('husk'), and spawn points ('mpspawn')
         """
         combat_units = []
+        
+        # Explicit blocklist for non-combatant or irrelevant entities
+        NON_COMBAT_TYPES = {"e6", "husk", "mpspawn"}
+        
         for actor in world_state.actors.values():
             if actor.owner != owner:
                 continue
+                
+            # Filter out non-combat types by actor type name
+            if getattr(actor, 'type', '').lower() in NON_COMBAT_TYPES:
+                continue
             
-            # Use category to accurately filter out non-combatants
+            # Use category to accurately filter out Buildings, Defenses, Harvesters, and MCVs
             if actor.category in (ActorCategory.INFANTRY, ActorCategory.VEHICLE):
-                # Optionally, double check the can_attack flag to filter out unarmed scouts
+                # Double check the can_attack flag to filter out any other unarmed units (like scouts if they can't attack)
                 if getattr(actor, 'can_attack', True):
                     combat_units.append(actor)
                     
